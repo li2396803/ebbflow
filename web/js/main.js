@@ -69,6 +69,45 @@ const COMPARE_COLORS = ["#4b57d6", "#d97a2b"];
 const OVERLAY_COLORS = { scale: "#0e9c9c", pct: "#8b5cf6", flow: "#8b93a7" };
 const METRIC_LABEL = { shares: "份额", scale: "规模", flow: "净流入", pct: "变化率" };
 const METRIC_UNIT = { shares: "亿份", scale: "亿元", flow: "亿元/日", pct: "%" };
+const TAG_PREFIXES = ["index", "sw", "csi", "theme", "region", "factor", "bond", "commodity"];
+const TAG_ALIAS = {
+  申万: "sw", 申万一级: "sw", 中证: "csi", 中证一级: "csi", 指数: "index", 指数类别: "index",
+  主题: "theme", 地区: "region", 因子: "factor", 债券: "bond", 债券细分: "bond", 商品: "commodity", 商品细分: "commodity",
+};
+function tagDimLabel(prefix) {
+  const dims = app.meta?.tagDims || {};
+  const full = dims[prefix];
+  return full ? String(full).replace(/(一级|二级|类别|细分)$/, "") : prefix;
+}
+
+/** 解析标签查询：`sw:银行`、`申万 银行`、`中证：信息技术` */
+function parseTagQuery(q) {
+  const text = String(q || "").trim();
+  if (!text) return null;
+  let m = text.match(/^([a-zA-Z]{2,10})\s*[:：\s]\s*(.+)$/);
+  if (m && TAG_PREFIXES.includes(m[1].toLowerCase())) return { prefix: m[1].toLowerCase(), value: m[2].trim() };
+  m = text.match(/^(申万一级|申万|中证一级|中证|指数类别|指数|主题|地区|因子|债券细分|债券|商品细分|商品)\s*[:：\s]\s*(.+)$/);
+  if (m && TAG_ALIAS[m[1]]) return { prefix: TAG_ALIAS[m[1]], value: m[2].trim() };
+  return null;
+}
+
+/** ETF 标签索引（来自 subs.json 的 etfs[].tags，subs 到位后构建） */
+function buildEtfTagIndex() {
+  const map = new Map();
+  for (const [subName, sub] of Object.entries(app.subs || {})) {
+    for (const e of sub.etfs || []) {
+      let row = map.get(e.code);
+      if (!row) {
+        row = { code: e.code, name: e.name, subs: [], tags: [] };
+        map.set(e.code, row);
+      }
+      if (!row.subs.includes(subName)) row.subs.push(subName);
+      for (const t of e.tags || []) if (!row.tags.includes(t)) row.tags.push(t);
+    }
+  }
+  app.etfTags = map;
+  return map;
+}
 /** charts 缓存键：taxonomy + catKey，两套口径互不污染 */
 const chartKey = (cat) => `${state.taxonomy}:${cat}`;
 const getChart = (cat) => app.chartData.get(chartKey(cat));
@@ -494,6 +533,7 @@ export function ensureIndex() {
 
 /** subs 到位后：补齐所有依赖区间统计的区块（并触发图表预取） */
 function afterSubsReady() {
+  buildEtfTagIndex();
   if (state.view === "cat" && state.cat) {
     renderCatChart(state.cat, { silent: true });
   }
@@ -1249,6 +1289,60 @@ function pinyinScore(q, py) {
 function searchProvider(q, mode) {
   const query = q.trim().toLowerCase();
   const groups = [];
+
+  const tagQuery = parseTagQuery(q);
+  if (tagQuery) {
+    if (!app.etfTags) {
+      ensureSubs()
+        .then(() => {
+          buildEtfTagIndex();
+          palette?.refresh?.();
+        })
+        .catch(() => {});
+      return { groups: [], hint: "正在加载标签索引…（首次按标签搜索需要成分数据）" };
+    }
+    const prefixLabel = tagDimLabel(tagQuery.prefix);
+    const items = [];
+    for (const e of app.etfTags.values()) {
+      const hit = (e.tags || []).find((t) => {
+        const i = String(t).indexOf(":");
+        if (i < 0) return false;
+        if (String(t).slice(0, i) !== tagQuery.prefix) return false;
+        return String(t).slice(i + 1).toLowerCase().includes(tagQuery.value.toLowerCase());
+      });
+      if (!hit) continue;
+      const subName = e.subs[0] || "";
+      items.push({
+        type: "etf",
+        label: e.name,
+        code: e.code,
+        meta: `${prefixLabel}：${String(hit).slice(String(hit).indexOf(":") + 1)}`,
+        name: subName,
+        cat: app.subs?.[subName]?.cat,
+      });
+    }
+    items.sort((a, b) => a.label.localeCompare(b.label, "zh-CN"));
+    // 没有命中时，把该维度可选值列出来，避免用户瞎猜
+    let hint = `按标签匹配到 ${items.length} 只 ETF（Enter 打开所属小类）`;
+    if (!items.length) {
+      const values = new Set();
+      for (const e of app.etfTags.values()) {
+        for (const t of e.tags || []) {
+          const i = String(t).indexOf(":");
+          if (i < 0 || String(t).slice(0, i) !== tagQuery.prefix) continue;
+          values.add(String(t).slice(i + 1));
+          if (values.size >= 8) break;
+        }
+        if (values.size >= 8) break;
+      }
+      if (values.size) hint = `${prefixLabel} 没有「${tagQuery.value}」，可选：${Array.from(values).slice(0, 6).join(" / ")} …`;
+    }
+    return {
+      groups: items.length ? [{ label: `标签：${prefixLabel} · ${tagQuery.value}`, items: items.slice(0, 12) }] : [],
+      hint,
+    };
+  }
+
   const subs = app.index?.subs || Object.entries(app.subs || {}).map(([name, v]) => ({
     name,
     cat: v.cat,
@@ -1342,7 +1436,10 @@ function openSearch(mode = "search") {
   palette.open({
     mode,
     provider: searchProvider,
-    placeholder: mode === "compare" ? "搜索要对比的小类（可输入拼音首字母）…" : "搜索小类 / 拼音首字母 / ETF 代码或名称…",
+    placeholder:
+      mode === "compare"
+        ? "搜索要对比的小类（可输入拼音首字母）…"
+        : "搜索小类 / 拼音 / ETF 代码，或按标签：sw 银行、中证 信息技术…",
     onPick: (item) => {
       if (mode === "compare") {
         if (item.type !== "sub") return true;
@@ -2079,6 +2176,9 @@ async function boot() {
       }
       syncFocusUI();
     },
+    onGoCat: (cat) => {
+      if (cat) navigate("cat", { cat });
+    },
     onToggleWatch: (name) => {
       toggleWatch(name);
       views.renderCatNav(app);
@@ -2159,6 +2259,7 @@ function resetTaxonomyState() {
   app.indexReady = false;
   app.flowComplete = false;
   app.chartData.clear();
+  app.etfTags = null;
   subsPromise = null;
   indexPromise = null;
   prefetchStarted = false;

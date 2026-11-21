@@ -331,6 +331,10 @@ export function createPalette({ maskSel = "#paletteMask", inputSel = "#paletteIn
     close() {
       closeOverlay(panel);
     },
+    /** 外部数据到位后刷新当前结果（保持输入内容） */
+    refresh() {
+      renderRows();
+    },
     get mode() {
       return mode;
     },

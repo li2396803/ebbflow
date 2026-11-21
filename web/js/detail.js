@@ -119,9 +119,8 @@ export async function openDetail(name) {
   if (current !== name) return;
   const stats = app.stats?.byName?.get(name);
   const entry = app.subs?.[name];
-  if (!stats && !entry) {
-    toast("没有找到该小类", "error");
-    closeOverlay(document.getElementById("drawer"));
+  if (!entry) {
+    renderMissingDetail(app, name, stats);
     return;
   }
   renderDetail(app, name, stats, entry);
@@ -265,6 +264,43 @@ function renderDetail(app, name, s, entry) {
     download(`${name}-份额-${state.rangeInfo.from}-${state.rangeInfo.to}.csv`, toCSV([header, ...data]));
     toast("已导出走势 CSV", "ok");
   });
+}
+
+/** 只有区间统计、没有成分 ETF 明细（数据管线尚未产出该小类的 subs 条目） */
+function renderMissingDetail(app, name, s) {
+  const body = document.getElementById("drawerBody");
+  if (!body) return;
+  const rank = s ? rankOf(app.stats, name, "pct") : null;
+  const flow = s ? (app.flowOf ? app.flowOf(name, s) : flowEstimate(s)) : 0;
+  body.innerHTML = `
+    <section class="drawer-sec">
+      <div class="drawer-sec-head">
+        <h3>区间表现</h3>
+        ${s ? `<span class="chip ${s.pct > 0 ? "chip--up" : s.pct < 0 ? "chip--down" : "chip--flat"}">${rank ? `排名 ${rank.rank}/${rank.total}` : "无排名"}</span>` : ""}
+      </div>
+      ${
+        s
+          ? `<dl class="kpi-mini">
+              <div><dt>最新份额</dt><dd class="num">${esc(cnum(s.last, 1))}<span class="unit">亿份</span></dd></div>
+              <div><dt>规模（估算）</dt><dd class="num">${s.scale != null ? esc(cnum(s.scale, 1)) : "—"}<span class="unit">亿元</span></dd></div>
+              <div><dt>区间变化</dt><dd class="num ${s.pct > 0 ? "up" : s.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s.pct, 2))}</dd></div>
+              <div><dt>区间净流入</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>
+            </dl>`
+          : ""
+      }
+    </section>
+    <div class="state" style="padding:var(--sp-7) var(--sp-4)">
+      <div class="state-ico" aria-hidden="true"><svg width="18" height="18"><use href="#i-info"/></svg></div>
+      <p class="state-title">成分 ETF 明细暂未收录</p>
+      <p class="state-desc">当前数据包（subs.json）里还没有这个小类的成分明细${
+        s ? "，但区间统计是按已收录成分算的，可以正常参考" : ""
+      }。数据管线补齐后这里会自动出现。</p>
+      <button class="btn btn--sm" type="button" data-goto-cat="${esc(app.subs?.[name]?.cat || "")}">返回该大类</button>
+    </div>`;
+  const back = body.querySelector("[data-goto-cat]");
+  const cat = app.stats?.byName?.get(name)?.cat;
+  if (back && cat) back.addEventListener("click", () => { closeOverlay(document.getElementById("drawer")); drawerHooks.onGoCat?.(cat); });
+  else back?.remove();
 }
 
 function renderEtfTable(rows, totalScale) {
@@ -475,7 +511,10 @@ function renderAllTable() {
   const rows = allRows();
   const count = document.getElementById("allCount");
   const unit = state.allMetric === "scale" ? "亿元" : "亿份";
-  if (count) count.textContent = `共 ${rows.length} 个小类 · 单位 ${unit} · ${rangeTextShort()}`;
+  if (count) {
+    const total = allHooks.app?.meta?.counts?.subs;
+    count.textContent = `共 ${rows.length} 个小类有区间数据${total && total !== rows.length ? `（口径共 ${total} 个）` : ""} · 单位 ${unit} · ${rangeTextShort()}`;
+  }
   const ths = tbl.querySelectorAll("thead th[data-sort-key]");
   ths.forEach((th) => {
     const k = th.dataset.sortKey;

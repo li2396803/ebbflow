@@ -18,6 +18,50 @@ const chipDir = (v, text, cls = "") =>
 
 const catColorOf = (app, key) => app?.catMap?.get(key)?.color || "#6B7280";
 
+/** 债券类：份额是「面值 100 元」口径，不能和股票 ETF（1 元）直接比较 → 展示规模优先 */
+const isBondCat = (key = "", label = "") => /bond|债券/i.test(`${key} ${label}`);
+
+/** 用已加载的 charts 现算某个大类的「规模」区间序列（债券卡片/要点用） */
+export function catScaleStats(app, key) {
+  const payload = app?.getChart ? app.getChart(key) : null;
+  const dates = payload?.dates;
+  if (!dates?.length) return null;
+  const names = new Set(app.subsByCat?.get(key) || []);
+  const subs = (payload.series || []).filter((s) => names.has(s.name) && (s.scale || []).some((v) => v != null));
+  if (!subs.length) return null;
+  const a = idxInDates(dates, state.rangeInfo.from);
+  const b = idxInDates(dates, state.rangeInfo.to);
+  const n = Math.max(0, b - a + 1);
+  if (!n) return null;
+  const series = new Array(n).fill(null);
+  for (const s of subs) {
+    for (let i = 0; i < n; i++) {
+      const v = s.scale[a + i];
+      if (v == null) continue;
+      series[i] = (series[i] || 0) + v;
+    }
+  }
+  const first = series.find((v) => v != null);
+  let last = null;
+  for (let i = series.length - 1; i >= 0; i--) {
+    if (series[i] != null) {
+      last = series[i];
+      break;
+    }
+  }
+  if (first == null || last == null) return null;
+  const delta = last - first;
+  return { first, last, delta, pct: first ? (delta / Math.abs(first)) * 100 : null, series };
+}
+
+function idxInDates(dates, d) {
+  const i = dates.indexOf(d);
+  if (i >= 0) return i;
+  let lo = 0;
+  for (let k = 0; k < dates.length; k++) if (dates[k] <= d) lo = k;
+  return lo;
+}
+
 function kpiDelta(v, pct, unitText = "") {
   const sign = v > 0 ? "+" : "";
   return `${chipDir(v, `${sign}${cnum(v, 1)}${unitText}`)}<span class="delta ${v > 0 ? "delta--up" : v < 0 ? "delta--down" : "delta--flat"}">${fmtPct(
@@ -212,44 +256,45 @@ function renderOverviewKpis(app) {
       ${spark ? `<div class="kpi-spark">${spark}</div>` : ""}
     </div>`;
 
-  const b1 = big(sh.last, "亿份");
-  const b2 = sc.last != null ? big(sc.last, "亿元") : { num: "—", unit: "" };
-  const cumulative = [];
-  if (t.shares.length) {
-    const base = t.shares.find((v) => v != null) ?? 0;
-    for (const v of t.shares) cumulative.push(v == null ? null : v - base);
+  const fmtBig = (v, unit) => {
+    if (v == null) return { num: "—", unit: "" };
+    return big(v, unit);
+  };
+  const b1 = fmtBig(sc.last, "亿元");
+  const bSh = fmtBig(sh.last, "亿份");
+  const catFlows = (app.stats?.cats || []).map((c) => ({
+    key: c.key,
+    flow: app.catFlowOf ? app.catFlowOf(c.key) : (app.subsByCat?.get(c.key) || []).reduce((acc, n) => acc + flowOne(app.stats?.byName?.get(n)), 0),
+  }));
+  const catIn = catFlows.filter((c) => c.flow > 0).length;
+  const catFlowSum = catFlows.reduce((acc, c) => acc + c.flow, 0);
+  const cumulativeScale = [];
+  if (t.scale?.length) {
+    const base = t.scale.find((v) => v != null) ?? 0;
+    for (const v of t.scale) cumulativeScale.push(v == null ? null : v - base);
   }
 
   host.innerHTML = [
     card(
-      "全市场总份额",
+      "全市场规模",
       b1.num,
       b1.unit,
-      sh.last != null
-        ? `${chipDir(sh.delta, `${fmtSigned(Math.abs(sh.delta) >= 10000 ? sh.delta / 10000 : sh.delta, Math.abs(sh.delta) >= 10000 ? 2 : 1)}${Math.abs(sh.delta) >= 10000 ? "万亿份" : "亿份"}`)}<span class="dim">区间变化</span><span class="chip chip--line chip--sm" title="${esc(
-            app.market?.note || "全市场口径统计全部场内 ETF"
-          )}" data-optional-chip="1">全市场口径</span>`
-        : `<span class="dim">暂无区间数据</span>`,
-      sparkSVG(t.shares, { w: 160, h: 44, color: accent, area: true }),
+      `<span class="dim">份额 ${esc(bSh.num)} ${esc(bSh.unit)}</span>
+       <span class="chip chip--line chip--sm" title="份额（份数）跨资产不可直接相加：债券 ETF 面值 100 元、股票 ETF 约 1 元，加总没有经济含义；规模（亿元）才是可比口径">份数不可直接相加</span>`,
+      t.scale ? sparkSVG(t.scale, { w: 160, h: 44, color: accent, area: true }) : "",
       "var(--accent)"
     ),
     card(
-      "全市场规模",
-      b2.num,
-      b2.unit,
-      sc.last != null
-        ? `${chipDir(sc.delta, `${fmtSigned(Math.abs(sc.delta) >= 10000 ? sc.delta / 10000 : sc.delta, Math.abs(sc.delta) >= 10000 ? 2 : 1)}${Math.abs(sc.delta) >= 10000 ? "万亿" : "亿"}`)}<span class="dim">区间变化</span>`
-        : `<span class="dim">该数据文件未提供规模序列</span>`,
-      t.scale ? sparkSVG(t.scale, { w: 160, h: 44, color: toneColor("#8b5cf6", isDark()), area: true }) : "",
-      toneColor("#8b5cf6", isDark())
-    ),
-    card(
-      "区间份额变化",
-      !ready ? "—" : sh.delta != null ? fmtSigned(Math.abs(sh.delta) >= 10000 ? sh.delta / 10000 : sh.delta, Math.abs(sh.delta) >= 10000 ? 2 : 1) : "—",
-      !ready ? "" : sh.delta != null && Math.abs(sh.delta) >= 10000 ? "万亿份" : "亿份",
-      !ready ? pending : sh.pct != null ? `<span class="delta ${sh.delta > 0 ? "delta--up" : sh.delta < 0 ? "delta--down" : "delta--flat"}">${fmtPct(sh.pct, 2)}</span><span class="dim">相对区间起点 · ${r.days} 个交易日</span>` : `<span class="dim">—</span>`,
-      cumulative.length ? sparkSVG(cumulative, { w: 160, h: 44, color: sh.delta >= 0 ? up : down, area: true }) : "",
-      sh.delta >= 0 ? "var(--up)" : "var(--down)"
+      "区间规模变化",
+      sc.delta != null ? fmtSigned(Math.abs(sc.delta) >= 10000 ? sc.delta / 10000 : sc.delta, Math.abs(sc.delta) >= 10000 ? 2 : 1) : "—",
+      sc.delta != null && Math.abs(sc.delta) >= 10000 ? "万亿元" : "亿元",
+      !ready
+        ? pending
+        : sc.pct != null
+          ? `<span class="delta ${sc.delta > 0 ? "delta--up" : sc.delta < 0 ? "delta--down" : "delta--flat"}">${fmtPct(sc.pct, 2)}</span><span class="dim">相对区间起点 · ${r.days} 个交易日</span>`
+          : `<span class="dim">暂无区间数据</span>`,
+      cumulativeScale.length ? sparkSVG(cumulativeScale, { w: 160, h: 44, color: sc.delta >= 0 ? up : down, area: true }) : "",
+      sc.delta >= 0 ? "var(--up)" : "var(--down)"
     ),
     card(
       !ready ? "区间净流入" : app.flowComplete ? "区间净流入" : "区间净流入（估算）",
@@ -258,8 +303,18 @@ function renderOverviewKpis(app) {
       !ready
         ? pending
         : app.flowComplete
-        ? `<span class="dim">逐日净流入累加</span><span class="chip chip--line chip--sm" title="口径：按当日单位净值折算的每日净流入逐日累加；部分已退市成分无净值，覆盖情况见各小类明细">口径</span>`
-        : `<span class="dim">Δ份额 × 最新净值近似</span><span class="chip chip--line chip--sm" title="口径：区间份额变化量 × 最新单位净值（近似）；全量图表加载完成后会自动切换为每日净流入求和">估算</span>`,
+          ? `<span class="dim">逐日净流入累加</span><span class="chip chip--line chip--sm" title="口径：按当日单位净值折算的每日净流入逐日累加；份额拆分/合并已剔除">口径</span>`
+          : `<span class="dim">Δ份额 × 最新净值近似</span><span class="chip chip--line chip--sm" title="口径：区间份额变化量 × 最新单位净值（近似）；全量图表加载完成后会自动切换为每日净流入求和">估算</span>`,
+      "",
+      "var(--ink-3)"
+    ),
+    card(
+      "大类分化",
+      ready && app.cats.length ? `${catIn}/${app.cats.length}` : "—",
+      "类净流入",
+      ready
+        ? `<span class="dim">净流入合计</span><span class="delta ${catFlowSum > 0 ? "delta--up" : catFlowSum < 0 ? "delta--down" : "delta--flat"}">${esc(fmtSigned(catFlowSum, 1))} 亿元</span>`
+        : pending,
       "",
       "var(--ink-3)"
     ),
@@ -380,9 +435,16 @@ function renderCatGrid(app) {
   }
   host.innerHTML = (app.cats || [])
     .map((c) => {
-      const s = stats?.byCat?.get(c.key);
-      const pct = s?.pct;
+      const bond = isBondCat(c.key, c.label);
+      let s = stats?.byCat?.get(c.key);
       const scaleSum = (app.subsByCat?.get(c.key) || []).reduce((acc, name) => acc + (stats?.byName?.get(name)?.scale || 0), 0);
+      let bondScale = null;
+      if (bond) {
+        bondScale = catScaleStats(app, c.key);
+        if (bondScale) s = { ...s, pct: bondScale.pct, delta: bondScale.delta, series: bondScale.series, count: s?.count ?? 0 };
+      }
+      const pct = s?.pct;
+      const unit = bond ? "亿元" : "亿份";
       const color = toneColor(c.color, isDark());
       return `<button class="catcard" type="button" data-cat="${esc(c.key)}" style="--cat-color:${esc(c.color)}" aria-label="${esc(
         c.label
@@ -390,20 +452,25 @@ function renderCatGrid(app) {
         <span class="catcard-top">
           <span class="cat-dot" style="background:${esc(color)}"></span>
           <span class="catcard-name">${esc(c.label)}</span>
-          <span class="catcard-count">${s?.count ?? "—"} 小类</span>
+          <span class="catcard-count" ${c.subs && s?.count != null && s.count !== c.subs ? `title="口径 ${c.subs} 个小类，当前有区间数据 ${s.count} 个"` : ""}>${
+            c.subs && s?.count != null && s.count !== c.subs ? `${s.count}/${c.subs}` : (s?.count ?? c.subs ?? "—")
+          } 小类</span>
         </span>
         <span class="catcard-mid">
           <span class="catcard-val">${fmtPct(pct, 2)}</span>
           <span class="chip ${(s?.delta || 0) > 0 ? "chip--up" : (s?.delta || 0) < 0 ? "chip--down" : "chip--flat"}">${esc(
         fmtSigned(s?.delta, 1)
-      )} 亿份</span>
+      )} ${unit}</span>
         </span>
         <span class="catcard-spark" aria-hidden="true">${
           s ? sparkSVG(s.series, { w: 220, h: 26, color, area: true, stroke: 1.4 }) : ""
         }</span>
         <span class="catcard-foot">
-          <span>规模 ${scaleSum ? cnum(scaleSum, 0) + " 亿" : "—"}</span>
-          <span>${esc(dirCn(s?.delta))}</span>
+          ${
+            bond
+              ? `<span>规模口径 ${bondScale ? cnum(bondScale.last, 0) + " 亿" : scaleSum ? cnum(scaleSum, 0) + " 亿" : "—"}</span><span class="chip chip--line chip--sm" title="债券 ETF 份额为面值 100 元口径，跨资产相加无意义，本卡按规模展示">面值口径</span>`
+              : `<span>规模 ${scaleSum ? cnum(scaleSum, 0) + " 亿" : "—"}</span><span>${esc(dirCn(s?.delta))}</span>`
+          }
         </span>
       </button>`;
     })
@@ -526,7 +593,7 @@ export function renderWatch(app) {
   const missing = state.watch.length - watchNames.length;
   if (sub) {
     sub.textContent = `${watchNames.length} 个小类 · ${rangeText(app)} · 保存在本地浏览器${
-      missing > 0 ? ` · 另有 ${missing} 个不在当前分类口径下` : ""
+      missing > 0 ? ` · 另有 ${missing} 个暂无数据或不在当前分类口径下` : ""
     }`;
   }
   if (watchNames.length && !app.subsReady) {
