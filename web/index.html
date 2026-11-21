@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="ETF 细分行业资金流向：按细分行业统计 ETF 份额变化，含大类规模、增减排行与长期趋势。">
+<title>ETF 细分行业资金流向</title>
+<script>
+/* 首屏前置主题，避免深浅色闪白 */
+(function () {
+  try {
+    var t = localStorage.getItem("etf-theme");
+    if (t === "light" || t === "dark" || t === "auto") {
+      document.documentElement.setAttribute("data-theme", t);
+    }
+  } catch (e) {}
+})();
+</script>
+<link rel="stylesheet" href="styles.css">
+<script src="echarts.min.js" defer></script>
+</head>
+<body>
+<div class="page-wm" aria-hidden="true"></div>
+<a class="skip-link" href="#charts">跳到图表</a>
+
+<header class="topbar">
+  <div class="tb-inner">
+    <div class="tb-title">
+      <h1 id="pageTitle">ETF 细分行业资金流向</h1>
+    </div>
+    <div class="tb-right">
+      <span class="brand" aria-hidden="true">B站生炸瓜</span>
+      <div class="search" id="searchBox" role="search">
+        <input id="searchInput" type="search" autocomplete="off" spellcheck="false"
+               placeholder="搜小类 / ETF 代码或名称"
+               aria-label="搜索细分行业或 ETF 代码、名称"
+               role="combobox" aria-expanded="false" aria-controls="searchList" aria-autocomplete="list">
+        <kbd class="kbd-hint" aria-hidden="true">/</kbd>
+        <div class="search-pop" id="searchList" role="listbox" aria-label="搜索结果" hidden></div>
+      </div>
+      <div class="tb-btns">
+        <button id="btnExport" class="btn" type="button" title="把当前大类、当前区间导出为 CSV">导出 CSV</button>
+        <button id="btnTheme" class="btn btn-icon" type="button" aria-label="切换深色 / 浅色主题" title="切换主题">
+          <span id="themeIcon" aria-hidden="true">◐</span>
+        </button>
+        <button id="btnRefresh" class="btn" type="button" title="重新抓取最新数据">刷新</button>
+      </div>
+    </div>
+  </div>
+  <div class="tb-sub">
+    <span class="sub" id="subLine"><span class="sk sk-line" style="width:320px"></span></span>
+  </div>
+  <div class="tb-meta">
+    <span class="chips" id="metaChips"></span>
+    <span class="badge" id="dataSource" data-mode="loading">加载中…</span>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="notice">注意：数据由交易所公开接口抓取，数据只反映ETF资金状况，不可作为唯一买入逻辑，需结合其他逻辑谨慎参考。</p>
+
+  <div class="tbl-grid" id="tblGrid">
+    <section class="span2" id="secCatScale">
+      <div class="sec-head">
+        <h2>各大类规模与近期区间变动（亿份）</h2>
+        <button class="btn btn-ghost" id="btnAllSubs" type="button">查看全部 86 个小类 ›</button>
+      </div>
+      <div class="tbl-scroll">
+        <table class="tbl" id="tblCatScale">
+          <thead>
+            <tr>
+              <th data-sort="label" data-type="text" scope="col">大类<span class="sarrow"></span></th>
+              <th data-sort="now" class="num" data-type="num" scope="col">当前总规模<span class="sarrow"></span></th>
+              <th data-sort="start" class="num" data-type="num" scope="col">区间首日规模<span class="sarrow"></span></th>
+              <th data-sort="pct" class="num" data-type="num" scope="col">变动比例<span class="sarrow"></span></th>
+            </tr>
+          </thead>
+          <tbody><tr><td colspan="4"><span class="sk sk-line" style="width:60%"></span></td></tr></tbody>
+        </table>
+      </div>
+    </section>
+    <section id="secTop">
+      <div class="sec-head">
+        <h2>细分行业近一周份额增加量 TOP 5</h2>
+      </div>
+      <div class="tbl-scroll">
+        <table class="tbl" id="tblTop">
+          <thead>
+            <tr>
+              <th data-sort="sub" data-type="text" scope="col">细分行业<span class="sarrow"></span></th>
+              <th data-sort="delta" class="num" data-type="num" scope="col">增加量(亿份)<span class="sarrow"></span></th>
+              <th data-sort="pct" class="num" data-type="num" scope="col">变动百分比<span class="sarrow"></span></th>
+            </tr>
+          </thead>
+          <tbody><tr><td colspan="3"><span class="sk sk-line" style="width:60%"></span></td></tr></tbody>
+        </table>
+      </div>
+    </section>
+    <section id="secBottom">
+      <div class="sec-head">
+        <h2>细分行业近一周份额减少量 TOP 5</h2>
+      </div>
+      <div class="tbl-scroll">
+        <table class="tbl" id="tblBottom">
+          <thead>
+            <tr>
+              <th data-sort="sub" data-type="text" scope="col">细分行业<span class="sarrow"></span></th>
+              <th data-sort="delta" class="num" data-type="num" scope="col">减少量(亿份)<span class="sarrow"></span></th>
+              <th data-sort="pct" class="num" data-type="num" scope="col">变动百分比<span class="sarrow"></span></th>
+            </tr>
+          </thead>
+          <tbody><tr><td colspan="3"><span class="sk sk-line" style="width:60%"></span></td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="tabs" id="tabs" role="tablist" aria-label="大类切换"></div>
+  <div class="ranges" id="ranges" role="group" aria-label="时间区间切换"></div>
+
+  <div id="charts" class="cats"></div>
+
+  <footer class="foot">
+    <span id="footNote">数据来自交易所公开接口，仅供研究参考。</span>
+    <span class="foot-links">
+      <button class="linkbtn" id="btnQuality" type="button">数据质量</button>
+      <button class="linkbtn" id="btnTop" type="button">回到顶部</button>
+    </span>
+  </footer>
+</main>
+
+<div class="drawer-mask" id="drawerMask" hidden></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" hidden>
+  <div class="drawer-head">
+    <div class="drawer-heading">
+      <div class="drawer-eyebrow" id="drawerEyebrow"></div>
+      <h2 class="drawer-title" id="drawerTitle">—</h2>
+    </div>
+    <button class="btn btn-icon drawer-close" id="drawerClose" type="button" aria-label="关闭详情">✕</button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+</aside>
+
+<div class="toast-host" id="toastHost" aria-live="polite" aria-atomic="true"></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

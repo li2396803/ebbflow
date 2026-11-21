@@ -162,7 +162,7 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore(data): 自动更新站点数据"
-          file_pattern: "site data/quality.json data/series.json data/c3-seed.json"
+          file_pattern: "site data/quality.json data/series.json"
           commit_user_name: "etf-flow bot"
           commit_user_email: "41898282+github-actions[bot]@users.noreply.github.com"
           commit_author: "etf-flow bot <41898282+github-actions[bot]@users.noreply.github.com>"

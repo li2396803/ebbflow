@@ -1,44 +1,27 @@
-// 增量更新：抓取最新交易日 → 落盘原始快照 → 计算各细分行业 → 重新生成站点
+// 增量更新：沪深交易所 + Tushare 三源合并 → 重算序列 → 重建站点
 //
-// 口径（与原站一致）：
-//   每个细分行业 = 其包含全部 ETF 当日份额之和（万份 → 亿份）
-//   大类「9.债券」份额 ×100（债券 ETF 面值 100 元，原站即按此折算）
-//
-// 深交所只发布“最新交易日”快照、没有历史接口，因此：
-//   · 某交易日只有在沪深两市数据齐全时才会被重算；
-//   · 历史基线来自首次播种（原站已发布的 5 年序列），不会被只有沪市的半份数据覆盖；
-//   · 漏跑的日子用最近一次深交所快照做前值填充，并在快照文件里标记 estimated。
+// 口径：小类值 = 成分 ETF 份额之和 ÷1e4（亿份）；9_债券 ×100（债券 ETF 面值 100 元）。
+// 优先级：交易所（官方披露）> Tushare（深市历史唯一来源 / 高精度参考）。
 import fs from "node:fs";
 import path from "node:path";
-import { fetchSseDay, fetchSzseLatest, candidateDates, mapLimit } from "../lib/sources.mjs";
+import { openDb, putShares, recordRun, metaSet, metaGet, dbStats } from "../lib/db.mjs";
 import { SUB, CATS } from "../lib/taxonomy.mjs";
-import { computeDay } from "../lib/aggregate.mjs";
-import { loadSeries, saveSeries, loadDayShares, saveDayShares, upsertDay, ensureSubs, ROOT } from "../lib/store.mjs";
-import { buildSite, trimToFiveYears } from "../lib/build.mjs";
+import { fetchSseDay, fetchSzseLatest, candidateDates, mapLimit } from "../lib/sources.mjs";
+import { shareOnDate, hasToken } from "../lib/tushare.mjs";
+import { rebuild, refreshFunds, exportSeriesJson } from "../lib/pipeline.mjs";
+import { buildSite } from "../lib/build/site.mjs";
 
+const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname));
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
-const SUB_NAMES = Object.keys(SUB);
-const MARK = path.join(ROOT, "data", "last-run.json");
-const merged = (day) => ({ ...(day?.sse || {}), ...(day?.szse || {}) });
-
-function persist(date, market, shares, extra = {}) {
-  const cur = loadDayShares(date) || {};
-  const next = { ...cur, ...extra, [market]: { ...(cur[market] || {}), ...shares } };
-  saveDayShares(date, next);
-  return next;
-}
-
 const LOCK = path.join(ROOT, "data", ".update.lock");
-function acquireLock() {
+
+function acquire() {
   try {
     fs.mkdirSync(LOCK);
-    fs.writeFileSync(path.join(LOCK, "pid"), String(process.pid));
     return true;
   } catch {
-    // 超时保护：锁超过 15 分钟视为残留
     try {
-      const age = Date.now() - fs.statSync(LOCK).mtimeMs;
-      if (age > 15 * 60 * 1000) {
+      if (Date.now() - fs.statSync(LOCK).mtimeMs > 15 * 60 * 1000) {
         fs.rmSync(LOCK, { recursive: true, force: true });
         fs.mkdirSync(LOCK);
         return true;
@@ -47,78 +30,94 @@ function acquireLock() {
     return false;
   }
 }
-const releaseLock = () => fs.rmSync(LOCK, { recursive: true, force: true });
+const release = () => fs.rmSync(LOCK, { recursive: true, force: true });
 
-export async function update({ quiet = false } = {}) {
-  if (!acquireLock()) {
-    if (!quiet) log("已有更新在进行中，跳过本次");
-    return { skipped: true };
-  }
+async function run({ quiet = false, lookback = 15 } = {}) {
+  const t0 = Date.now();
+  const db = openDb();
+  const warn = [];
+
+  // 1) 深交所：仅最新交易日快照（官方口径）
+  let anchor = null;
   try {
-    return await runUpdate({ quiet });
-  } finally {
-    releaseLock();
+    const sz = await fetchSzseLatest();
+    anchor = sz.date;
+    const entries = Object.fromEntries(Object.entries(sz.shares).map(([c, w]) => [c, { wan: w, src: "szse" }]));
+    putShares(db, sz.date, entries);
+    if (!quiet) log(`深交所 ${sz.date}：${Object.keys(sz.shares).length} 只`);
+  } catch (e) {
+    warn.push(`深交所抓取失败：${String(e.message || e).slice(0, 80)}`);
   }
-}
 
-async function runUpdate({ quiet = false } = {}) {
-  const store = loadSeries();
-  ensureSubs(store, SUB_NAMES);
-  if (!store.dates.length) throw new Error("本地还没有数据，请先运行 npm run seed");
-
-  const sz = await fetchSzseLatest();
-  if (!quiet) log(`深交所 报告日 ${sz.date}，${Object.keys(sz.shares).length} 个标的`);
-  persist(sz.date, "szse", sz.shares, { szseFetchedAt: new Date().toISOString() });
-  const anchor = sz.date;
-
-  const from = new Date(anchor + "T00:00:00Z");
-  from.setUTCDate(from.getUTCDate() - 15);
-  const cands = candidateDates(from.toISOString().slice(0, 10), anchor);
-
-  await mapLimit(cands, 4, async (d) => {
-    const day = loadDayShares(d) || {};
-    if (day.sse) return { d };
-    const r = await fetchSseDay(d);
-    if (!r) return { d, skip: "非交易日" };
-    persist(d, "sse", r.shares, { sseFetchedAt: new Date().toISOString() });
-    return { d };
+  // 2) 上交所：最近 lookback 天逐日（非交易日返回空，自然跳过）
+  const end = anchor ?? new Date().toISOString().slice(0, 10);
+  const from = new Date(new Date(end + "T00:00:00Z").getTime() - lookback * 86400000).toISOString().slice(0, 10);
+  const days = candidateDates(from, end);
+  let sseDays = 0;
+  await mapLimit(days, 4, async (d) => {
+    try {
+      const r = await fetchSseDay(d);
+      if (!r) return;
+      putShares(db, d, Object.fromEntries(Object.entries(r.shares).map(([c, w]) => [c, { wan: w, src: "sse" }])));
+      sseDays++;
+    } catch (e) {
+      warn.push(`上交所 ${d} 失败`);
+    }
   });
+  if (!quiet) log(`上交所补到 ${sseDays} 个交易日`);
 
-  let recomputed = 0;
-  const days = [...cands].sort();
-  for (const d of days) {
-    const day = loadDayShares(d);
-    if (!day?.sse || !day?.szse) continue;
-    upsertDay(store, d, computeDay(SUB_NAMES, merged(day)));
-    recomputed++;
+  // 3) Tushare：全市场当日（补交易所缺口；也是深市历史来源）
+  if (hasToken()) {
+    try {
+      const m = await shareOnDate(end);
+      putShares(db, end, Object.fromEntries([...m].map(([c, w]) => [c, { wan: w, src: "ts" }])));
+      if (!quiet) log(`Tushare ${end}：${m.size} 只`);
+    } catch (e) {
+      warn.push(`Tushare 抓取失败：${String(e.message || e).slice(0, 80)}`);
+    }
+  } else {
+    warn.push("未配置 TUSHARE_TOKEN，深市历史将不可用");
   }
 
-  const latestSz = days.filter((d) => loadDayShares(d)?.szse).at(-1);
-  if (latestSz) {
-    const szShares = loadDayShares(latestSz).szse;
-    for (const d of days) {
-      const idx = store.dates.indexOf(d);
-      const has = idx >= 0 && store.subs[SUB_NAMES[0]][idx] != null;
-      if (has) continue;
-      const day = loadDayShares(d);
-      if (!day?.sse) continue;
-      persist(d, "szse", szShares, { estimated: true });
-      upsertDay(store, d, computeDay(SUB_NAMES, merged(loadDayShares(d))));
-      if (!quiet) log(`⚠ ${d} 深交所数据缺失，已用 ${latestSz} 快照近似填充`);
+  // 4) 基金名录（每周一次）
+  const lastFunds = metaGet(db, "fundsAt", null);
+  if (!lastFunds || Date.now() - new Date(lastFunds).getTime() > 7 * 86400000) {
+    try {
+      await refreshFunds(db);
+      metaSet(db, "fundsAt", new Date().toISOString());
+    } catch (e) {
+      warn.push("基金名录刷新失败");
     }
   }
 
-  trimToFiveYears(store);
-  saveSeries(store);
-  const info = buildSite(store);
-  const last = store.dates.at(-1);
-  fs.writeFileSync(MARK, JSON.stringify({ lastRunAt: new Date().toISOString(), latestTradeDate: last, recomputed, ...info }));
-  if (!quiet) log(`完成：最新交易日 ${last}（本次重算 ${recomputed} 天），${info.dates} 个交易日 / ${CATS.length} 个大类`);
-  return { last, recomputed, ...info };
+  // 5) 重算 + 构站
+  const rc = rebuild(db);
+  const info = buildSite(db, { warnings: warn });
+  exportSeriesJson(db, path.join(ROOT, "data", "series.json"));
+  metaSet(db, "updatedAt", new Date().toISOString());
+  const stats = { ...dbStats(db), seriesRows: rc.seriesRows, site: info, ms: Date.now() - t0, warnings: warn };
+  recordRun(db, { at: new Date().toISOString(), kind: "update", ok: true, stats });
+  fs.writeFileSync(
+    path.join(ROOT, "data", "lastrun.json"),
+    JSON.stringify({ at: new Date().toISOString(), lastTradeDate: info.lastTradeDate, dates: info.dates, ms: stats.ms, warnings: warn })
+  );
+  if (!quiet) log(`完成：最新交易日 ${info.lastTradeDate}，${info.dates} 个交易日 / ${CATS.length} 个大类 / ${Object.keys(SUB).length} 个细分行业，用时 ${(stats.ms / 1000).toFixed(1)}s`);
+  return { last: info.lastTradeDate, ...stats };
+}
+
+export async function update(opts = {}) {
+  if (!acquire()) return { skipped: "locked" };
+  try {
+    return await run(opts);
+  } finally {
+    release();
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  update().catch((e) => {
+  const li = process.argv.indexOf("--lookback");
+  const lookback = li > 0 ? Number(process.argv[li + 1]) : Number(process.env.LOOKBACK || 15);
+  update({ lookback }).catch((e) => {
     console.error("更新失败:", e);
     process.exit(1);
   });

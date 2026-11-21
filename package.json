@@ -2,17 +2,19 @@
   "name": "etf-flow",
   "version": "1.0.0",
   "private": true,
-  "description": "ETF 细分行业资金流向（本地长期运行版）：抓取沪深交易所公开份额数据，自建静态站点并在本地服务",
+  "description": "ETF 细分行业资金流向：上交所/深交所/Tushare 三源数据管道 + 静态站点 + 本地服务，自动更新与交叉校验",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5"
   },
   "scripts": {
     "start": "node server.mjs",
-    "seed": "node scripts/seed.mjs",
     "update": "node scripts/update.mjs",
     "build": "node scripts/build.mjs",
-    "verify": "node tools/diff-site.mjs"
+    "backfill": "node scripts/backfill.mjs",
+    "reconcile": "node scripts/reconcile.mjs",
+    "test": "node tests/runner.mjs",
+    "verify:origin": "node scripts/verify-origin.mjs"
   },
   "dependencies": {},
   "devDependencies": {}

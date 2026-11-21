@@ -160,7 +160,7 @@ npm start        # → http://localhost:5188
 
 - **`TUSHARE_TOKEN` 必须作为仓库 Secret 注入**：`Settings → Secrets and variables → Actions → New repository secret`，名字就叫 `TUSHARE_TOKEN`。没注入时更新仍能跑，但深市历史/校验会缺失，日志里会给一条 warning。
 - **SQLite 怎么跨 run 传递**：`data/etf.db` 不进 git，用 `actions/cache` 存。key 是 `etf-db-${{ github.run_id }}`（每次都是新 key，cache 不可覆盖），`restore-keys: etf-db-` 前缀回退到最近一次；保存前先 `PRAGMA wal_checkpoint(TRUNCATE)`，否则 WAL 里的最新事务会随缓存丢失。
-- **提交范围**：`site`（其中 `site/data/` 与 `site/charts/` 已在 `.gitignore` 里，属于构建产物不进库）+ `data/quality.json`、`data/series.json`、`data/c3-seed.json`。`data/etf.db`、`data/shares/`、`data/lastrun.json` 同样被忽略。
+- **提交范围**：`site`（其中 `site/data/` 与 `site/charts/` 已在 `.gitignore` 里，属于构建产物不进库）+ `data/quality.json`、`data/series.json`。`data/etf.db`、`data/shares/`、`data/lastrun.json` 同样被忽略。
 - ⚠️ 因为 `site/data/` 入库这件事由 `.gitignore` 决定（当前**不入库**），`daily` 的自动提交实际上只会在前端产物（`site/index.html` 等）有变化时产生提交；想让仓库自带的 `site/` 直接可静态托管（含 GitHub Pages），需要把 `.gitignore` 里的 `site/data/` 去掉。
 - **失败即失败**：`npm run update` 失败、被互斥锁跳过、`npm test` 失败，都会让 job 变红，不会"什么都没更新却提交一次空 diff"。
 - **自动提交不会递归触发 workflow**：GitHub 用 `GITHUB_TOKEN` 产生的 push 事件不会再触发新的 workflow run。
@@ -299,14 +299,17 @@ etf-flow/
 
 1. **深交所没有历史接口。** 只有"最新交易日"快照，历史只能从你开始跑的那天起累积。本项目目前把它当作**更新锚点 + 备查数据**：分类体系的 773 只成分全是沪市代码（`5xxxxx`），所以深市数据目前**不参与看板数值计算**。真要看深市，得先扩 `lib/taxonomy.mjs` 的成分表。
 2. **Tushare 需要 token 和积分权限。** `fund_share` 对积分有要求，积分不够会返回权限类错误（代码会按频率限制退避重试 4 次后放弃）。没有 token 时 `npm run update` 仍能跑，但深市历史、交叉校验和 4 位小数精度都用不上。
-3. **库不进 git，新克隆是空库。** `npm run build` 会以退出码 1 拒绝构建空库；要先 `npm run backfill` / `npm run update`，或从别处拷 `data/etf.db`。CI 里同理 —— 没有缓存时 `ci.yml` 会跳过离线构建（有明确 notice），只做静态校验。
+3. **SQLite 库不进 git，但新克隆能直接出图。** `data/etf.db` 是本地缓存（可重建）。新克隆没有它时，`npm run build` 会**自动用仓库自带的 `data/series.json` 引导**出一个可看的站点（份额曲线齐全；成分 ETF 明细、规模/净流入需要真实数据库，此时为空）。要补齐就联网跑 `npm run update`（增量）或 `npm run backfill`（全量回补，约 20 分钟）。CI 没有 DB 缓存时同理走引导路径。
 4. **`site/data/` 不入库。** `.gitignore` 里有 `site/data/` 与 `site/charts/`，仓库自带的前端产物**没有数据文件**：直接拿去静态托管是打不开图表的，必须先跑一次 `npm run build`（或用 `daily.yml` 的缓存构建）。同理 `daily.yml` 的自动提交只在 `site/index.html` 等前端文件变化时才产生提交，见 §5.1。
-5. **口径是"份"，不是"钱"。** 站点上的数字是 ETF 份额（亿份），不含净值/价格；份额变化不等于资金净流入。债券大类 ×100 是折算口径，跨大类比规模时注意。
-6. **单实例、单端口、无鉴权。** 服务只监听 `127.0.0.1`，设计给本机自用；**不要**绑到 `0.0.0.0` 或做公网映射，没有登录、没有限流。
-7. **开机自启是 macOS 专有。** `bin/start.sh` / `stop.sh` / `update.sh` 在 Linux 上也能用；`install-autostart.sh` 在非 Darwin 上会直接拒绝。
-8. **抓取克制。** 每日一次增量 + 服务自检，并发 ≤ 6。请勿改成高频轮询，别给对方服务器添麻烦。
-9. **GitHub Pages 需要付费套餐。** 私有仓库开 Pages 要 Pro/Team/Enterprise；`pages.yml` 只挂了手动触发，默认不会自己跑（见 §9 的说明，或直接看工作流文件头部注释）。
-10. **不是投资建议。** 见文末。
+5. **主口径是"份"，金额口径是估算。** 图表与表格的 `亿份` 是 ETF 份额；份额变化 ≠ 资金净流入。小类抽屉里的 **规模(亿元)** 与 **近一周净流入(亿元)** 是用 Tushare 单位净值折算的估算值（`规模 = 份额 × 净值`，`净流入 = Δ份额 × 当日净值`），净值覆盖 96%（31 只已退市/无净值披露的成分缺失，会在抽屉里标注 `navCoverage`）。债券大类 ×100 是折算口径，跨大类比规模时注意。
+6. **深市与 Tushare 的关系**：本项目 773 只成分最终全部落在沪市（`5xxxxx`），深市快照目前不参与任何小类；Tushare 的价值在于**独立第二源 + 4 位小数精度 + 净值**，而不是补深市历史。
+7. **原站有 2 个交易日的数据是"冻结"的**：2026-08-25 与 2026-10-28，原站当日所有小类数值都与前一日完全相同（疑似抓取失败后沿用旧值）。本项目从交易所重抓，得到的是真实值，所以这两天的曲线会与原站不同 —— 这是**我们更准**，不是回归。核对方式见 `npm run verify:origin`。
+8. **`501307` 是永久空成分**：Tushare 只有 18 个季末披露、交易所交易日无数据，对「港红利股息」贡献恒为 0，保留它不影响数值。
+9. **单实例、单端口、无鉴权。** 服务只监听 `127.0.0.1`，设计给本机自用；**不要**绑到 `0.0.0.0` 或做公网映射，没有登录、没有限流。
+10. **开机自启是 macOS 专有。** `bin/start.sh` / `stop.sh` / `update.sh` 在 Linux 上也能用；`install-autostart.sh` 在非 Darwin 上会直接拒绝。
+11. **抓取克制。** 每日一次增量 + 服务自检，并发 ≤ 6。请勿改成高频轮询，别给对方服务器添麻烦。
+12. **GitHub Pages 需要付费套餐。** 私有仓库开 Pages 要 Pro/Team/Enterprise；`pages.yml` 只挂了手动触发，默认不会自己跑（见 §9 的说明，或直接看工作流文件头部注释）。
+13. **不是投资建议。** 见文末。
 
 ---
 
