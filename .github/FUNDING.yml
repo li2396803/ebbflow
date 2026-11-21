@@ -1,0 +1,19 @@
+# 赞助配置（模板，默认不启用）
+#
+# 本文件是 GitHub 的 FUNDING 模板：保留注释即代表「当前不接受任何赞助」，
+# 页面上不会出现 Sponsor 按钮。想启用时，取消下面**任意一行**的注释并改成你自己的账号即可。
+#
+# 各字段说明见：https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+#
+# github: [li2396803]          # GitHub Sponsors 用户名（需先在 GitHub Sponsors 开通）
+# patreon: your-patreon        # Patreon 用户名
+# ko_fi: your-kofi              # Ko-fi 用户名
+# tidelift: npm/etf-flow        # Tidelift 平台标识（本项目零依赖，一般用不上）
+# community_bridge: your-project
+# liberapay: your-name
+# issuehunt: your-name
+# lfx_crowdfunding: your-project
+# polar: your-name
+# buy_me_a_coffee: your-name
+# thanks_dev: u/gh/your-name
+# custom: ["https://your-donation-page.example.com"]

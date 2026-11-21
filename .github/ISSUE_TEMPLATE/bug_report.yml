@@ -1,0 +1,114 @@
+name: Bug 报告
+description: 页面错乱、命令报错、构建或服务异常（数据数值问题请用「数据问题」模板）
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请先确认：
+        - `node -v` ≥ 22.5（本项目用到内置 `node:sqlite`）
+        - 本地跑过 `npm test` 与 `node scripts/lint.mjs`
+        - 数据「数值不对」请改用 **数据问题** 模板；安全问题请走 **SECURITY.md**，不要开公开 Issue
+  - type: dropdown
+    id: area
+    attributes:
+      label: 问题出现在哪一块
+      options:
+        - 前端页面（图表 / 表格 / 交互 / 样式）
+        - 本地服务（npm start、/api/*）
+        - 数据更新脚本（npm run update / backfill / reconcile）
+        - 站点构建（npm run build / site/）
+        - 测试或 lint
+        - GitHub Actions / Pages
+        - 文档（命令或说明跑不通）
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 实际发生了什么
+      description: 现象 + 完整报错（含前后几行日志）。只写「报错了」无法定位。
+      placeholder: |
+        执行 `npm run update` 后，最后几行输出：
+        ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 你期望发生什么
+      placeholder: 期望命令正常结束并在 site/data/meta.json 里更新 lastTradeDate。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 从干净状态开始，一步一步写。能稳定复现吗？
+      placeholder: |
+        1. git clone ... && cd etf-flow
+        2. cp .env.example .env（已填入自己的 token）
+        3. npm run update
+        4. ...
+    validations:
+      required: true
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js 版本（node -v）
+      placeholder: v22.12.0
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: 操作系统与浏览器
+      placeholder: macOS 14.5 / Chrome 126（前端问题请写上浏览器版本）
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: 运行方式
+      options:
+        - 本地 npm start
+        - 本地 npm run build 后静态打开
+        - GitHub Actions（Fork 后）
+        - 线上站点 li2396803.github.io/etf-flow
+        - 其他
+    validations:
+      required: true
+  - type: dropdown
+    id: token
+    attributes:
+      label: 是否配置了 TUSHARE_TOKEN
+      description: 只说「已配置 / 未配置」，**不要贴 token 本身**。
+      options:
+        - 已配置（.env 或 Actions Secret）
+        - 未配置
+        - 不确定
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志 / 截图
+      description: |
+        命令行输出、`.run/update.log` 尾部、浏览器控制台报错、Actions 运行日志片段都可以直接贴。
+        截图请拖进来。
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索过已有 Issue，没有重复
+          required: true
+        - label: 我已运行 `npm test` 与 `node scripts/lint.mjs`，并会在上面贴出失败项
+          required: true
+        - label: 这里没有包含任何 token、密钥或他人隐私信息
+          required: true

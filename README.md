@@ -11,23 +11,63 @@
 > 这里的代码（抓取 / 存储 / 校验 / API / 前端 / CI）是独立重写的；本站与原作者无隶属、无背书关系。
 > 喜欢这个看板请先去 B 站关注原作者。
 >
-> **免责声明｜不构成任何投资建议。** 数据来自上交所 / 深交所 / Tushare 等公开接口，可能延迟、缺失或出错；
+> **免责声明｜不构成任何投资建议。** 数据来自上交所公开接口与 Tushare Pro（深市经 Tushare），可能延迟、缺失或出错；
 > 「规模」「净流入」是按单位净值折算的估算值。仅供研究与技术学习，任何人据此决策风险自负。
 >
 > **在线站点** <https://li2396803.github.io/etf-flow/> ｜ 协议 **MIT** ｜ 仓库 <https://github.com/li2396803/etf-flow> ｜ 署名与溯源详见 [`NOTICE.md`](NOTICE.md)
 
-一句话：把「ETF 份额（资金流向）看板」搬到自己机器上 —— 每天从**上交所 / 深交所 / Tushare** 三处取 ETF 每日份额，落进本地 SQLite，重算 **86 个细分行业 / 10 个大类**的份额序列，生成本地静态站点，并提供本地 HTTP 服务随时打开看。
+一句话：把「ETF 份额（资金流向）看板」搬到自己机器上 —— 每天从**上交所 + Tushare** 两处取沪深 ETF 每日份额与净值，落进本地 SQLite，重算 **86 个细分行业 / 10 个大类**的份额序列，生成本地静态站点，并提供本地 HTTP 服务随时打开看。
 
 - 零第三方依赖（`dependencies` 为空），只要 Node.js（需要内置 `node:sqlite`）
 - 数据、库、站点、服务全在本机，不上传、不外传
 - 支持三种更新入口：本地 launchd 定时、GitHub Actions 定时、服务自检自动刷新
-- 三源交叉校验：官方披露（交易所）为基准，Tushare 作第二来源，分歧会落到 `data/quality.json`
+- 双口径交叉校验：沪市以交易所官方披露为基准、Tushare 作第二来源，分歧会落到 `data/quality.json`
 
 > 本项目是对公开看板的开源复刻，**与原站及其作者无隶属关系**（但明确鸣谢原作者）；数据仅供参考、**不构成任何投资建议**。详见文末「免责声明」与 [`NOTICE.md`](NOTICE.md)。
 
-![站点截图](docs/screenshot.png)
+![全市场总览](docs/screenshot.png)
 
-（截图来自本机 2026-11-21 实跑，1440×1000 @2x）
+![大类走势](docs/screenshot-cat.png)
+
+（截图来自本机 2026-11-21 实跑，1440 宽 @2x；上图为「全市场总览」，下图为「3.科技」大类视图）
+
+---
+
+## 界面功能
+
+一条时间轴贯穿全站：**区间一变，KPI、图表、表格、抽屉全部联动**，并写进 URL，复制链接即可分享同一视图。
+
+### 全市场总览
+- 四个核心 KPI：全市场份额 / 规模、区间份额变化、区间净流入（逐日净流入累加，口径见悬浮说明）。
+- 沪深两市 ETF 规模走势（沪 / 深 / 合计），可切「规模 ↔ 份额」；右侧是按基金类型的规模分布。
+- 10 大类区间表现卡片：涨跌幅、份额变化、区间走势迷你图，点一下进入该类。
+- 区间份额增加 / 减少 TOP 8，可排序、一键复制、导出 CSV。
+- 已收藏的自选会固定出现在总览底部。
+
+### 大类走势
+- 8 个固定区间（近 1 月 / 3 月 / 6 月 / 1 年 / 3 年 / 5 年 / 年初至今 / 全部）+ 自定义区间。
+- 四种指标：份额（亿份）、规模（亿元）、净流入（亿元/日，正红负绿）、变化率（相对区间起点或全历史）。
+- 1212 个交易日的手感：滚轮缩放、拖拽平移、双击复位、底部滑块；**框选一段区间**即同步全站。
+- 图例点击聚焦某个细分行业；hover 自动淡化其它线；端点标签跟随窗口末端、自动避让不重叠。
+- **对数坐标**一键切换：当各小类量级差 100 倍以上时（例如半导体 vs 消费电子），线性轴会把小系列压扁。
+- **对比模式**：任选 2 个小类，归一化到区间起点 = 100（净流入则比区间累计），一眼看出强弱分化。
+
+### 我的自选
+- 任意小类都能加星（导航、表格、搜索结果、详情抽屉都能点）。
+- 自选页给出合计份额 / 规模 / 区间变化，以及每个小类的迷你走势卡。
+- 只保存在本机 localStorage，不上传任何数据。
+
+### 搜索与明细
+- ⌘K / Ctrl+K 或 `/` 唤起命令面板：支持小类中文名、**拼音首字母模糊匹配**（`bdxt` → 半导体芯片）、ETF 代码或名称。
+- 上下键选择、Enter 打开、Esc 关闭。
+- 小类详情抽屉：区间表现（含 86 类中的排名）、自身走势小图、成分 ETF 表（代码/名称/市场/份额/变化/净值/规模/净流入/占本类比例，可排序）、两套 CSV 导出。
+
+### 其它
+- 深色 / 浅色 / 跟随系统三态主题，手动切换会记住。
+- 色盲友好配色（蓝涨橙跌）、减少动效开关。
+- 「全部 86 个小类」总表：搜索、只看净流入/净流出、按份额或金额口径、排序、CSV。
+- 数据质量面板：三源交叉校验的一致率、差异天数、逐日差异样例，可下载原始 JSON。
+- 移动端：底部 tab + 全屏抽屉，图表支持双指缩放，提示文案自动切换。
 
 ---
 
@@ -69,10 +109,10 @@ npm start        # → http://localhost:5188
 | 来源 | 接口 | 给的是什么 | 能回溯历史吗 | 本项目怎么用 |
 | --- | --- | --- | --- | --- |
 | **上交所** | `GET query.sse.com.cn/commonQuery.do`，`sqlId=COMMON_SSE_ZQPZ_ETFZL_XXPL_ETFGM_SEARCH_L`，参数 `STAT_DATE=YYYY-MM-DD`（字段 `TOT_VOL`，**万份**） | 该交易日**沪市全部 ETF** 的基金份额 | **能**，按日期回溯任意历史交易日；非交易日返回空（代码里当 `null` 跳过） | 主数据源：看板 773 只成分 ETF **全部是沪市代码**，日常近 15 日增量 + 可选全量回补都靠它 |
-| **深交所** | `GET www.szse.cn/api/report/ShowReport/data`，`CATALOGID=1105`（字段 `dqgm`，**万份**） | 深市基金列表的**当前规模** | **不能**，只有"最新交易日"这一份快照 | ① 用报告日当**更新锚点**（决定上交所回溯窗口的终点）② 落库（`src=szse`）备查；当前分类体系没有深市成分，所以它**不影响看板数值** |
+| ~~深交所~~ | 已弃用 | 官方 ShowReport 只有"最新交易日"快照、无历史 | 不能 | v3 起深市数据**统一由 Tushare 提供**（`fund_share` 可按 `ts_code` 回溯），代码中已无调用点 |
 | **Tushare Pro** | `fund_share`：`ts_code` 单只（配 `start_date`/`end_date`）或全市场（配 `trade_date`），字段 `fd_share`，**万份、4 位小数** | **沪深两市**每日份额 | **能**，可回溯（`fund_share` 一般能查到 5 年以上，具体受账号积分影响） | ① 深市历史的**唯一**可回溯来源 ② 沪市补缺 ③ 交叉校验的高精度参照 |
 
-上交所一次请求带 `pageHelp.pageSize=2000` 并自动翻页；深交所按返回的 `metadata.pagecount` 翻页。两个交易所都带了浏览器 UA 和 Referer（不加会被拒）。抓取频率很克制：并发 ≤ 6，每日一次增量，不要改成高频轮询。
+上交所一次请求带 `pageHelp.pageSize=2000` 并自动取回全量（带 UA 与 Referer，不加会被拒）。Tushare 侧有**全局令牌桶 + 单次/每日预算**（`TUSHARE_RPM=120`、`TUSHARE_MAX_CALLS_PER_RUN=800`、`TUSHARE_DAILY_BUDGET=4000`），日常增量只需 2 次调用（`fund_share`/`fund_nav` 各按交易日取全市场）。
 
 ### 2.2 口径与公式
 
@@ -90,7 +130,7 @@ npm start        # → http://localhost:5188
 
 ### 2.3 来源优先级
 
-`lib/db.mjs` 里 `src` 只有三个取值：`sse` / `szse` / `ts`。**同一 `code + date` 只保留一行**，写入时按优先级裁决：
+`lib/db.mjs` 里 `src` 有三个取值：`sse` / `szse` / `ts`（`szse` 为历史遗留，新数据不再产生）。**同一 `code + date` 只保留一行**，写入时按优先级裁决：
 
 | 来源 | 优先级 | 理由 |
 | --- | --- | --- |
@@ -105,7 +145,7 @@ npm start        # → http://localhost:5188
 
 ```
         上交所 commonQuery（逐日，可回溯）
-        深交所 ShowReport （仅最新交易日）
+        Tushare fund_nav  （按日取全市场净值）
         Tushare fund_share（逐只/逐日，可回溯）
                    │
                    │  lib/sources.mjs / lib/tushare.mjs（UA/Referer/重试/限并发）
@@ -121,7 +161,7 @@ npm start        # → http://localhost:5188
        ┌───────────┴────────────┐
        ▼                        ▼
  lib/payloads.mjs          scripts/reconcile.mjs
- 派生载荷（meta/charts/     三源交叉校验
+ 派生载荷（meta/charts/     双口径交叉校验
  tables/subs/index/quality）    │
        │                        ▼
        ▼                  data/quality.json
@@ -147,10 +187,10 @@ npm start        # → http://localhost:5188
 | 命令 | 干什么 | 联网 | 耗时 | 本次核对 |
 | --- | --- | --- | --- | --- |
 | `npm start` | 起本地服务（默认 5188；`PORT=8080 npm start` 换端口；加 `--no-refresh` 关掉自动刷新） | 按需* | 秒级启动 | ✅ 服务在跑（`/api/status` 可访问） |
-| `npm run update` | 增量更新：深交所快照 + 上交所近 15 日 + Tushare 当日 → 重算 → 构站 | ✅ | 本机最近一次记录 **13.9 s**（`data/lastrun.json` 的 `ms`） | ⚠️ 未由本文档复跑（记录来自本机既有运行） |
+| `npm run update` | 增量更新：Tushare 当日全市场（份额+净值） + 上交所近 15 日 → 重算 → 构站 | ✅ | 本机最近一次记录 **13.9 s**（`data/lastrun.json` 的 `ms`） | ⚠️ 未由本文档复跑（记录来自本机既有运行） |
 | `npm run build` | 只用本地 `data/etf.db` 重建 `site/`，不碰网络。库为空会**退出码 1** 并提示先回补 | ❌ | 秒级 | ⚠️ 未复跑（会改写 `site/`，属他人工作区） |
 | `npm run backfill` | 全量回补历史。参数：`--from 2021-11-22` `--to today` `--source ts\|sse\|both` `--limit N` `--dry-run` `--concurrency 6` `--no-resume` `--help` | ✅ | 取决于区间与积分限速（未计时） | ⚠️ 未复跑 |
-| `npm run reconcile` | 三源交叉校验，写 `data/quality.json` + `reconcile` 表。参数：`--days 30` `--date YYYY-MM-DD` `--tol 1` `--quiet` `--no-write` `--out file`；退出码 0/1/2 | ✅（现抓 Tushare） | 未计时 | ✅ `--help` 实测（输出即上表参数） |
+| `npm run reconcile` | 双口径交叉校验（沪市交易所 vs Tushare），写 `data/quality.json` + `reconcile` 表。参数：`--days 30` `--date YYYY-MM-DD` `--tol 1` `--quiet` `--no-write` `--out file`；退出码 0/1/2 | ✅（现抓 Tushare） | 未计时 | ✅ `--help` 实测（输出即上表参数） |
 | `npm test` | 数据校验测试（`node tests/runner.mjs`，用例在 `tests/cases/*.mjs`：口径、DB 优先级、校验规则、序列连续性、数值范围、交叉校验） | ❌ | 约 0.8 s | ✅ 实测通过：`10 passed, 0 failed, 0 skipped（760ms）` |
 | `npm run verify:origin` | 回归校验：用自己抓的数复算，与原站已发布序列逐点对比（参数 `--json out.json`，默认写 `data/validation-origin.json`） | ❌ | 未计时 | ⚠️ 脚本存在，未复跑 |
 | `bin/start.sh` / `bin/stop.sh` / `bin/status.sh` | 后台起服务 / 优雅停 / 一屏状态（含库规模） | ❌ | — | ✅ `status.sh` 实测 |
@@ -170,7 +210,7 @@ npm start        # → http://localhost:5188
 
 | 工作流 | 触发 | 干什么 |
 | --- | --- | --- |
-| `daily.yml` | 每工作日 UTC 08:30（≈ 北京 16:30）+ 手动（可填 `lookback`） | 恢复 SQLite 缓存 → 三源增量更新 → `npm test` → 把 `site/` 和 `data/*.json` 提交回仓库 → 保存缓存 |
+| `daily.yml` | 每工作日 UTC 08:30（≈ 北京 16:30）+ 手动（可填 `lookback`） | 校验 `TUSHARE_TOKEN`（fork 未配置直接失败）→ 恢复 SQLite 缓存 → 增量更新 → `npm test` → 提交数据快照 → 部署 Pages |
 | `ci.yml` | push 任意分支、PR | `npm test` → 离线 `npm run build`（有库才跑）→ 校验 `site/data/meta.json` 的 `lastTradeDate` 非空 → `site/` 与重建结果不一致只告警 |
 | `pages.yml` | **仅手动** | 把 `site/` 发布到 GitHub Pages（默认不启用，见下） |
 
@@ -216,7 +256,7 @@ launchd 的默认 PATH 只有 `/usr/bin:/bin:...`，找不到 Homebrew/nvm 的 n
 
 > **关于每日提交**：只要 `data/quality.json`（含生成时间戳）或 `data/series.json`（数据变了）有变化，`daily.yml` 就会产生一次 `chore(data): 自动更新站点数据` 提交 —— 等于给数据留一条**每日快照 + 校验记录**，周末不跑，一年约 250 条，属于预期行为，不是噪音。
 
-## 6. 数据校验（三源交叉校验）
+## 6. 数据校验（双口径交叉校验）
 
 ```bash
 npm run reconcile                      # 最近 30 个交易日，容差 1%
@@ -227,7 +267,7 @@ npm run reconcile -- --no-write        # 只看结果，不写库/不写文件
 
 它做三件事：
 
-1. **逐只比**：把同一交易日「交易所侧（`src=sse|szse`）」与「Tushare 侧（现抓 `shareOnDate`，拿不到才用库里的 `ts` 行）」的同 code 数值对比，按相对差分档：完全一致 / ≤0.1% / ≤1% / >1%。
+1. **逐只比**：把同一交易日「交易所侧（`src=sse`，`szse` 为历史遗留）」与「Tushare 侧（现抓 `shareOnDate`，拿不到才用库里的 `ts` 行）」的同 code 数值对比，按相对差分档：完全一致 / ≤0.1% / ≤1% / >1%。
 2. **小类层再比**：分别用两侧份额重算 86 个小类，但**只用两侧都有值的公共成分**（`covered`），避免把"覆盖率差异"误判成"数值分歧"；同时比较方向（涨/跌）并指出哪边偏离。
 3. **落盘**：先清空 `reconcile` 表（最多留 5000 行明细）再写入，并写 `data/quality.json`。
 
@@ -298,14 +338,14 @@ etf-flow/
 │   ├── update.mjs          增量更新（导出 update({lookback})，CLI 默认 15 天）
 │   ├── build.mjs           离线重建 site/（库为空则退出码 1）
 │   ├── backfill.mjs        全量回补（--from/--to/--source/--limit/--dry-run/--concurrency/--no-resume）
-│   ├── reconcile.mjs       三源交叉校验 → data/quality.json + reconcile 表
+│   ├── reconcile.mjs       双口径交叉校验 → data/quality.json + reconcile 表
 │   └── verify-origin.mjs   与原站已发布序列的回归对比（npm run verify:origin）
 ├── server/app.mjs          静态托管 + /api/meta|charts|tables|subs|index|quality|status|refresh
 ├── web/                    前端源码（index.html / app.js / styles.css），构站时拷到 site/
 ├── site/                   产物：index.html、app.js、styles.css、echarts.min.js（+ data/*.json，已 gitignore）
 ├── data/
 │   ├── etf.db              SQLite 本地缓存（gitignore，可重建）
-│   ├── quality.json        三源校验结果
+│   ├── quality.json        交叉校验结果
 │   ├── lastrun.json        最近一次更新标记（gitignore，服务用它判断是否过期）
 │   ├── validation-origin.json  verify:origin 的对比结果
 │   ├── series.json         v1 遗留的旧序列（主流程已不再读写）
@@ -321,7 +361,7 @@ etf-flow/
 
 ## 8. 已知限制（务必读）
 
-1. **深交所没有历史接口。** 只有"最新交易日"快照，历史只能从你开始跑的那天起累积。本项目目前把它当作**更新锚点 + 备查数据**：分类体系的 773 只成分全是沪市代码（`5xxxxx`），所以深市数据目前**不参与看板数值计算**。真要看深市，得先扩 `lib/taxonomy.mjs` 的成分表。
+1. **深市数据来自 Tushare。** 深交所官方接口只有"最新交易日"快照、无历史，v3 起已不再调用；深市全部由 Tushare `fund_share`/`fund_nav` 提供。**注意**：86 个细分行业的 773 只成分目前全是沪市代码（`5xxxxx`），所以深市数据只体现在「全市场总览」与 ETF 明细里，不参与细分行业数值 —— 要把它纳入分类，需要扩 `lib/taxonomy.mjs` 的成分表。
 2. **Tushare 需要 token 和积分权限。** `fund_share` 对积分有要求，积分不够会返回权限类错误（代码会按频率限制退避重试 4 次后放弃）。没有 token 时 `npm run update` 仍能跑，但深市历史、交叉校验和 4 位小数精度都用不上。
 3. **SQLite 库不进 git，但新克隆能直接出图。** `data/etf.db` 是本地缓存（可重建）。新克隆没有它时，`npm run build` 会**自动用仓库自带的 `data/series.json` 引导**出一个可看的站点（份额曲线齐全；成分 ETF 明细、规模/净流入需要真实数据库，此时为空）。要补齐就联网跑 `npm run update`（增量）或 `npm run backfill`（全量回补，约 20 分钟）。CI 没有 DB 缓存时同理走引导路径。
 4. **`site/data/` 不入库。** `.gitignore` 里有 `site/data/` 与 `site/charts/`，仓库自带的前端产物**没有数据文件**：直接拿去静态托管是打不开图表的，必须先跑一次 `npm run build`（或用 `daily.yml` 的缓存构建）。同理 `daily.yml` 的自动提交只在 `site/index.html` 等前端文件变化时才产生提交，见 §5.1。
@@ -414,3 +454,52 @@ gh api user                             # 看 plan 字段（本机实测返回 n
 | `bin/install-autostart.sh --dry-run` | ⚠️ 未在本轮复跑（会写临时目录但不动系统），历史可用性见 v1 README |
 | `npm run update` / `backfill` / `build` / `reconcile`（实跑） | ⚠️ 未复跑：这些会改写 `data/`、`site/`（协作中），耗时与行为按源码与既有 `data/lastrun.json` 记录描述 |
 | GitHub Pages 可用性 | ✅ 实测 404 / `plan = null`，结论见 §9 |
+
+---
+
+## 参与贡献
+
+一句话：欢迎 Issue 与 Pull Request —— 数据口径修正、字典/文档纠错、前端可用性、工作流改进都很有价值；
+不引入运行时依赖、不改抓取频率上限、不手改 `data/series.json` 的数值。
+
+- 怎么提、代码风格、提交信息规范（Conventional Commits）、**数据类 PR 的特殊要求**：见 [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- 参与即代表遵守的行为准则：[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
+- 漏洞与密钥泄露的私密报告流程（**不要开公开 Issue**）：[`SECURITY.md`](SECURITY.md)
+- 提问前先看文档与常见问题、按模板提供环境与复现步骤：[`SUPPORT.md`](SUPPORT.md)
+- Issue 模板：Bug 报告 / 功能建议 / 数据问题（在仓库「New issue」里直接选）；PR 模板会在提交时自动出现。
+
+---
+
+## Fork 与自建部署
+
+最完整的步骤见 **[`docs/FORK.md`](docs/FORK.md)**（含每一步的判断依据与 8 个常见坑），这里只给 5 步速览：
+
+1. **Fork** 本仓库到自己账号；
+2. 到 <https://tushare.pro> 注册，复制你的 **API token**；
+3. 你的 fork → **Settings → Secrets and variables → Actions → New repository secret**，
+   Name 填 `TUSHARE_TOKEN`，Value 粘贴 token；
+4. 打开 **Actions** 标签页，启用工作流（fork 默认关闭）；
+5. **手动跑一次 `Daily data update`**；确认通过后，去 **Settings → Pages → Source = GitHub Actions** 打开站点。
+
+> **必须自填 `TUSHARE_TOKEN`。** 工作流第一步就是「检查 TUSHARE_TOKEN」：缺密钥会**直接失败并提示配置路径**，
+> 而不是静默降级。本地没配 `.env` 时 `npm run update` 仍能跑，但只有沪市交易所口径 —— 深市数据与金额口径
+> （按净值折算的规模/净流入）都依赖 Tushare。
+
+---
+
+## 项目状态
+
+| 项 | 状态 |
+| --- | --- |
+| 版本 | **v3.0.0（进行中）** —— 产品化重构，变更见 [`CHANGELOG.md`](CHANGELOG.md) |
+| 测试 | `npm test`：10 个数据校验用例；`node scripts/lint.mjs`：7 项仓库自检（语法 / 密钥 / 占位符 / 产物边界 / 数据底座） |
+| 数据规模 | **1212 个交易日**（2021-11-22 ~ 2026-11-20）/ **86 个细分行业** / **773 只 ETF 成分**（9 个编号大类） |
+| 全市场总览 | 另统计沪深**全部场内 ETF（约 1953 只）** 的份额与规模，与上面的 773 只分类成分是两套口径 |
+| 公网站点 | <https://li2396803.github.io/etf-flow/>（每个工作日约 16:30 自动更新并发布） |
+| 数据最后更新 | 见站点页脚「数据截至 / 交易日」，或 `data/quality.json` 的 `generatedAt` |
+| 运行时 | Node.js **≥ 22.5**（内置 `node:sqlite`），零运行时依赖 |
+| 许可 | **MIT**（见 [`LICENSE`](LICENSE)；溯源与署名见 [`NOTICE.md`](NOTICE.md)） |
+
+> 时效说明：第 1–11 节部分表述写于 v2 时期（当时数据源为「双源」、Pages 默认不启用）。v3 起数据源为**两源（上交所 + Tushare）**
+> —— 上交所（沪市官方口径）+ Tushare Pro（深市唯一来源、沪市第二参照与净值）—— 深交所官方接口因只有最新
+> 快照、无法回溯，已不再调用；Pages 也已启用。以本节的描述与 [`docs/`](docs/) 为准。

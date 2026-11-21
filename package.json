@@ -14,7 +14,8 @@
     "backfill": "node scripts/backfill.mjs",
     "reconcile": "node scripts/reconcile.mjs",
     "test": "node tests/runner.mjs",
-    "verify:origin": "node scripts/verify-origin.mjs"
+    "verify:origin": "node scripts/verify-origin.mjs",
+    "lint": "node scripts/lint.mjs"
   },
   "dependencies": {},
   "devDependencies": {}

@@ -65,6 +65,9 @@ jobs:
             echo "::notice::没有 data/etf.db，跳过离线重建（npm run build 需要库里有数据）"
           fi
 
+      - name: 仓库自检
+        run: node scripts/lint.mjs
+
       - name: 跑测试
         run: npm test
 

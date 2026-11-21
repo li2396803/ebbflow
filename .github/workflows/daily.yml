@@ -61,6 +61,18 @@ jobs:
           # 提前确认内置 SQLite 可用，避免跑了几分钟才在写库时炸
           node -e 'const s = require("node:sqlite"); console.log("node:sqlite 可用:", Object.keys(s).join(", "))'
 
+      - name: 检查 TUSHARE_TOKEN
+        shell: bash
+        run: |
+          if [ -z "${TUSHARE_TOKEN:-}" ]; then
+            echo "::error title=缺少 TUSHARE_TOKEN::这是 fork 出来的仓库，需要你自己配置 Tushare 密钥。"
+            echo "::error::步骤：① https://tushare.pro 注册并复制 token ② 本仓库 Settings → Secrets and variables → Actions → New repository secret ③ Name 填 TUSHARE_TOKEN，Value 粘贴 token ④ 重新运行本工作流。详见 docs/FORK.md"
+            exit 1
+          fi
+          echo "TUSHARE_TOKEN 已配置（长度 ${#TUSHARE_TOKEN}）"
+        env:
+          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+
       - name: 安装依赖
         run: |
           # 本项目 dependencies / devDependencies 均为空：有 lockfile 就 npm ci，没有就用 install 且不生成 lockfile
@@ -70,14 +82,7 @@ jobs:
             npm install --no-audit --no-fund --package-lock=false
           fi
 
-      - name: 检查 TUSHARE_TOKEN
-        if: env.TUSHARE_TOKEN == ''
-        run: |
-          echo "::warning::没有注入 TUSHARE_TOKEN secret —— 深市历史与交叉校验会缺失，本次仅靠交易所数据更新"
-
-      # SQLite 是二进制文件，进不了 git；用 cache 在两次 run 之间传递。
-      # key 里带 run_id 保证每次都是新 key（cache 不可覆盖），restore-keys 前缀回退到最近一次。
-      - name: 恢复 SQLite 缓存
+            - name: 恢复 SQLite 缓存
         id: db-restore
         uses: actions/cache/restore@v4
         with:
@@ -98,6 +103,11 @@ jobs:
       # npm run update 的 CLI 入口固定用默认 15 天，读不到 workflow_dispatch 的 lookback 输入。
       # 失败（含被锁跳过）必须让 job 失败，绝不能"什么都没更新"却继续往下提交。
       - name: 增量更新数据
+        env:
+          # 冷启动（无 DB 缓存）首跑要回补 5 年历史，放宽到两个阶段都够用；日常增量只用 ~15 次
+          TUSHARE_RPM: "150"
+          TUSHARE_MAX_CALLS_PER_RUN: "2600"
+          TUSHARE_DAILY_BUDGET: "6000"
         run: |
           set -o pipefail
           node --input-type=module -e '

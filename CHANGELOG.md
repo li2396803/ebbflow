@@ -2,6 +2,50 @@
 
 本文件记录对仓库结构、数据口径、命令有影响的变化。日常数据更新（`chore(data): 自动更新站点数据`）不记录。
 
+## v3.0.0 — 产品化重构（进行中）
+
+状态：数据层与工程化已完成，前端重构在收尾；发布前会把本节整理成正式条目。
+
+### 数据层
+
+- **深市数据改由 Tushare 同步**：深交所官方接口只有「最新交易日」一份快照、无法回溯历史，
+  已**移除对深交所接口的调用**（`update` 不再使用 `fetchSzseLatest`），深市份额与净值统一走 Tushare `fund_share` / `fund_nav`。
+  数据源从「三源」收敛为**两源**：上交所（沪市官方口径）+ Tushare（深市唯一来源、沪市第二参照）。
+  交叉校验相应从「三源」改为**沪市两口径比对**（交易所 vs Tushare），`data/quality.json` 的字段结构不变。
+- **抓取限流与预算**（`lib/tushare.mjs`）：全局令牌桶 `TUSHARE_RPM`（默认 120 次/分钟，跨并发共享）、
+  单次运行上限 `TUSHARE_MAX_CALLS_PER_RUN`（默认 800）、每日预算 `TUSHARE_DAILY_BUDGET`（默认 4000，
+  计数持久化在 SQLite `meta` 的 `ts:calls:<日期>`）；超限**明确报错并停止**，重跑可断点续抓。
+- **数据覆盖扩大**：回补范围从分类体系的 773 只扩大到**全部场内 ETF（沪深，约 1953 只）**；
+  新增 `market` / `market_type` 两张聚合表与对应载荷 `market.json`（沪深两市合计 + 按基金类型）。
+  分类体系（86 个小类 / 773 只沪市成分）的看板数值口径不变。
+- **金额口径落库**：`series` 新增 `scale`（规模，亿元 = Σ 份额 × 当日净值）与 `flow`（净流入，亿元 = Σ Δ份额 × 当日净值）；
+  净值来自 Tushare `fund_nav`，覆盖率约 96%，缺净值的成分不计入金额合计。
+- **库结构演进式迁移**：`ALTER TABLE ... ADD COLUMN` / `CREATE TABLE IF NOT EXISTS`，打开旧库自动升级，不需要清库。
+- **fork 安全**：`daily.yml` 第一步改为「检查 TUSHARE_TOKEN」，缺失时用 `::error::` 明确指出「fork 需自填密钥」
+  并让 job 失败（不再静默降级）。
+
+### 前端
+
+- **完全重构**：多指标切换（份额 / 规模 / 净流入）、自选列表、图表拖动框选区间、移动端布局与交互重做。
+- 取数仍为「静态优先、API 兜底」，同一份 `site/` 既能静态托管也能本地起服务。
+
+### 开源工程化
+
+- 新增社区文档：[`CONTRIBUTING.md`](CONTRIBUTING.md)、[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)、
+  [`SECURITY.md`](SECURITY.md)、[`SUPPORT.md`](SUPPORT.md)。
+- 新增 [`docs/`](docs/)：`ARCHITECTURE.md`（数据流与设计取舍）、`DATA.md`（口径与字段字典）、
+  `FORK.md`（fork 后 6 步自建部署）、`DEVELOPING.md`（本地开发与改造指引）。
+- 新增 GitHub 协作模板：Issue 模板（Bug / 功能 / **数据问题**）、PR 模板、`config.yml`、`FUNDING.yml`（默认不启用）。
+- 新增零依赖自检 [`scripts/lint.mjs`](scripts/lint.mjs)：裸 `debugger`、明文 token、`.mjs` 语法、
+  前端占位符、`site/` 入库白名单、`data/series.json` 交易日数。
+- 新增 `.editorconfig`、`.nvmrc`（`22`）。
+
+### 兼容性
+
+- 看板口径、`data/series.json` 的结构（`dates` + `subs`）不变。
+- `npm` 命令入口不变；`package.json` 的 `engines.node` 已是 `>=22.5`，并新增 `lint` 脚本。
+- 旧库中残留的 `src='szse'` 行不再产生，但保留读取兼容，不影响任何展示数值。
+
 ## v2.1.0 — 开源、署名与去水印
 
 ### 变更

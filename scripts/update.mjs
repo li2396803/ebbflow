@@ -6,10 +6,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { openDb, putShares, recordRun, metaSet, metaGet, dbStats, tradingDates } from "../lib/db.mjs";
 import { SUB, CATS } from "../lib/taxonomy.mjs";
-import { fetchSseDay, fetchSzseLatest, candidateDates, mapLimit } from "../lib/sources.mjs";
-import { shareOnDate, hasToken } from "../lib/tushare.mjs";
-import { rebuild, refreshFunds, exportSeriesJson, ingestExchangeRange, ingestTushareRange } from "../lib/pipeline.mjs";
-import { ALL_CODES } from "../lib/taxonomy.mjs";
+import { fetchSseDay, candidateDates, mapLimit } from "../lib/sources.mjs";
+import { shareOnDate, navOnDate, hasToken, bindBudget, callStats } from "../lib/tushare.mjs";
+import { rebuild, refreshFunds, exportSeriesJson, ingestExchangeRange, ingestTushareRange, ingestTushareNav, etfCodes } from "../lib/pipeline.mjs";
+import { putNav } from "../lib/db.mjs";
 import { buildSite } from "../lib/build/site.mjs";
 
 const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname));
@@ -43,8 +43,11 @@ async function ensureHistory(db, warn, quiet) {
   const sse = await ingestExchangeRange(db, { from, to, onProgress: (n) => { if (!quiet && n % 30000 < 1000) process.stdout.write("."); } });
   if (!quiet) log(`\n上交所回补：${sse.ok} 个交易日 / 写入 ${sse.written} 行`);
   if (hasToken()) {
-    const ts = await ingestTushareRange(db, { from, to, codes: ALL_CODES, resume: true });
-    if (!quiet) log(`Tushare 回补：${ts.codes} 只 / 写入 ${ts.written} 行`);
+    const codes = etfCodes(db);
+    const ts = await ingestTushareRange(db, { from, to, codes, resume: true });
+    if (!quiet) log(`Tushare 份额回补：${ts.codes} 只 / 写入 ${ts.written} 行`);
+    const nv = await ingestTushareNav(db, { from, to, codes, resume: true });
+    if (!quiet) log(`Tushare 净值回补：${nv.codes} 只 / 写入 ${nv.rows} 行`);
   }
   return { sse, have };
 }
@@ -52,6 +55,7 @@ async function ensureHistory(db, warn, quiet) {
 async function run({ quiet = false, lookback = 15 } = {}) {
   const t0 = Date.now();
   const db = openDb();
+  bindBudget(db);
   const warn = [];
 
   try {
@@ -60,19 +64,31 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     warn.push(`历史自动回补失败：${String(e.message || e).slice(0, 80)}`);
   }
 
-  // 1) 深交所：仅最新交易日快照（官方口径）
+  // 1) Tushare：全市场（沪深）最近交易日快照 —— 深市唯一来源，沪市用于补齐交易所缺口
   let anchor = null;
-  try {
-    const sz = await fetchSzseLatest();
-    anchor = sz.date;
-    const entries = Object.fromEntries(Object.entries(sz.shares).map(([c, w]) => [c, { wan: w, src: "szse" }]));
-    putShares(db, sz.date, entries);
-    if (!quiet) log(`深交所 ${sz.date}：${Object.keys(sz.shares).length} 只`);
-  } catch (e) {
-    warn.push(`深交所抓取失败：${String(e.message || e).slice(0, 80)}`);
+  if (hasToken()) {
+    try {
+      const probe = new Date();
+      for (let back = 0; back < 10 && !anchor; back++) {
+        const d = new Date(probe.getTime() - back * 86400000).toISOString().slice(0, 10);
+        if ([0, 6].includes(new Date(d + "T00:00:00Z").getUTCDay())) continue;
+        const m = await shareOnDate(d);
+        if (m.size) {
+          anchor = d;
+          putShares(db, d, Object.fromEntries([...m].map(([c, w]) => [c, { wan: w, src: "ts" }])));
+          const navs = await navOnDate(d);
+          if (navs.size) putNav(db, [...navs].map(([c, v]) => [c, d, v]));
+          if (!quiet) log(`Tushare ${d}：份额 ${m.size} 只 / 净值 ${navs.size} 只（沪深全市场）`);
+        }
+      }
+    } catch (e) {
+      warn.push(`Tushare 抓取失败：${String(e.message || e).slice(0, 90)}`);
+    }
+  } else {
+    warn.push("未配置 TUSHARE_TOKEN：深市数据不可用，仅能更新沪市");
   }
 
-  // 2) 上交所：最近 lookback 天逐日（非交易日返回空，自然跳过）
+  // 2) 上交所：最近 lookback 天逐日（沪市官方口径，优先于 Tushare）
   const end = anchor ?? new Date().toISOString().slice(0, 10);
   const from = new Date(new Date(end + "T00:00:00Z").getTime() - lookback * 86400000).toISOString().slice(0, 10);
   const days = candidateDates(from, end);
@@ -89,20 +105,8 @@ async function run({ quiet = false, lookback = 15 } = {}) {
   });
   if (!quiet) log(`上交所补到 ${sseDays} 个交易日`);
 
-  // 3) Tushare：全市场当日（补交易所缺口；也是深市历史来源）
-  if (hasToken()) {
-    try {
-      const m = await shareOnDate(end);
-      putShares(db, end, Object.fromEntries([...m].map(([c, w]) => [c, { wan: w, src: "ts" }])));
-      if (!quiet) log(`Tushare ${end}：${m.size} 只`);
-    } catch (e) {
-      warn.push(`Tushare 抓取失败：${String(e.message || e).slice(0, 80)}`);
-    }
-  } else {
-    warn.push("未配置 TUSHARE_TOKEN，深市历史将不可用");
-  }
 
-  // 4) 基金名录（每周一次）
+  // 3) 基金名录（每周一次）
   const lastFunds = metaGet(db, "fundsAt", null);
   if (!lastFunds || Date.now() - new Date(lastFunds).getTime() > 7 * 86400000) {
     try {
@@ -113,12 +117,12 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     }
   }
 
-  // 5) 重算 + 构站
+  // 4) 重算 + 构站
   const rc = rebuild(db);
   const info = buildSite(db, { warnings: warn });
   exportSeriesJson(db, path.join(ROOT, "data", "series.json"));
   metaSet(db, "updatedAt", new Date().toISOString());
-  const stats = { ...dbStats(db), seriesRows: rc.seriesRows, site: info, ms: Date.now() - t0, warnings: warn };
+  const stats = { ...dbStats(db), seriesRows: rc.seriesRows, marketRows: rc.marketRows, site: info, ms: Date.now() - t0, tushare: callStats(), warnings: warn };
   recordRun(db, { at: new Date().toISOString(), kind: "update", ok: true, stats });
   fs.writeFileSync(
     path.join(ROOT, "data", "lastrun.json"),

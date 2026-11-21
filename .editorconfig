@@ -1,0 +1,38 @@
+# https://editorconfig.org
+# 统一换行/缩进/编码，避免跨平台 diff 噪音。
+# 与 .gitattributes（统一 LF）配合使用；冲突时以 .gitattributes 为准。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Markdown 里行尾两个空格是换行语法，不能裁掉
+[*.md]
+trim_trailing_whitespace = false
+
+# YAML（工作流、Issue 模板）严格 2 空格
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+# Shell 脚本沿用 2 空格（本仓库 bin/*.sh 的既有风格）
+[*.sh]
+indent_style = space
+indent_size = 2
+
+# 生成物 / 第三方库不参与格式化
+[site/echarts.min.js]
+insert_final_newline = false
+trim_trailing_whitespace = false
+
+[*.{png,jpg,jpeg,gif,ico,db,woff,woff2}]
+insert_final_newline = false
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab

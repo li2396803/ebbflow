@@ -3,7 +3,8 @@
 //   node scripts/backfill.mjs [--from 2021-11-22] [--to today] [--source ts|sse|both]
 //                             [--limit N] [--dry-run] [--concurrency 6] [--no-resume]
 //
-//   --source ts   : 按 ALL_CODES 逐只抓 Tushare 5 年份额（4 位小数），src='ts'
+//   --source ts   : 按「全部场内 ETF」（约 1953 只，沪深）逐只抓 Tushare 5 年份额（4 位小数），src='ts'
+//   --with-nav    : 同时补全单位净值（金额口径「规模/净流入」依赖）
 //   --source sse  : 按候选交易日逐日抓上交所快照（官方口径），src='sse'
 //   --source both : 先 sse 再 ts（交易所优先级更高，先写 ts 也能被 sse 覆盖）
 //
@@ -12,7 +13,8 @@
 //   · sse：某日已有 src='sse' 行则跳过
 // 抓取克制：并发 ≤6（源模块自带重试），按天事务写入，只写有限正数，失败不落脏数据。
 import { openDb, putShares, allDates, dbStats, metaSet, metaGet, recordRun } from "../lib/db.mjs";
-import { ALL_CODES } from "../lib/taxonomy.mjs";
+import { etfCodes, ingestTushareNav } from "../lib/pipeline.mjs";
+import { bindBudget, callStats } from "../lib/tushare.mjs";
 import { fetchSseDay, candidateDates, mapLimit as mapLimitSse } from "../lib/sources.mjs";
 import { shareHistory, mapLimit as mapLimitTs } from "../lib/tushare.mjs";
 import { coverageReport, coverageLine, validateSeries } from "../lib/validate.mjs";
@@ -78,13 +80,14 @@ export async function backfillTushare(db, { from, to, limit = 0, dryRun = false,
     return (countTs.get(code, from, to)?.n ?? 0) >= Math.floor(totalDates * 0.9);
   };
 
-  const todo = ALL_CODES.filter((c) => !isCovered(c));
+  const codes = (typeof etfCodes === "function" ? etfCodes(db) : []).length ? etfCodes(db) : [];
+  const todo = codes.filter((c) => !isCovered(c));
   const picked = limit ? todo.slice(0, limit) : todo;
   const stats = {
     from,
     to,
-    codes: ALL_CODES.length,
-    already: ALL_CODES.length - todo.length,
+    codes: codes.length,
+    already: codes.length - todo.length,
     todo: todo.length,
     picked: picked.length,
     written: 0,
@@ -94,7 +97,7 @@ export async function backfillTushare(db, { from, to, limit = 0, dryRun = false,
     errors: [],
   };
   if (!quiet) {
-    log(`[ts] 区间 ${from} ~ ${to}（库内 ${totalDates} 个交易日）｜${ALL_CODES.length} 只基金：已完成 ${stats.already}，待补 ${stats.todo}${limit ? `，本次限 ${stats.picked}` : ""}`);
+    log(`[ts] 区间 ${from} ~ ${to}（库内 ${totalDates} 个交易日）｜${codes.length} 只基金：已完成 ${stats.already}，待补 ${stats.todo}${limit ? `，本次限 ${stats.picked}` : ""}`);
   }
   if (dryRun) {
     if (!quiet) log(`[ts] dry-run：计划 ${Math.ceil(picked.length / BATCH)} 批 × 并发 ${concurrency}，不抓取、不写库`);
@@ -234,6 +237,7 @@ export function report(db, { quiet = false } = {}) {
 
 export async function backfill(args) {
   const db = openDb();
+bindBudget(db);
   const started = Date.now();
   const all = {};
   let ok = true;
