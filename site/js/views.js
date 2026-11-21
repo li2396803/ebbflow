@@ -285,12 +285,14 @@ function renderMarketBlock(app) {
   if (!mkt) {
     if (loading) loading.hidden = true;
     const host = document.getElementById("mktWrap");
-    if (host) {
-      host.innerHTML = `<div class="state state--sm" style="min-height:220px">
-        <div class="state-ico" aria-hidden="true"><svg width="18" height="18"><use href="#i-chart"/></svg></div>
+    if (host && !host.querySelector(".chart-empty")) {
+      // 用覆盖层而不是替换 innerHTML：保留 canvas，切回有数据的口径时可直接复用实例
+      const div = document.createElement("div");
+      div.className = "chart-empty";
+      div.innerHTML = `<div class="state"><div class="state-ico" aria-hidden="true"><svg width="18" height="18"><use href="#i-chart"/></svg></div>
         <p class="state-title">市场总览数据未提供</p>
-        <p class="state-desc">当前数据包没有 market.json（全市场沪深拆分）。其余功能不受影响，可与数据管线确认后再试。</p>
-      </div>`;
+        <p class="state-desc">当前数据包没有 market.json（全市场沪深拆分）。其余功能不受影响，可与数据管线确认后再试。</p></div>`;
+      host.append(div);
     }
     if (legend) legend.hidden = true;
     document.getElementById("typeBars")?.replaceChildren();
@@ -298,6 +300,7 @@ function renderMarketBlock(app) {
     if (te) te.hidden = false;
     return;
   }
+  document.getElementById("mktWrap")?.querySelector(".chart-empty")?.remove();
   if (legend) legend.hidden = false;
   const ms = marketRangeStats(mkt, state.rangeInfo);
   if (!ms) return;
@@ -461,7 +464,8 @@ export function renderOverviewWatch(app) {
   const card = document.getElementById("ovWatchCard");
   const grid = document.getElementById("ovWatchGrid");
   if (!card || !grid) return;
-  if (!state.watch.length) {
+  const names = state.watch.filter((n) => !app.subs || app.subs[n]);
+  if (!names.length) {
     card.hidden = true;
     return;
   }
@@ -479,7 +483,7 @@ export function renderOverviewWatch(app) {
       .join("");
     return;
   }
-  grid.innerHTML = state.watch.slice(0, 3).map((n) => watchCardHTML(app, n)).join("");
+  grid.innerHTML = names.slice(0, 3).map((n) => watchCardHTML(app, n)).join("");
 }
 
 /* ============================ 自选 ============================ */
@@ -518,8 +522,14 @@ export function renderWatch(app) {
   const kpis = document.getElementById("watchKpis");
   const sub = document.getElementById("watchSub");
   if (!body) return;
-  if (sub) sub.textContent = `${state.watch.length} 个小类 · ${rangeText(app)} · 保存在本地浏览器`;
-  if (state.watch.length && !app.subsReady) {
+  const watchNames = state.watch.filter((n) => !app.subs || app.subs[n]);
+  const missing = state.watch.length - watchNames.length;
+  if (sub) {
+    sub.textContent = `${watchNames.length} 个小类 · ${rangeText(app)} · 保存在本地浏览器${
+      missing > 0 ? ` · 另有 ${missing} 个不在当前分类口径下` : ""
+    }`;
+  }
+  if (watchNames.length && !app.subsReady) {
     if (kpis) kpis.innerHTML = Array.from({ length: 4 }).map(() => `<div class="kpi" aria-hidden="true"><div class="sk sk-line" style="width:70px"></div><div class="sk" style="height:26px;width:110px;margin:8px 0"></div><div class="sk sk-line" style="width:120px"></div></div>`).join("");
     body.innerHTML = `<div class="watchgrid">${state.watch
       .map(
@@ -528,7 +538,7 @@ export function renderWatch(app) {
       .join("")}</div>`;
     return;
   }
-  if (!state.watch.length) {
+  if (!watchNames.length) {
     if (kpis) kpis.innerHTML = "";
     body.innerHTML = `<div class="card"><div class="card-body">
       <div class="state" style="padding:var(--sp-9) var(--sp-5)">
@@ -543,7 +553,7 @@ export function renderWatch(app) {
     </div></div>`;
     return;
   }
-  const stats = state.watch.map((n) => app.stats?.byName?.get(n)).filter(Boolean);
+  const stats = watchNames.map((n) => app.stats?.byName?.get(n)).filter(Boolean);
   const sumShares = stats.reduce((s, x) => s + (x.last || 0), 0);
   const sumScale = stats.reduce((s, x) => s + (x.scale || 0), 0);
   const flow = stats.reduce((s, x) => s + (app.flowOf ? app.flowOf(x.name, x) : flowEstimate(x)), 0);
@@ -564,7 +574,12 @@ export function renderWatch(app) {
       ),
     ].join("");
   }
-  body.innerHTML = `<div class="watchgrid">${state.watch.map((n) => watchCardHTML(app, n)).join("")}</div>
+  body.innerHTML = `<div class="watchgrid">${watchNames.map((n) => watchCardHTML(app, n)).join("")}</div>
+    ${
+      missing > 0
+        ? `<p class="notice" style="margin-top:var(--sp-4)"><svg aria-hidden="true"><use href="#i-info"/></svg><span>有 ${missing} 个自选小类不在当前「${state.taxonomy === "legacy" ? "原看板口径" : "新版分类"}」下，已自动隐藏；切回另一套口径可以看到它们。</span></p>`
+        : ""
+    }
     <p class="notice" style="margin-top:var(--sp-4)">
       <svg aria-hidden="true"><use href="#i-info"/></svg>
       <span>${
@@ -707,6 +722,27 @@ function renderCatSide(app, key) {
 }
 
 /* ============================ 图表图例 ============================ */
+
+/** 聚焦态图例：主指标只展示；叠加项可点击单独开关（带单位） */
+export function renderFocusLegend(items, onToggle) {
+  const host = document.getElementById("chartLegend");
+  if (!host) return;
+  host.innerHTML = (items || [])
+    .map((it) => {
+      const dot = it.kind === "bar" ? "lc-dot lc-dot--flow" : "lc-dot";
+      const val = it.value == null ? "" : `<span class="lc-val">${esc(cnum(it.value, 1))}</span>`;
+      const inner = `<span class="${dot}"${it.kind === "bar" ? "" : ` style="--lc:${toneColor(it.color, isDark())}"`}></span>
+        <span class="lc-name">${esc(it.label)}</span><span class="lc-unit">${esc(it.unit)}</span>${val}`;
+      return it.toggle
+        ? `<button class="legend-chip legend-chip--ov" type="button" data-overlay-toggle="${esc(it.id)}" aria-pressed="true" title="点击移除叠加">${inner}</button>`
+        : `<span class="legend-chip legend-chip--main" aria-current="true" title="主指标（在上方切换）">${inner}</span>`;
+    })
+    .join("");
+  host.onclick = (e) => {
+    const b = e.target.closest("[data-overlay-toggle]");
+    if (b) onToggle(b.dataset.overlayToggle);
+  };
+}
 
 export function renderLegend(series, focused, onFocus) {
   const host = document.getElementById("chartLegend");

@@ -100,6 +100,10 @@
   </div>
 
   <div class="appbar-r">
+    <div class="seg tax-toggle" id="taxToggle" role="group" aria-label="分类口径">
+      <button class="seg-btn" type="button" data-tax="v2" aria-pressed="true" title="新版分类：指数类别 + 申万一级">新版分类</button>
+      <button class="seg-btn" type="button" data-tax="legacy" aria-pressed="false" title="原看板口径：86 小类·沪市">原看板口径</button>
+    </div>
     <span class="range-chip" id="rangeChip" hidden>
       <span class="rc-txt" id="rangeChipTxt"></span>
       <button class="rc-x" id="rangeChipReset" type="button" aria-label="恢复默认区间" title="恢复默认区间">
@@ -120,6 +124,11 @@
     </button>
   </div>
 </header>
+
+<div class="globalbar" id="globalBar" hidden aria-hidden="true">
+  <span class="globalbar-fill"></span>
+  <span class="globalbar-text" id="globalBarText"></span>
+</div>
 
 <!-- ============================ 骨架 ============================ -->
 <div class="shell">
@@ -380,6 +389,21 @@
           </div>
         </div>
 
+        <div class="focusbar" id="focusBar" hidden>
+          <span class="focus-chip">
+            <span class="cat-dot" id="focusDot"></span>
+            <span class="focus-name" id="focusName">—</span>
+            <span class="chip chip--line chip--sm">单系列聚焦</span>
+            <button class="focus-x" type="button" id="focusClear" aria-label="退出聚焦" title="退出聚焦">
+              <svg width="10" height="10" aria-hidden="true"><use href="#i-close"/></svg>
+            </button>
+          </span>
+          <span class="toolbar-sep" aria-hidden="true"></span>
+          <span class="ov-label">叠加</span>
+          <div class="ov-group" id="overlayGroup" role="group" aria-label="叠加指标"></div>
+          <span class="ov-tip" id="overlayTip" hidden></span>
+        </div>
+
         <div class="card-body card-body--pad" style="padding-bottom:var(--sp-3)">
           <div class="chart-meta">
             <div class="chart-unit" id="chartUnit"></div>
@@ -507,6 +531,7 @@
             版本 <b>v__VERSION__</b> ｜ 作者 <a href="__AUTHOR_URL__" target="_blank" rel="noopener">__AUTHOR__</a>
             ｜ 仓库 <a href="__REPO__" target="_blank" rel="noopener">__REPO__</a>
           </p>
+          <p id="taxLine">分类口径：—</p>
           <p>数据截至 <b id="footDate" class="tnum">—</b> ｜ 交易日 <b id="footDays" class="tnum">—</b> ｜ 覆盖 <b id="footCover" class="tnum">—</b></p>
           <p class="foot-muted">若本项目对你有用，欢迎在仓库提 Issue / PR；转载请注明出处并保留本页署名与免责声明。</p>
         </section>

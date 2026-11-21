@@ -16,6 +16,9 @@ export const METRICS = [
   { id: "pct", label: "变化率", unit: "%", short: "变化率" },
 ];
 
+/** 可叠加的指标（份额是主指标口径，不作为叠加项；主指标本身会被自动排除） */
+export const OVERLAY_METRICS = ["scale", "flow", "pct"];
+
 export const PRESETS = [
   { id: "1m", label: "近1月", short: "1月", months: 1 },
   { id: "3m", label: "近3月", short: "3月", months: 3 },
@@ -33,6 +36,7 @@ const MAX_COMPARE = 2;
 
 /* ------------------------------- 状态 ------------------------------- */
 export const state = {
+  taxonomy: "v2", // v2（默认）| legacy（原看板口径）
   view: "overview", // overview | cat | watch
   cat: null,
   sub: null, // 抽屉打开的小类
@@ -41,6 +45,7 @@ export const state = {
   preset: DEFAULT_PRESET,
   custom: null, // {from,to} 自定义区间（≤ 日历范围）
   compare: [], // 最多 2 个小类名
+  overlay: [], // 单系列聚焦时叠加的指标：scale / flow / pct
   log: false, // 对数坐标（份额/规模）
   focused: null, // 图例聚焦的系列名
   marketMetric: "scale", // 市场图指标：scale | shares
@@ -242,6 +247,49 @@ export function removeWatch(name) {
   }
 }
 
+/* ------------------------------- 单系列聚焦 + 指标叠加 ------------------------------- */
+export const overlayAllowed = (metric = state.metric) => OVERLAY_METRICS.filter((m) => m !== metric);
+
+/** 聚焦某个小类（同时用于图例聚焦与 URL 的 sub=） */
+export function setFocus(name, { silent = false } = {}) {
+  if (!name) return;
+  if (state.sub === name) return;
+  state.sub = name;
+  // 换聚焦对象时叠加项保留（同一套指标语义没变），但主指标若是叠加项要剔除
+  state.overlay = state.overlay.filter((m) => m !== state.metric);
+  if (!silent) emit("focus", name);
+}
+
+export function clearFocus({ silent = false } = {}) {
+  state.sub = null;
+  state.overlay = [];
+  if (!silent) emit("focus", null);
+}
+
+export function setOverlay(list, { silent = false } = {}) {
+  const allowed = overlayAllowed();
+  state.overlay = Array.from(new Set((list || []).filter((m) => allowed.includes(m))));
+  if (!silent) emit("overlay", state.overlay.slice());
+}
+
+/** 返回 { changed, overlay, reason }，移动端上限由调用方判断 */
+export function toggleOverlay(metric, { max = Infinity } = {}) {
+  if (!OVERLAY_METRICS.includes(metric) || metric === state.metric) {
+    return { changed: false, overlay: state.overlay.slice(), reason: "invalid" };
+  }
+  const i = state.overlay.indexOf(metric);
+  if (i >= 0) {
+    state.overlay.splice(i, 1);
+  } else {
+    if (state.overlay.length >= max) {
+      return { changed: false, overlay: state.overlay.slice(), reason: "limit" };
+    }
+    state.overlay.push(metric);
+  }
+  emit("overlay", state.overlay.slice());
+  return { changed: true, overlay: state.overlay.slice() };
+}
+
 /* ------------------------------- 对比 ------------------------------- */
 export function toggleCompare(name) {
   if (!name) return { ok: false, reason: "empty" };
@@ -270,6 +318,17 @@ const VALID_VIEWS = new Set(["overview", "cat", "watch"]);
 
 export function readURL() {
   const p = new URLSearchParams(location.search);
+  // 分类口径：URL 优先，其次 localStorage，默认 v2
+  const tax = p.get("taxonomy");
+  if (tax === "legacy" || tax === "v2") state.taxonomy = tax;
+  else {
+    try {
+      const saved = localStorage.getItem("ebbflow-taxonomy");
+      state.taxonomy = saved === "legacy" ? "legacy" : "v2";
+    } catch (e) {
+      state.taxonomy = "v2";
+    }
+  }
   const view = p.get("view");
   state.view = VALID_VIEWS.has(view) ? view : "overview";
   state.cat = p.get("cat") || null;
@@ -280,6 +339,11 @@ export function readURL() {
   state.sub = p.get("sub") || null;
   const cmp = p.get("cmp");
   state.compare = cmp ? cmp.split("|").filter(Boolean).slice(0, MAX_COMPARE) : [];
+  const ov = (p.get("overlay") || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter((x) => OVERLAY_METRICS.includes(x));
+  state.overlay = Array.from(new Set(ov));
 
   const from = p.get("from");
   const to = p.get("to");
@@ -296,6 +360,7 @@ export function readURL() {
 
 export function writeURL({ push = false, replace = true } = {}) {
   const p = new URLSearchParams();
+  if (state.taxonomy === "legacy") p.set("taxonomy", "legacy");
   if (state.view !== "overview") p.set("view", state.view);
   if (state.view === "cat" && state.cat) p.set("cat", state.cat);
   if (state.cat && state.view !== "cat") p.set("cat", state.cat);
@@ -310,6 +375,7 @@ export function writeURL({ push = false, replace = true } = {}) {
   if (state.norm === "all") p.set("norm", "all");
   if (state.log) p.set("log", "1");
   if (state.sub) p.set("sub", state.sub);
+  if (state.sub && state.overlay.length) p.set("overlay", state.overlay.join(","));
   if (state.compare.length) p.set("cmp", state.compare.join("|"));
   const url = location.pathname + (p.toString() ? "?" + p.toString() : "") + location.hash;
   if (url === location.pathname + location.search + location.hash) return;

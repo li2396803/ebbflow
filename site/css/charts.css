@@ -112,6 +112,27 @@
   text-overflow: ellipsis;
   max-width: 11ch;
 }
+.legend-chip .lc-unit {
+  font-size: var(--fs-3xs);
+  color: var(--ink-4);
+  font-weight: 500;
+}
+.legend-chip--main {
+  cursor: default;
+  border-color: var(--line);
+  background: var(--surface-3);
+  color: var(--ink);
+  font-weight: 600;
+}
+.legend-chip--main:hover {
+  background: var(--surface-3);
+}
+.legend-chip--ov {
+  border-color: var(--line);
+}
+.lc-dot--flow {
+  background: linear-gradient(90deg, var(--up) 0 50%, var(--down) 50% 100%) !important;
+}
 .legend-chip .lc-val {
   color: var(--ink-4);
   font-variant-numeric: tabular-nums;
@@ -248,6 +269,12 @@
   font-weight: 600;
   color: var(--ink);
   white-space: nowrap;
+}
+.ec-tip-unit {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--ink-4);
+  margin-left: 2px;
 }
 .ec-tip-pct {
   width: 52px;

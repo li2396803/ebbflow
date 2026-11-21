@@ -13,6 +13,11 @@ import * as views from "./views.js";
 import {
   PRESETS,
   METRICS,
+  OVERLAY_METRICS,
+  overlayAllowed,
+  setFocus,
+  clearFocus,
+  toggleOverlay,
   state,
   on,
   readURL,
@@ -61,6 +66,22 @@ let marketReady = false;
 let mainReady = false;
 let freshChartToken = 0;
 const COMPARE_COLORS = ["#4b57d6", "#d97a2b"];
+const OVERLAY_COLORS = { scale: "#0e9c9c", pct: "#8b5cf6", flow: "#8b93a7" };
+const METRIC_LABEL = { shares: "份额", scale: "规模", flow: "净流入", pct: "变化率" };
+const METRIC_UNIT = { shares: "亿份", scale: "亿元", flow: "亿元/日", pct: "%" };
+/** charts 缓存键：taxonomy + catKey，两套口径互不污染 */
+const chartKey = (cat) => `${state.taxonomy}:${cat}`;
+const getChart = (cat) => app.chartData.get(chartKey(cat));
+const hasChart = (cat) => app.chartData.has(chartKey(cat));
+const setChart = (cat, payload) => app.chartData.set(chartKey(cat), payload);
+
+const isFocusMode = () =>
+  !!(
+    state.sub &&
+    state.view === "cat" &&
+    !state.compare.length &&
+    (app.subsByCat?.get(state.cat) || []).includes(state.sub)
+  );
 const FALLBACK_CAT_COLORS = ["#D16F3F", "#D13F70", "#3F70D1", "#D1D03F", "#D03FD1", "#6F3FD1", "#70D13F", "#3FD16F", "#3FD1D0", "#8A6F3F"];
 
 /* ==========================================================================
@@ -204,6 +225,16 @@ function openSettings() {
         )
         .join("")}
       <div class="popover-sep"></div>
+      <div class="popover-title">分类口径</div>
+      <button class="popover-item" type="button" role="menuitemradio" aria-checked="${state.taxonomy === "v2"}" data-tax="v2">
+        <span class="pi-check" aria-hidden="true"><svg width="12" height="12"><use href="#i-check"/></svg></span>
+        新版分类<span class="dim t-2xs" style="margin-left:auto">指数类别 + 申万一级</span>
+      </button>
+      <button class="popover-item" type="button" role="menuitemradio" aria-checked="${state.taxonomy === "legacy"}" data-tax="legacy">
+        <span class="pi-check" aria-hidden="true"><svg width="12" height="12"><use href="#i-check"/></svg></span>
+        原看板口径<span class="dim t-2xs" style="margin-left:auto">86 小类·沪市</span>
+      </button>
+      <div class="popover-sep"></div>
       <div class="popover-title">涨跌配色</div>
       <button class="popover-item" type="button" role="menuitemradio" aria-checked="${!cvd}" data-set-cvd="0">
         <span class="pi-check" aria-hidden="true"><svg width="12" height="12"><use href="#i-check"/></svg></span>
@@ -273,6 +304,11 @@ function applyMeta() {
   if (subs && etfs) setText("paletteHint", `输入以搜索 ${subs} 个小类与 ${etfs} 只 ETF`);
   const navBtn = document.getElementById("btnAllSubsNav");
   if (navBtn && subs) navBtn.setAttribute("aria-label", `查看全部 ${subs} 个小类`);
+  const taxLine = document.getElementById("taxLine");
+  if (taxLine) {
+    taxLine.textContent =
+      state.taxonomy === "legacy" ? "分类口径：原看板（86 小类·沪市）" : "分类口径：v2（指数类别 + 申万一级）";
+  }
   const desc = document.querySelector('meta[name="description"]');
   if (desc && subs && etfs) {
     desc.setAttribute(
@@ -365,7 +401,7 @@ function buildCatalog() {
   // 颜色：优先 charts 已加载的 color，其次 subs 里第一个小类的颜色，最后回退调色板
   cats = cats.map((c, i) => {
     const color =
-      app.chartData.get(c.key)?.color ||
+      getChart(c.key)?.color ||
       app.subs?.[(byCat.get(c.key) || [])[0]]?.color ||
       FALLBACK_CAT_COLORS[i % FALLBACK_CAT_COLORS.length];
     return { ...c, color };
@@ -488,7 +524,7 @@ async function ensureCalendar() {
   for (const k of candidates) {
     try {
       const p = await api.load(`charts:${k}`);
-      app.chartData.set(k, p);
+      setChart(k, p);
       if (Array.isArray(p?.dates) && p.dates.length > 2) {
         setCalendar(p.dates);
         return state.calendar;
@@ -534,6 +570,7 @@ function renderView({ chart: withChart = true } = {}) {
   }
   views.renderCatNav(app);
   views.syncNavActive(app);
+  syncFocusUI();
   renderRangeChip();
 }
 
@@ -559,7 +596,7 @@ function flowOf(name, stats) {
   const s = stats || app.stats?.byName?.get(name);
   if (!s) return 0;
   const cat = app.subs?.[name]?.cat;
-  const payload = cat ? app.chartData.get(cat) : null;
+  const payload = cat ? getChart(cat) : null;
   const series = payload?.series?.find((x) => x.name === name);
   if (series?.flow?.length) {
     const { fromIdx, toIdx } = state.rangeInfo;
@@ -671,7 +708,7 @@ function buildChartPayload(payload, catKey) {
       ? state.compare
           .map((name) => {
             const cat = app.subs?.[name]?.cat;
-            const p = app.chartData.get(cat);
+            const p = getChart(cat);
             const s = p?.series?.find((x) => x.name === name);
             return s ? { name, color: s.color, series: s } : null;
           })
@@ -764,9 +801,17 @@ function buildChartPayload(payload, catKey) {
     // 全部交给 chart.js：竖直放得下就全画，放不下再按 |值| 保留 6 条 + 「查看全部」
     .slice(0, 12);
 
+  const axisRole = metric === "pct" ? "pct" : metric === "flow" ? "flow" : "amount";
+  const kind = mode === "bar" ? "bar" : "line";
+  const unitOf = {};
+  for (const s of series) unitOf[s.name] = unit;
+
   return {
     dates,
-    series,
+    series: series.map((s) => ({ ...s, kind, axis: 0, unit })),
+    axes: [{ role: axisRole, position: "left" }],
+    unitOf,
+    mixed: false,
     mode,
     unit,
     zero: metric === "flow" && !compare.length,
@@ -775,12 +820,151 @@ function buildChartPayload(payload, catKey) {
     compare: compare.length > 0,
     secondary,
     footNote,
-    endLabels,
+    endLabels: endLabels.map((x) => ({ ...x, axis: 0 })),
     endLabelDigits: metric === "pct" || compare.length ? 1 : 0,
     gutterRight: isDesktop() ? 124 : 10,
+    gridRight: (isDesktop() ? 124 : 10) + 8,
     zoom: [a, b],
     metric,
     catKey,
+  };
+}
+
+/**
+ * 单系列聚焦 + 指标叠加：
+ *  · 左轴 = 金额（份额/规模；主指标是净流入时左轴就是 亿元/日）
+ *  · 右轴 = 百分比（变化率，仅在勾选时出现）
+ *  · 净流入永远是柱子，且有独立轴（不与折线共用刻度），z 轴压在折线下方
+ */
+function buildFocusPayload(payload, catKey, name) {
+  const dates = payload.dates || state.calendar;
+  const r = state.rangeInfo;
+  const a = idxIn(dates, r.from);
+  const b = idxIn(dates, r.to);
+  const sub = payload.series?.find((x) => x.name === name);
+  if (!sub) return buildChartPayload(payload, catKey);
+
+  const main = state.metric;
+  const overlays = state.overlay.filter((m) => m !== main && OVERLAY_METRICS.includes(m));
+  const arrOf = (m) => (m === "scale" ? sub.scale : m === "flow" ? sub.flow : sub.shares);
+  const pctSource = main === "scale" ? "scale" : "shares";
+  const pctValues = () => normalizeSeries(arrOf(pctSource), a, b, state.norm === "all" ? null : a, { index100: false });
+
+  const mainColor = toneColor(sub.color || "#4b57d6", isDark());
+  const scaleColor = toneColor(OVERLAY_COLORS.scale, isDark());
+  const pctColor = toneColor(OVERLAY_COLORS.pct, isDark());
+
+  const hasScale = overlays.includes("scale");
+  const hasFlow = main === "flow" || overlays.includes("flow");
+  const hasPct = main === "pct" || overlays.includes("pct");
+
+  let leftRole;
+  if (main === "flow") leftRole = "flow";
+  else if (main === "shares" || main === "scale") leftRole = "amount";
+  else leftRole = hasScale ? "amount" : "pct";
+
+  const axes = [];
+  const addAxis = (role, position) => {
+    axes.push({ role, position, offset: 0 });
+    return axes.length - 1;
+  };
+  const leftIdx = addAxis(leftRole, "left");
+  const pctIdx = hasPct ? (leftRole === "pct" ? leftIdx : addAxis("pct", "right")) : null;
+  const flowIdx = hasFlow ? (leftRole === "flow" ? leftIdx : addAxis("flow", "right")) : null;
+  const amountRightIdx = main === "flow" && hasScale ? addAxis("amount", "right") : null;
+  let rightCount = 0;
+  for (const ax of axes) {
+    if (ax.position === "right") {
+      ax.offset = rightCount * 54;
+      rightCount += 1;
+    }
+  }
+
+  const series = [];
+  const lastOf = (values) => lastNonNull(values, 0, values.length - 1);
+  const pushLine = (metric, values, color, { dash = false } = {}) => {
+    const axis = metric === "scale" ? (main === "flow" ? amountRightIdx : leftIdx) : metric === "pct" ? pctIdx : leftIdx;
+    series.push({
+      name: METRIC_LABEL[metric],
+      metricId: metric,
+      isOverlay: metric !== main,
+      values,
+      color,
+      kind: "line",
+      axis,
+      unit: METRIC_UNIT[metric],
+      dash,
+    });
+  };
+  const pushBars = (metric, values) => {
+    series.push({
+      name: METRIC_LABEL[metric],
+      metricId: metric,
+      isOverlay: metric !== main,
+      values,
+      color: toneColor(OVERLAY_COLORS.flow, isDark()),
+      kind: "bar",
+      axis: flowIdx,
+      unit: METRIC_UNIT.flow,
+    });
+  };
+
+  // 主指标
+  if (main === "flow") pushBars("flow", arrOf("flow"));
+  else if (main === "pct") pushLine("pct", pctValues(), mainColor);
+  else pushLine(main, arrOf(main), mainColor);
+
+  // 叠加项
+  if (hasScale && main !== "scale") pushLine("scale", arrOf("scale"), scaleColor);
+  if (overlays.includes("flow")) pushBars("flow", arrOf("flow"));
+  if (overlays.includes("pct")) pushLine("pct", pctValues(), pctColor, { dash: true });
+
+  const unitOf = {};
+  for (const s of series) unitOf[s.name] = s.unit;
+  const lineSeries = series.filter((s) => s.kind === "line");
+  const gutter = isDesktop() && lineSeries.length ? 92 : 0;
+  const gridRight = 12 + rightCount * 54 + gutter;
+  const endLabels = lineSeries
+    .map((s) => {
+      const v = lastOf(s.values);
+      return v == null ? null : { name: s.name, value: v, color: s.color, axis: s.axis };
+    })
+    .filter(Boolean);
+
+  return {
+    dates,
+    series,
+    axes,
+    unitOf,
+    zoom: [a, b],
+    area: series.length === 1,
+    mixed: series.length > 1,
+    mode: series.some((s) => s.kind === "bar") ? "bar" : "line",
+    unit: series[0]?.unit || "",
+    zero: false,
+    focused: null,
+    log: false,
+    compare: false,
+    secondary: null,
+    footNote: [
+      `${name} · 主指标 ${METRIC_LABEL[main]}`,
+      overlays.length ? `叠加 ${overlays.map((m) => METRIC_LABEL[m]).join(" / ")}` : "未叠加",
+    ].join(" ｜ "),
+    endLabels,
+    endLabelDigits: 1,
+    gutterRight: gutter,
+    gridRight,
+    focusMode: true,
+    focusName: name,
+    legend: series.map((s) => ({
+      id: s.metricId,
+      label: s.name,
+      unit: s.unit,
+      color: s.color,
+      kind: s.kind,
+      toggle: s.isOverlay,
+      value: lastOf(s.values),
+    })),
   };
 }
 
@@ -791,17 +975,17 @@ async function renderCatChart(catKey, opts = {}) {
   if (catNameEl) catNameEl.textContent = app.catMap.get(catKey)?.label || catKey;
   if (loading && !opts.silent) loading.hidden = false;
   try {
-    let payload = app.chartData.get(catKey);
+    let payload = getChart(catKey);
     if (!payload) {
       payload = await api.load(`charts:${catKey}`);
-      app.chartData.set(catKey, payload);
+      setChart(catKey, payload);
     }
     // 对比对象可能在别的大类，需要补齐
     for (const name of state.compare) {
       const cat = app.subs?.[name]?.cat;
-      if (cat && !app.chartData.has(cat)) {
+      if (cat && !hasChart(cat)) {
         try {
-          app.chartData.set(cat, await api.load(`charts:${cat}`));
+          setChart(cat, await api.load(`charts:${cat}`));
         } catch (e) {}
       }
     }
@@ -812,8 +996,9 @@ async function renderCatChart(catKey, opts = {}) {
       setCalendar(payload.dates);
       recomputeStats();
     }
-    const p = buildChartPayload(payload, catKey);
+    const p = isFocusMode() ? buildFocusPayload(payload, catKey, state.sub) : buildChartPayload(payload, catKey);
     syncLogUI();
+    syncFocusUI();
     const shell = document.getElementById("mainWrap");
     shell?.querySelector(".chart-empty")?.remove();
     if (!p.series.length) {
@@ -834,25 +1019,40 @@ async function renderCatChart(catKey, opts = {}) {
       return;
     }
     chart.renderMain(p);
-    views.renderLegend(
-      p.series.map((s) => ({
-        name: s.name,
-        color: s.color,
-        endValue: legendValue(s, payload),
-      })),
-      state.focused,
-      onFocusSeries
-    );
+    if (p.focusMode) {
+      views.renderFocusLegend(p.legend, (id) => toggleOverlayFromUI(id));
+    } else {
+      views.renderLegend(
+        p.series.map((s) => ({
+          name: s.name,
+          color: s.color,
+          endValue: legendValue(s, payload),
+        })),
+        state.focused,
+        onFocusSeries
+      );
+    }
     const unitEl = document.getElementById("chartUnit");
     const metricObj = METRICS.find((m) => m.id === state.metric);
+    const hintEl = document.querySelector(".legend-hint");
+    if (hintEl) {
+      hintEl.textContent = p.focusMode
+        ? "点带单位的叠加项可从图例移除；主指标在上方切换"
+        : "点击图例聚焦某个小类 · 再点「全部」退出";
+    }
     if (unitEl) {
-      unitEl.innerHTML = `<b>${esc(metricObj?.label || "")}</b> ${esc(p.unit)} · ${p.series.length} 个系列 · ${esc(
-        rangeTextForChart()
-      )}${p.compare ? " · 对比模式" : ""}`;
+      unitEl.innerHTML = p.focusMode
+        ? `<b>${esc(state.sub)}</b> 单系列 · 主指标 ${esc(metricObj?.label || "")}（${esc(METRIC_UNIT[state.metric])}）${
+            state.overlay.length ? ` · 叠加 ${esc(state.overlay.map((m) => METRIC_LABEL[m]).join(" / "))}` : " · 未叠加"
+          } · ${esc(rangeTextForChart())}`
+        : `<b>${esc(metricObj?.label || "")}</b> ${esc(p.unit)} · ${p.series.length} 个系列 · ${esc(rangeTextForChart())}${
+            p.compare ? " · 对比模式" : ""
+          }`;
     }
     document.getElementById("brushHint").hidden = true;
   } catch (e) {
     if (token !== freshChartToken) return;
+    console.error("[cat-chart]", e);
     const shell = document.getElementById("mainWrap");
     if (shell) {
       const old = shell.querySelector(".chart-empty");
@@ -873,20 +1073,85 @@ async function renderCatChart(catKey, opts = {}) {
 const rangeTextForChart = () => `${state.rangeInfo.from} → ${state.rangeInfo.to} · ${state.rangeInfo.days} 个交易日`;
 
 function onFocusSeries(name) {
-  state.focused = name || null;
-  if (state.view !== "cat") return;
-  const payload = app.chartData.get(state.cat);
-  if (!payload) return;
-  chart.renderMain(buildChartPayload(payload, state.cat));
-  views.renderLegend(
-    (payload.series || []).map((s) => ({
-      name: s.name,
-      color: s.color,
-      endValue: lastNonNull((state.metric === "pct" ? s.shares : s[state.metric]) || [], 0, 99999),
-    })),
-    state.focused,
-    onFocusSeries
-  );
+  if (state.compare.length) {
+    // 对比模式：维持「淡化其它」的语义
+    state.focused = name || null;
+    if (state.view !== "cat") return;
+    const payload = getChart(state.cat);
+    if (!payload) return;
+    chart.renderMain(buildChartPayload(payload, state.cat));
+    views.renderLegend(
+      (payload.series || []).map((s) => ({
+        name: s.name,
+        color: s.color,
+        endValue: legendValue({ name: s.name, values: (state.metric === "pct" ? s.shares : s[state.metric]) || [] }, payload),
+      })),
+      state.focused,
+      onFocusSeries
+    );
+    return;
+  }
+  if (!name) return; // 多系列里的「全部」= 已经是全部
+  if (state.sub === name) return;
+  setFocus(name);
+  writeURL({ replace: true });
+  syncFocusUI();
+  if (state.view === "cat") renderCatChart(state.cat, { silent: true });
+}
+
+/** 叠加项开关（胶囊 / 图例共用） */
+function toggleOverlayFromUI(id) {
+  if (!isFocusMode()) return;
+  const max = isDesktop() ? Infinity : 2;
+  const res = toggleOverlay(id, { max });
+  if (res.reason === "limit") {
+    toast(`小屏最多叠加 ${max} 项`, "error", 2200);
+    return;
+  }
+  if (!res.changed) return;
+  writeURL({ replace: true });
+  syncFocusUI();
+  renderCatChart(state.cat, { silent: true });
+}
+
+/** 聚焦态 UI：聚焦胶囊 + 叠加开关（只在单系列聚焦时出现） */
+function syncFocusUI() {
+  const bar = document.getElementById("focusBar");
+  if (!bar) return;
+  const on = isFocusMode();
+  bar.hidden = !on;
+  if (!on) return;
+  const name = state.sub;
+  const sub = app.subs?.[name];
+  const dot = document.getElementById("focusDot");
+  if (dot) dot.style.background = toneColor(sub?.color || "#4b57d6", isDark());
+  const nm = document.getElementById("focusName");
+  if (nm) nm.textContent = name;
+
+  // 小屏：最多 2 项，超出直接截断（进入时可能来自分享链接）
+  const max = isDesktop() ? Infinity : 2;
+  if (state.overlay.length > max) {
+    state.overlay = state.overlay.slice(0, max);
+    writeURL({ replace: true });
+  }
+  const group = document.getElementById("overlayGroup");
+  if (group) {
+    const allowed = overlayAllowed();
+    group.innerHTML = allowed
+      .map(
+        (m) => `<button class="ov-pill" type="button" data-overlay="${m}" aria-pressed="${
+          state.overlay.includes(m)
+        }" title="叠加${METRIC_LABEL[m]}（${METRIC_UNIT[m]}）">
+          <span class="ov-name">${METRIC_LABEL[m]}</span><span class="ov-unit">${METRIC_UNIT[m]}</span>
+        </button>`
+      )
+      .join("");
+  }
+  const tip = document.getElementById("overlayTip");
+  if (tip) {
+    tip.textContent = isDesktop() ? "" : max === 2 ? `小屏最多叠加 ${max} 项` : "";
+    tip.hidden = isDesktop();
+  }
 }
 
 /* ==========================================================================
@@ -927,7 +1192,7 @@ function afterRangeChange(source) {
   renderView({ chart: source !== "theme" });
   // 图表：zoom 不需要重建数据，但需要更新端点标签/提示
   if (state.view === "cat") {
-    const payload = app.chartData.get(state.cat);
+    const payload = getChart(state.cat);
     if (payload) {
       chart.renderMain(buildChartPayload(payload, state.cat));
       document.getElementById("chartNoteRange").textContent = `当前区间 ${rangeTextForChart()}`;
@@ -947,9 +1212,13 @@ function navigate(view, opts = {}) {
   if (opts.cat !== undefined) {
     if (state.cat !== opts.cat) state.focused = null;
     state.cat = opts.cat;
+    if (state.sub && app.subs?.[state.sub]?.cat !== state.cat) {
+      state.sub = null;
+      state.overlay = [];
+    }
   }
   if (view === "cat" && !state.cat && app.cats.length) state.cat = app.cats[0].key;
-  if (view === "cat" && opts.cat && !app.chartData.has(opts.cat)) {
+  if (view === "cat" && opts.cat && !hasChart(opts.cat)) {
     // 先切视图再拉数据，loading 覆盖层接管反馈
   }
   writeURL({ push: true });
@@ -1113,7 +1382,7 @@ function syncLogUI() {
   const btn = document.getElementById("btnLog");
   if (!btn) return;
   const usable = state.metric === "shares" || state.metric === "scale";
-  btn.hidden = !usable || state.compare.length > 0;
+  btn.hidden = !usable || state.compare.length > 0 || isFocusMode();
   btn.setAttribute("aria-pressed", String(!!state.log && usable));
 }
 
@@ -1148,7 +1417,7 @@ function openComparePicker() {
    CSV 导出 / 复制
    ========================================================================== */
 function exportCatCsv() {
-  const payload = app.chartData.get(state.cat);
+  const payload = getChart(state.cat);
   if (!payload) {
     toast("图表数据还没加载好", "error");
     return;
@@ -1297,7 +1566,7 @@ function closeSheet() {
 let prefetchStarted = false;
 function chartsAllLoaded() {
   const keys = api.catKeys();
-  return keys.length > 0 && keys.every((k) => app.chartData.has(k));
+  return keys.length > 0 && keys.every((k) => hasChart(k));
 }
 
 function scheduleChartPrefetch() {
@@ -1306,13 +1575,13 @@ function scheduleChartPrefetch() {
   const conn = navigator.connection;
   if (conn?.saveData || /(^|-)2g$/.test(conn?.effectiveType || "")) return;
   const run = async () => {
-    const queue = api.catKeys().filter((k) => !app.chartData.has(k));
+    const queue = api.catKeys().filter((k) => !hasChart(k));
     let done = 0;
     const worker = async () => {
       while (queue.length) {
         const k = queue.shift();
         try {
-          app.chartData.set(k, await api.load(`charts:${k}`));
+          setChart(k, await api.load(`charts:${k}`));
         } catch (e) {
           /* 单个失败不影响其它 */
         }
@@ -1398,6 +1667,8 @@ function wireEvents() {
       if (state.metric === metric.dataset.metric) return;
       state.metric = metric.dataset.metric;
       state.focused = null;
+      // 主指标不能同时出现在叠加里
+      if (state.overlay.includes(state.metric)) state.overlay = state.overlay.filter((m) => m !== state.metric);
       views.renderMetricSegs();
       writeURL({ replace: true });
       syncLogUI();
@@ -1418,6 +1689,13 @@ function wireEvents() {
       clearCompare();
       writeCompareUrl();
       if (state.view === "cat") renderCatChart(state.cat, { silent: true });
+      return;
+    }
+    const taxBtn = closest("[data-tax]");
+    if (taxBtn) {
+      const next = taxBtn.dataset.tax;
+      ui.closePopover();
+      switchTaxonomy(next);
       return;
     }
     if (closest("[data-open-quality]")) {
@@ -1445,6 +1723,18 @@ function wireEvents() {
     if (closest("[data-set-rail]")) {
       toggleRail();
       ui.closePopover();
+      return;
+    }
+    const ovPill = closest("[data-overlay]");
+    if (ovPill && ovPill.closest("#focusBar")) {
+      toggleOverlayFromUI(ovPill.dataset.overlay);
+      return;
+    }
+    if (closest("#focusClear")) {
+      clearFocus();
+      writeURL({ replace: true });
+      syncFocusUI();
+      if (state.view === "cat") renderCatChart(state.cat, { silent: true });
       return;
     }
     const focusChip = closest("[data-focus]");
@@ -1490,9 +1780,14 @@ function wireEvents() {
     if (navSub) {
       closeSheet();
       const name = navSub.dataset.navsub;
-      const cat = app.subs?.[name]?.cat;
-      if (cat && (state.view !== "cat" || state.cat !== cat)) navigate("cat", { cat });
-      setTimeout(() => openDetail(name), 140);
+      const cat = app.subs?.[name]?.cat || navSub.dataset.cat;
+      if (state.view !== "cat") navigate("cat", { cat });
+      else if (cat && state.cat !== cat) navigate("cat", { cat });
+      // 侧栏/移动端抽屉里的「小类」= 单系列聚焦（不弹明细抽屉，避免挡住图表）
+      setFocus(name);
+      writeURL({ replace: true });
+      syncFocusUI();
+      renderCatChart(state.cat, { silent: true });
       return;
     }
     const subEl = closest("[data-sub]");
@@ -1674,103 +1969,7 @@ async function doRefresh() {
 /* ==========================================================================
    启动
    ========================================================================== */
-async function boot() {
-  stampIdentity();
-  updateThemeBtn();
-  readURL();
-  loadWatch();
-  views.renderRangeSegs();
-  wireEvents();
-
-  try {
-    app.meta = await api.load("meta");
-  } catch (e) {
-    fatal(e);
-    return;
-  }
-
-  // 大类清单只依赖 meta.categories（10 项，与 charts 文件名一一对应）
-  const metaCats = Array.isArray(app.meta.categories) ? app.meta.categories : [];
-  if (metaCats.length) {
-    app.cats = metaCats.map((c) => ({ key: c.key, label: c.label || c.key, color: c.color || null, subs: c.subs }));
-    app.catMap = new Map(app.cats.map((c) => [c.key, c]));
-  }
-  api.rememberCatKeys(metaCats.map((c) => c.key));
-  applyMeta();
-
-  try {
-    // 首屏关键路径：market（KPI + 走势 + 交易日轴）＋ 当前大类的 charts（若直接进入大类视图）
-    const wantCat = state.view === "cat" && state.cat;
-    const [market, firstChart] = await Promise.all([
-      api.load("market").catch(() => null),
-      wantCat ? api.load(`charts:${state.cat}`).catch(() => null) : Promise.resolve(null),
-    ]);
-    app.market = market;
-    if (firstChart && state.cat) app.chartData.set(state.cat, firstChart);
-    if (!app.cats.length) await ensureIndex().catch(() => null);
-    const cal = market?.dates || firstChart?.dates || [];
-    if (cal.length > 2) setCalendar(cal);
-    if (!state.calendar.length) {
-      fatal(new Error("无法确定交易日轴（缺少 market.json / charts）"));
-      return;
-    }
-
-    recomputeStats();
-    initDetail(app, {
-      ensureSubs,
-      onToggleWatch: (name) => {
-        toggleWatch(name);
-        views.renderCatNav(app);
-        views.syncNavActive(app);
-        if (state.view === "overview") views.renderOverviewWatch(app);
-        if (state.view === "watch") views.renderWatch(app);
-      },
-      onCompare: (name) => {
-        const res = toggleCompare(name);
-        if (res.ok) {
-          toast(res.added ? `已加入对比：${name}` : `已移出对比：${name}`, "info", 1800);
-          if (state.view !== "cat") navigate("cat", { cat: app.subs?.[name]?.cat });
-          else renderCatChart(state.cat);
-        }
-      },
-    });
-    initAllSubs(app, { ensureSubs });
-    initQuality(app);
-
-    setDataBadge(api.net.mode === "live" ? "live" : "static", api.net.mode === "live" ? "本地服务" : "静态数据");
-    renderView();
-    views.syncNavActive(app);
-    fillPlaceholders();
-    syncCompareUI();
-    syncLogUI();
-
-    api.probeService().then((has) => {
-      const btn = document.getElementById("btnRefresh");
-      if (!btn) return;
-      btn.hidden = false;
-      btn.setAttribute("aria-disabled", String(!has));
-      btn.classList.toggle("is-disabled", !has);
-      btn.title = has
-        ? "重新抓取最新数据（本地服务）"
-        : "静态托管模式无法刷新：需要本地服务 127.0.0.1:5188（npm run dev）；数据文件由构建产出";
-    });
-
-    if (state.sub) setTimeout(() => openDetail(state.sub), 200);
-
-    document.documentElement.setAttribute("data-ready", "1");
-    document.body.classList.remove("is-loading");
-
-    // 首屏图表出现后再补 subs/index，避免和 echarts 抢带宽
-    ensureMarketChart()
-      .then(() => chart.repaintAll())
-      .catch(() => {})
-      .finally(() => scheduleDeferredData());
-  } catch (e) {
-    fatal(e);
-  }
-}
-
-/** 页脚占位符兜底：构建时会被 lib/signature.mjs 替换；直接访问 web/ 时用运行时数据填上 */
+/** 页脚占位符兜底：构建时被 lib/signature.mjs 替换；直接访问 web/ 时用运行时数据填上 */
 async function fillPlaceholders() {
   const foot = document.getElementById("foot");
   if (!foot || !foot.innerHTML.includes("__")) return;
@@ -1805,6 +2004,226 @@ async function fillPlaceholders() {
       for (const [k, rep] of Object.entries(map)) if (v.includes(k)) v = v.split(k).join(rep);
       a.setAttribute(attr, v);
     }
+  });
+}
+
+/** 加载当前 taxonomy 的数据并渲染（首屏与切换共用） */
+async function loadTaxonomyData() {
+  try {
+    app.meta = await api.load("meta");
+  } catch (e) {
+    fatal(e);
+    throw e;
+  }
+
+  // 大类清单只依赖 meta.categories（与 charts 文件名一一对应）
+  const metaCats = Array.isArray(app.meta.categories) ? app.meta.categories : [];
+  if (metaCats.length) {
+    app.cats = metaCats.map((c) => ({ key: c.key, label: c.label || c.key, color: c.color || null, subs: c.subs }));
+    app.catMap = new Map(app.cats.map((c) => [c.key, c]));
+  }
+  api.rememberCatKeys(metaCats.map((c) => c.key));
+  applyMeta();
+  syncTaxonomyUI();
+
+  // 当前大类若不在新口径里，重置到第一项
+  if (state.view === "cat" || state.cat) {
+    if (!state.cat || !app.catMap.has(state.cat)) state.cat = app.cats[0]?.key ?? null;
+  }
+
+  // 首屏关键路径：market（KPI + 走势 + 交易日轴）＋ 当前大类的 charts
+  const wantCat = state.view === "cat" && state.cat;
+  const [market, firstChart] = await Promise.all([
+    api.load("market").catch(() => null),
+    wantCat ? api.load(`charts:${state.cat}`).catch(() => null) : Promise.resolve(null),
+  ]);
+  app.market = market;
+  if (firstChart && state.cat) setChart(state.cat, firstChart);
+  if (!app.cats.length) await ensureIndex().catch(() => null);
+  const cal = market?.dates || firstChart?.dates || [];
+  if (cal.length > 2) setCalendar(cal);
+  if (!state.calendar.length) {
+    fatal(new Error("无法确定交易日轴（缺少 market.json / charts）"));
+    throw new Error("日历缺失");
+  }
+
+  recomputeStats();
+  // 口径切换后 cat 可能被重置，这里把 URL 对齐一次，保证刷新可还原
+  writeURL({ replace: true });
+  setDataBadge(api.net.mode === "live" ? "live" : "static", api.net.mode === "live" ? "本地服务" : "静态数据");
+  renderView();
+  views.syncNavActive(app);
+  fillPlaceholders();
+  syncCompareUI();
+  syncLogUI();
+  syncFocusUI();
+}
+
+async function boot() {
+  stampIdentity();
+  updateThemeBtn();
+  readURL();
+  loadWatch();
+  api.setTaxonomy(state.taxonomy);
+  views.renderRangeSegs();
+  wireEvents();
+
+  initDetail(app, {
+    ensureSubs,
+    onOpen: (name) => {
+      const cat = app.subs?.[name]?.cat;
+      if (state.view === "cat" && cat && cat === state.cat && state.sub !== name) {
+        setFocus(name);
+        writeURL({ replace: true });
+        renderCatChart(state.cat, { silent: true });
+      }
+      syncFocusUI();
+    },
+    onToggleWatch: (name) => {
+      toggleWatch(name);
+      views.renderCatNav(app);
+      views.syncNavActive(app);
+      if (state.view === "overview") views.renderOverviewWatch(app);
+      if (state.view === "watch") views.renderWatch(app);
+    },
+    onCompare: (name) => {
+      const res = toggleCompare(name);
+      if (res.ok) {
+        toast(res.added ? `已加入对比：${name}` : `已移出对比：${name}`, "info", 1800);
+        if (state.view !== "cat") navigate("cat", { cat: app.subs?.[name]?.cat });
+        else renderCatChart(state.cat);
+      }
+    },
+  });
+  initAllSubs(app, { ensureSubs });
+  initQuality(app);
+
+  try {
+    await loadTaxonomyData();
+
+    api.probeService().then((has) => {
+      const btn = document.getElementById("btnRefresh");
+      if (!btn) return;
+      btn.hidden = false;
+      btn.setAttribute("aria-disabled", String(!has));
+      btn.classList.toggle("is-disabled", !has);
+      btn.title = has
+        ? "重新抓取最新数据（本地服务）"
+        : "静态托管模式无法刷新：需要本地服务 127.0.0.1:5188（npm run dev）；数据文件由构建产出";
+    });
+
+    // sub= 在「大类视图」里表示聚焦（图表单系列 + 叠加），不自动弹抽屉
+    if (state.sub && state.view !== "cat") setTimeout(() => openDetail(state.sub), 200);
+
+    document.documentElement.setAttribute("data-ready", "1");
+    document.body.classList.remove("is-loading");
+
+    ensureMarketChart()
+      .then(() => chart.repaintAll())
+      .catch(() => {})
+      .finally(() => scheduleDeferredData());
+  } catch (e) {
+    /* fatal 已在 loadTaxonomyData 里处理 */
+  }
+}
+
+/* ==========================================================================
+   分类口径切换（v2 ↔ 原看板）
+   ========================================================================== */
+const TAX_LABEL = { v2: "新版分类", legacy: "原看板口径" };
+
+function setGlobalLoading(on, text = "") {
+  const bar = document.getElementById("globalBar");
+  const txt = document.getElementById("globalBarText");
+  if (!bar) return;
+  bar.hidden = !on;
+  if (txt) txt.textContent = text;
+  document.body.classList.toggle("is-switching", !!on);
+  document.getElementById("main")?.setAttribute("aria-busy", on ? "true" : "false");
+}
+
+/** 清空与当前口径绑定的内存数据（含 charts 缓存键） */
+function resetTaxonomyState() {
+  app.meta = null;
+  app.subs = null;
+  app.index = null;
+  app.market = null;
+  app.tables = null;
+  app.quality = null;
+  app.cats = [];
+  app.catMap = new Map();
+  app.subsByCat = new Map();
+  app.pinyin = new Map();
+  app.stats = null;
+  app.subsReady = false;
+  app.indexReady = false;
+  app.flowComplete = false;
+  app.chartData.clear();
+  subsPromise = null;
+  indexPromise = null;
+  prefetchStarted = false;
+  state.calendar = [];
+  state.rangeInfo = { from: "—", to: "—", days: 0, fromIdx: -1, toIdx: -1, preset: state.preset, isCustom: false };
+  state.cat = null;
+  state.sub = null;
+  state.overlay = [];
+  state.compare = [];
+  state.focused = null;
+  // 不销毁 ECharts 实例：切换期间旧图保持可见（只做变暗），新数据到齐后 setOption 覆盖，
+  // 避免出现「切换瞬间空白」和重复初始化。
+  chart.market.lastPayload = null;
+  chart.main.lastPayload = null;
+  const legend = document.getElementById("chartLegend");
+  if (legend) legend.innerHTML = "";
+}
+
+async function switchTaxonomy(next, { silent = false } = {}) {
+  if (next === state.taxonomy) return;
+  const from = state.taxonomy;
+  state.taxonomy = next;
+  try {
+    localStorage.setItem("ebbflow-taxonomy", next);
+  } catch (e) {}
+  api.setTaxonomy(next);
+  api.clearCache();
+  resetTaxonomyState();
+  writeURL({ replace: true });
+  syncTaxonomyUI();
+  if (!silent) setGlobalLoading(true, `正在切换到${TAX_LABEL[next]}…`);
+  try {
+    await loadTaxonomyData();
+    if (!silent) toast(`已切换到${TAX_LABEL[next]}`, "ok", 1800);
+    ensureMarketChart()
+      .then(() => chart.repaintAll())
+      .catch(() => {})
+      .finally(() => scheduleDeferredData());
+  } catch (e) {
+    console.error("[taxonomy]", e);
+    toast(`${TAX_LABEL[next]}数据加载失败，已切回${TAX_LABEL[from]}`, "error", 4200);
+    state.taxonomy = from;
+    try {
+      localStorage.setItem("ebbflow-taxonomy", from);
+    } catch (err) {}
+    api.setTaxonomy(from);
+    api.clearCache();
+    resetTaxonomyState();
+    writeURL({ replace: true });
+    syncTaxonomyUI();
+    try {
+      await loadTaxonomyData();
+    } catch (err) {}
+  } finally {
+    setGlobalLoading(false);
+  }
+}
+
+/** 口径切换控件的选中态 + <html data-taxonomy> */
+function syncTaxonomyUI() {
+  document.documentElement.setAttribute("data-taxonomy", state.taxonomy);
+  document.querySelectorAll("[data-tax]").forEach((btn) => {
+    const on = btn.dataset.tax === state.taxonomy;
+    btn.setAttribute("aria-pressed", String(on));
+    if (btn.classList.contains("popover-item")) btn.setAttribute("aria-checked", String(on));
   });
 }
 

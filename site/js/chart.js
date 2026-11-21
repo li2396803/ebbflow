@@ -215,7 +215,7 @@ function paintEndLabels() {
   const layer = main.labelsLayer;
   const p = main.lastPayload;
   if (!layer) return;
-  if (!p || !p.endLabels || !isDesktop() || p.mode === "bar") {
+  if (!p || !p.endLabels || !isDesktop() || !(p.series || []).some((x) => x.kind !== "bar")) {
     layer.innerHTML = "";
     return;
   }
@@ -229,7 +229,7 @@ function paintEndLabels() {
   for (const s of p.endLabels) {
     if (s.value == null || !Number.isFinite(s.value) || seen.has(s.name)) continue;
     seen.add(s.name);
-    const y = chart.convertToPixel({ yAxisIndex: 0 }, s.value);
+    const y = chart.convertToPixel({ yAxisIndex: Number.isInteger(s.axis) ? s.axis : 0 }, s.value);
     if (!Number.isFinite(y)) continue;
     items.push({ name: s.name, value: s.value, color: s.color, y });
   }
@@ -337,53 +337,90 @@ function showEndLabelList(items, left, rect) {
 }
 
 /* ---------------------------- option 构造 ---------------------------- */
+function yAxisOption(a, index, t, p) {
+  const isPct = a.role === "pct";
+  const isFlow = a.role === "flow";
+  const useLog = !!p.log && index === 0 && !isPct && !isFlow;
+  return {
+    type: useLog ? "log" : "value",
+    logBase: 10,
+    position: a.position || "left",
+    offset: a.offset || 0,
+    // 金额轴按数据自适应；净流入含正负、变化率含 0，都强制包含 0
+    scale: !isFlow && !isPct && !p.log,
+    splitNumber: 4,
+    axisLine: { show: false },
+    axisTick: { show: false },
+    axisLabel: {
+      color: t.ink4,
+      fontSize: AXIS_FONT,
+      margin: 6,
+      formatter: isPct ? (v) => `${Number.isFinite(+v) ? +(+v).toFixed(1) : v}%` : (v) => axisNum(v),
+    },
+    splitLine: index === 0 ? { lineStyle: { color: t.grid, type: [3, 3] } } : { show: false },
+    axisPointer: { label: { show: false } },
+    name: a.name || "",
+    nameTextStyle: { color: t.ink4, fontSize: AXIS_FONT, padding: [0, 0, 0, 0] },
+  };
+}
+
 function baseOption(p) {
   const t = tokens();
   const dates = p.dates;
-  const isBar = p.mode === "bar";
   const showSlider = isDesktop() && !p.compare;
   const [a, b] = p.zoom;
+  const axes = p.axes && p.axes.length ? p.axes : [{ role: "amount", position: "left" }];
 
   const series = p.series.map((s, i) => {
     const color = toneColor(s.color, t.dark);
-    const dim = p.focused && p.focused !== s.name;
+    const axisIndex = Number.isInteger(s.axis) ? s.axis : 0;
+    const unit = s.unit || p.unit || "";
+    const dim = p.focused && p.focused !== s.name && p.series.length > 1 && !p.mixed ? true : false;
     const opacity = dim ? 0.13 : 1;
-    if (isBar) {
+    if (s.kind === "bar") {
       return {
         name: s.name,
         type: "bar",
         data: s.values,
-        barMaxWidth: 7,
+        yAxisIndex: axisIndex,
+        barMaxWidth: p.mixed ? 7 : 9,
         barGap: "12%",
         barCategoryGap: "38%",
-        sampling: "lttb",
         itemStyle: {
           color: (params) => (params.value >= 0 ? t.up : t.down),
-          opacity: dim ? 0.18 : 0.95,
+          opacity: p.mixed ? 0.42 : 0.95,
           borderRadius: [1, 1, 0, 0],
         },
         emphasis: { focus: "series", itemStyle: { opacity: 1 } },
         blur: { itemStyle: { opacity: 0.12 } },
-        z: p.focused === s.name ? 4 : 2,
+        // 柱子放底层，避免压住折线
+        z: p.mixed ? 1 : 4,
         animation: false,
+        unit,
       };
     }
     return {
       name: s.name,
       type: "line",
       data: s.values,
+      yAxisIndex: axisIndex,
       showSymbol: false,
       symbol: "circle",
       symbolSize: 5,
       connectNulls: false,
       smooth: 0.12,
       sampling: "lttb",
-      lineStyle: { width: p.focused === s.name ? 2.4 : 1.7, color, opacity },
+      lineStyle: {
+        width: (p.focused === s.name ? 2.4 : 1.7) * (p.mixed ? 1.05 : 1),
+        color,
+        opacity,
+        type: s.dash ? [5, 3] : "solid",
+      },
       itemStyle: { color, opacity },
       emphasis: { focus: "series", lineStyle: { width: 2.6 }, itemStyle: { opacity: 1 } },
       blur: { lineStyle: { opacity: 0.12 }, itemStyle: { opacity: 0.12 } },
       areaStyle:
-        p.area && p.series.length <= 3
+        p.area && p.series.length <= 3 && !p.mixed
           ? {
               opacity: 0.1,
               color: {
@@ -399,8 +436,9 @@ function baseOption(p) {
               },
             }
           : undefined,
-      z: p.focused === s.name ? 4 : 2,
+      z: p.focused === s.name ? 4 : 3,
       animation: false,
+      unit,
     };
   });
 
@@ -460,8 +498,8 @@ function baseOption(p) {
     textStyle: { fontFamily: getComputedStyle(document.body).fontFamily, color: t.ink2 },
     grid: {
       left: 4,
-      // 右侧留出端点标签专用 gutter：标签画在绘图区之外，绝不压线
-      right: p.gutterRight ?? 108,
+      // 右侧 = 端点标签 gutter + 每个右侧坐标轴预留宽度（多轴时逐层外扩）
+      right: p.gridRight ?? 108,
       top: 14,
       bottom: showSlider ? 44 : 22,
       containLabel: true,
@@ -485,7 +523,7 @@ function baseOption(p) {
     xAxis: {
       type: "category",
       data: dates,
-      boundaryGap: isBar,
+      boundaryGap: p.series.some((x) => x.kind === "bar") && !p.series.some((x) => x.kind === "line"),
       axisLine: { lineStyle: { color: t.line } },
       axisTick: { show: false },
       axisLabel: {
@@ -499,22 +537,7 @@ function baseOption(p) {
       axisPointer: { label: { show: false } },
       animation: false,
     },
-    yAxis: {
-      type: p.log ? "log" : "value",
-      logBase: 10,
-      scale: p.zero !== true && !p.log,
-      splitNumber: p.log ? 5 : 4,
-      axisLine: { show: false },
-      axisTick: { show: false },
-      axisLabel: {
-        color: t.ink4,
-        fontSize: AXIS_FONT,
-        margin: 8,
-        formatter: (v) => axisNum(v),
-      },
-      splitLine: { lineStyle: { color: t.grid, type: [3, 3] } },
-      axisPointer: { label: { show: false } },
-    },
+    yAxis: axes.map((a, i) => yAxisOption(a, i, t, p)),
     dataZoom: zoomCfg,
     brush: {
       xAxisIndex: 0,
@@ -548,24 +571,28 @@ function tooltipHTML(params, p) {
     .map((x) => ({
       name: x.seriesName,
       value: +x.value,
+      type: x.seriesType,
       color: x.color || toneColor(p.series.find((s) => s.name === x.seriesName)?.color || "#888", tokens().dark),
+      unit: p.unitOf?.[x.seriesName] || p.unit || "",
     }));
   if (!rows.length) return "";
   rows.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
 
+  const sameUnit = !p.mixed && new Set(rows.map((r) => r.unit)).size <= 1;
   const sum = rows.reduce((s, r) => s + r.value, 0);
   const unit = p.unit || "";
-  const isPct = p.unit === "%";
   const maxRows = 12;
   const shown = rows.slice(0, isDesktop() ? maxRows : 8);
+
+  const fmtVal = (r) =>
+    r.unit === "%" ? fmtPct(r.value, 2) : r.type === "bar" ? cnum(r.value, 2) : cnum(r.value, 1);
 
   const body = shown
     .map((r) => {
       const active = p.focused === r.name ? " is-active" : "";
       let right = "";
       let rightCls = "";
-      if (p.secondary) {
-        // 第二列：变化率（相对区间起点）/ 原始值
+      if (p.secondary && p.series.length > 1) {
         if (p.secondary.type === "pct") {
           const v = p.secondary.map?.[r.name];
           if (Number.isFinite(v)) {
@@ -577,29 +604,26 @@ function tooltipHTML(params, p) {
           if (Number.isFinite(v)) right = cnum(v, Math.abs(v) >= 100 ? 0 : 1);
         }
       }
-      const val = isPct ? fmtPct(r.value, 2) : p.mode === "bar" ? cnum(r.value, 2) : cnum(r.value, 1);
       return `<div class="ec-tip-row${active}">
         <span class="ec-tip-swatch" style="--c:${r.color}"></span>
         <span class="ec-tip-name">${esc(r.name)}</span>
-        <span class="ec-tip-val">${esc(val)}</span>
+        <span class="ec-tip-val">${esc(fmtVal(r))}${r.unit && r.unit !== "%" ? `<span class="ec-tip-unit">${esc(r.unit)}</span>` : ""}</span>
         <span class="ec-tip-pct ${rightCls}">${esc(right)}</span>
       </div>`;
     })
     .join("");
 
   const rest = rows.length - shown.length;
-  const sumTxt = p.secondary?.type === "pct"
-    ? ""
-    : p.mode === "bar"
-      ? `合计 ${cnum(sum, 1)}`
-      : p.compare
-        ? ""
-        : `合计 ${isPct ? "" : cnum(sum, 1)}`;
+  const sumTxt = sameUnit
+    ? unit === "%"
+      ? ""
+      : `合计 ${cnum(sum, 1)}${rows.some((r) => r.type === "bar") ? "" : ""}`
+    : "";
 
   return `<div class="ec-tip">
     <div class="ec-tip-head">
       <span class="ec-tip-date">${esc(date)}</span>
-      <span class="ec-tip-sum">${esc(sumTxt)}${unit && !isPct ? " " + esc(unit) : ""}</span>
+      <span class="ec-tip-sum">${esc(sumTxt)}</span>
     </div>
     <div class="ec-tip-body">${body}${rest > 0 ? `<div class="ec-tip-more">另有 ${rest} 项…</div>` : ""}</div>
     ${p.footNote ? `<div class="ec-tip-foot"><span>${esc(p.footNote)}</span><span>${p.focused ? "已聚焦：" + esc(p.focused) : ""}</span></div>` : ""}

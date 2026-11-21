@@ -37,8 +37,8 @@ const DATA_DIR = path.join(SITE, "data");
 /** 数据文件缓存（按 mtime 失效）：/api/* 直接复用构站产物，避免每次请求都跑同步 SQLite */
 const fileCache = new Map();
 
-async function readData(name) {
-  const f = path.join(DATA_DIR, name + ".json");
+async function readData(name, dir = DATA_DIR) {
+  const f = path.join(dir, name + ".json");
   try {
     const st = await fs.promises.stat(f);
     const hit = fileCache.get(name);
@@ -51,8 +51,8 @@ async function readData(name) {
   }
 }
 
-async function readJson(name) {
-  const buf = await readData(name);
+async function readJson(name, dir) {
+  const buf = await readData(name, dir);
   if (!buf) return null;
   if (buf.parsed !== undefined) return buf.parsed;
   try {
@@ -168,6 +168,18 @@ export function createApp({ port = 5188, host = "127.0.0.1", autoRefresh = true,
         const r = await refresh(req.method === "POST" ? "手动" : "page");
         return json(res, 200, r);
       }
+      // 旧口径（legacy）数据：/api/legacy/<name>
+      if (p.startsWith("/api/legacy/")) {
+        const name = p.slice("/api/legacy/".length);
+        const LEGACY = path.join(DATA_DIR, "legacy");
+        if (name.startsWith("charts/")) {
+          const b = await readData(`charts-${decodeURIComponent(name.slice(7))}`, LEGACY);
+          return b ? sendRaw(res, 200, b) : json(res, 404, { error: "no legacy chart", key: name });
+        }
+        const b = await readData(name, LEGACY);
+        return b ? sendRaw(res, 200, b) : json(res, 404, { error: "no legacy payload", name });
+      }
+
       // 数据端点：优先直接读构站产物（零计算、按 mtime 缓存），缺失时才回落到动态构建
       if (p === "/api/meta") {
         const b = await readData("meta");

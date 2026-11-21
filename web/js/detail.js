@@ -59,6 +59,10 @@ export async function openDetail(name) {
       <span class="chip chip--line">${esc(state.rangeInfo.from)} → ${esc(state.rangeInfo.to)}</span>`;
   }
   syncStar();
+  // 通知外层：打开了某个小类（大类视图里会同步「单系列聚焦」）
+  try {
+    drawerHooks.onOpen?.(name);
+  } catch (e) {}
 
   // subs.json 是懒加载的：先给轻量占位，拿到数据后再渲染明细
   if (!app.subs) {

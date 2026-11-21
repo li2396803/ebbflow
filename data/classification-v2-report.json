@@ -1,0 +1,2244 @@
+{
+  "generatedAt": "2026-11-21T10:00:51.454Z",
+  "taxonomy": "v2",
+  "source": {
+    "fundBasic": {
+      "rows": 3037,
+      "cached": true,
+      "fetchedAt": "2026-11-21T08:41:57.309Z"
+    },
+    "indexBasic": {
+      "rows": 9654,
+      "cached": true,
+      "fetchedAt": "2026-11-21T09:54:00.520Z"
+    }
+  },
+  "coverage": {
+    "etfTotal": 1955,
+    "included": 1903,
+    "excluded": 52,
+    "rate": 0.9734,
+    "sh": 1051,
+    "sz": 852
+  },
+  "cats": [
+    {
+      "key": "broad",
+      "label": "宽基",
+      "subs": 11,
+      "etfs": 430,
+      "subNames": [
+        "大盘宽基",
+        "科创板宽基",
+        "创业板宽基",
+        "中证A500",
+        "中证500",
+        "沪深300",
+        "中证2000",
+        "A股全指",
+        "中盘宽基",
+        "中证1000",
+        "沪深港宽基"
+      ]
+    },
+    {
+      "key": "industry",
+      "label": "行业",
+      "subs": 24,
+      "etfs": 587,
+      "subNames": [
+        "电力设备",
+        "医药生物",
+        "有色金属",
+        "农林牧渔",
+        "计算机",
+        "非银金融",
+        "基础化工",
+        "公用事业",
+        "石油石化",
+        "机械设备",
+        "银行",
+        "食品饮料",
+        "环保",
+        "汽车",
+        "家用电器",
+        "电子",
+        "通信",
+        "传媒",
+        "国防军工",
+        "交通运输",
+        "房地产",
+        "建筑装饰",
+        "建筑材料",
+        "社会服务"
+      ]
+    },
+    {
+      "key": "theme",
+      "label": "主题",
+      "subs": 13,
+      "etfs": 357,
+      "subNames": [
+        "半导体芯片",
+        "人工智能",
+        "云计算与数据",
+        "科技综合",
+        "航空航天",
+        "消费综合",
+        "区域发展",
+        "央国企改革",
+        "机器人",
+        "金融科技",
+        "新能源车",
+        "互联网",
+        "金融地产"
+      ]
+    },
+    {
+      "key": "strategy",
+      "label": "策略风格",
+      "subs": 8,
+      "etfs": 192,
+      "subNames": [
+        "红利低波",
+        "现金流策略",
+        "红利股息",
+        "价值策略",
+        "质量策略",
+        "成长策略",
+        "ESG治理",
+        "综合策略"
+      ]
+    },
+    {
+      "key": "bond",
+      "label": "债券",
+      "subs": 4,
+      "etfs": 62,
+      "subNames": [
+        "科创债",
+        "信用债",
+        "利率债",
+        "地方债"
+      ]
+    },
+    {
+      "key": "crossborder",
+      "label": "跨境",
+      "subs": 10,
+      "etfs": 256,
+      "subNames": [
+        "港股科技",
+        "港股医药",
+        "港股红利",
+        "港股宽基",
+        "海外宽基",
+        "港股互联网",
+        "港股消费",
+        "港股汽车",
+        "海外行业",
+        "港股金融"
+      ]
+    },
+    {
+      "key": "commodity",
+      "label": "商品",
+      "subs": 2,
+      "etfs": 19,
+      "subNames": [
+        "黄金",
+        "商品期货"
+      ]
+    }
+  ],
+  "perSub": [
+    {
+      "sub": "大盘宽基",
+      "cat": "broad",
+      "sw": null,
+      "etfs": 100,
+      "srcDist": {
+        "index": 68,
+        "rule": 32
+      },
+      "srcDetail": {
+        "index:规模指数": 68,
+        "rule": 32
+      }
+    },
+    {
+      "sub": "科创板宽基",
+      "cat": "broad",
+      "sw": null,
+      "etfs": 86,
+      "srcDist": {
+        "index": 17,
+        "rule": 69
+      },
+      "srcDetail": {
+        "index:规模指数": 17,
+        "rule": 69
+      }
+    },
+    {
+      "sub": "创业板宽基",
+      "cat": "broad",
+      "sw": null,
+      "etfs": 50,
+      "srcDist": {
+        "rule": 34,
+        "index": 16
+      },
+      "srcDetail": {
+        "rule": 34,
+        "index:规模指数": 16
+      }
+    },
+    {
+      "sub": "中证A500",
+      "cat": "broad",
+      "sw": null,
+      "etfs": 41,
+      "srcDist": {
+        "index": 41
+      },
+      "srcDetail": {
+        "index:规模指数": 41
+      }
+    },
+    {
+      "sub": "中证500",
+      "cat": "broad",
+      "sw": null,
+      "etfs": 37,
+      "srcDist": {
+        "index": 24,
+        "rule": 13
+      },
+      "srcDetail": {
+        "index:规模指数": 24,
+        "rule": 13
+      }
+    },
+    {
+      "sub": "沪深300",
+      "cat": "broad",
+      "sw": null,
+      "etfs": 34,
+      "srcDist": {
+        "index": 34
+      },
+      "srcDetail": {
+        "index:规模指数": 34
+      }
+    },
+    {
+      "sub": "中证2000",
+      "cat": "broad",
+      "sw": null,
+      "etfs": 20,
+      "srcDist": {
+        "index": 20
+      },
+      "srcDetail": {
+        "index:规模指数": 20
+      }
+    },
+    {
+      "sub": "A股全指",
+      "cat": "broad",
+      "sw": null,
+      "etfs": 19,
+      "srcDist": {
+        "rule": 19
+      },
+      "srcDetail": {
+        "rule": 19
+      }
+    },
+    {
+      "sub": "中盘宽基",
+      "cat": "broad",
+      "sw": null,
+      "etfs": 18,
+      "srcDist": {
+        "index": 12,
+        "rule": 6
+      },
+      "srcDetail": {
+        "index:规模指数": 12,
+        "rule": 6
+      }
+    },
+    {
+      "sub": "中证1000",
+      "cat": "broad",
+      "sw": null,
+      "etfs": 17,
+      "srcDist": {
+        "index": 16,
+        "rule": 1
+      },
+      "srcDetail": {
+        "index:规模指数": 16,
+        "rule": 1
+      }
+    },
+    {
+      "sub": "沪深港宽基",
+      "cat": "broad",
+      "sw": null,
+      "etfs": 8,
+      "srcDist": {
+        "index": 8
+      },
+      "srcDetail": {
+        "index:规模指数": 8
+      }
+    },
+    {
+      "sub": "电力设备",
+      "cat": "industry",
+      "sw": "电力设备",
+      "etfs": 82,
+      "srcDist": {
+        "sw": 82
+      },
+      "srcDetail": {
+        "sw:电力设备": 82
+      }
+    },
+    {
+      "sub": "医药生物",
+      "cat": "industry",
+      "sw": "医药生物",
+      "etfs": 75,
+      "srcDist": {
+        "sw": 75
+      },
+      "srcDetail": {
+        "sw:医药生物": 75
+      }
+    },
+    {
+      "sub": "有色金属",
+      "cat": "industry",
+      "sw": "有色金属",
+      "etfs": 62,
+      "srcDist": {
+        "sw": 62
+      },
+      "srcDetail": {
+        "sw:有色金属": 62
+      }
+    },
+    {
+      "sub": "农林牧渔",
+      "cat": "industry",
+      "sw": "农林牧渔",
+      "etfs": 40,
+      "srcDist": {
+        "sw": 40
+      },
+      "srcDetail": {
+        "sw:农林牧渔": 40
+      }
+    },
+    {
+      "sub": "计算机",
+      "cat": "industry",
+      "sw": "计算机",
+      "etfs": 33,
+      "srcDist": {
+        "sw": 33
+      },
+      "srcDetail": {
+        "sw:计算机": 33
+      }
+    },
+    {
+      "sub": "非银金融",
+      "cat": "industry",
+      "sw": "非银金融",
+      "etfs": 32,
+      "srcDist": {
+        "sw": 31,
+        "rule": 1
+      },
+      "srcDetail": {
+        "sw:非银金融": 31,
+        "rule": 1
+      }
+    },
+    {
+      "sub": "基础化工",
+      "cat": "industry",
+      "sw": "基础化工",
+      "etfs": 30,
+      "srcDist": {
+        "sw": 30
+      },
+      "srcDetail": {
+        "sw:基础化工": 30
+      }
+    },
+    {
+      "sub": "公用事业",
+      "cat": "industry",
+      "sw": "公用事业",
+      "etfs": 29,
+      "srcDist": {
+        "sw": 29
+      },
+      "srcDetail": {
+        "sw:公用事业": 29
+      }
+    },
+    {
+      "sub": "石油石化",
+      "cat": "industry",
+      "sw": "石油石化",
+      "etfs": 26,
+      "srcDist": {
+        "sw": 26
+      },
+      "srcDetail": {
+        "sw:石油石化": 26
+      }
+    },
+    {
+      "sub": "机械设备",
+      "cat": "industry",
+      "sw": "机械设备",
+      "etfs": 24,
+      "srcDist": {
+        "sw": 24
+      },
+      "srcDetail": {
+        "sw:机械设备": 24
+      }
+    },
+    {
+      "sub": "银行",
+      "cat": "industry",
+      "sw": "银行",
+      "etfs": 21,
+      "srcDist": {
+        "sw": 21
+      },
+      "srcDetail": {
+        "sw:银行": 21
+      }
+    },
+    {
+      "sub": "食品饮料",
+      "cat": "industry",
+      "sw": "食品饮料",
+      "etfs": 19,
+      "srcDist": {
+        "sw": 19
+      },
+      "srcDetail": {
+        "sw:食品饮料": 19
+      }
+    },
+    {
+      "sub": "环保",
+      "cat": "industry",
+      "sw": "环保",
+      "etfs": 18,
+      "srcDist": {
+        "sw": 18
+      },
+      "srcDetail": {
+        "sw:环保": 18
+      }
+    },
+    {
+      "sub": "汽车",
+      "cat": "industry",
+      "sw": "汽车",
+      "etfs": 17,
+      "srcDist": {
+        "sw": 17
+      },
+      "srcDetail": {
+        "sw:汽车": 17
+      }
+    },
+    {
+      "sub": "家用电器",
+      "cat": "industry",
+      "sw": "家用电器",
+      "etfs": 14,
+      "srcDist": {
+        "sw": 14
+      },
+      "srcDetail": {
+        "sw:家用电器": 14
+      }
+    },
+    {
+      "sub": "电子",
+      "cat": "industry",
+      "sw": "电子",
+      "etfs": 14,
+      "srcDist": {
+        "sw": 13,
+        "rule": 1
+      },
+      "srcDetail": {
+        "sw:电子": 13,
+        "rule": 1
+      }
+    },
+    {
+      "sub": "通信",
+      "cat": "industry",
+      "sw": "通信",
+      "etfs": 13,
+      "srcDist": {
+        "sw": 13
+      },
+      "srcDetail": {
+        "sw:通信": 13
+      }
+    },
+    {
+      "sub": "传媒",
+      "cat": "industry",
+      "sw": "传媒",
+      "etfs": 10,
+      "srcDist": {
+        "sw": 10
+      },
+      "srcDetail": {
+        "sw:传媒": 10
+      }
+    },
+    {
+      "sub": "国防军工",
+      "cat": "industry",
+      "sw": "国防军工",
+      "etfs": 7,
+      "srcDist": {
+        "sw": 7
+      },
+      "srcDetail": {
+        "sw:国防军工": 7
+      }
+    },
+    {
+      "sub": "交通运输",
+      "cat": "industry",
+      "sw": "交通运输",
+      "etfs": 6,
+      "srcDist": {
+        "sw": 6
+      },
+      "srcDetail": {
+        "sw:交通运输": 6
+      }
+    },
+    {
+      "sub": "房地产",
+      "cat": "industry",
+      "sw": "房地产",
+      "etfs": 5,
+      "srcDist": {
+        "sw": 5
+      },
+      "srcDetail": {
+        "sw:房地产": 5
+      }
+    },
+    {
+      "sub": "建筑装饰",
+      "cat": "industry",
+      "sw": "建筑装饰",
+      "etfs": 4,
+      "srcDist": {
+        "sw": 4
+      },
+      "srcDetail": {
+        "sw:建筑装饰": 4
+      }
+    },
+    {
+      "sub": "建筑材料",
+      "cat": "industry",
+      "sw": "建筑材料",
+      "etfs": 3,
+      "srcDist": {
+        "sw": 3
+      },
+      "srcDetail": {
+        "sw:建筑材料": 3
+      }
+    },
+    {
+      "sub": "社会服务",
+      "cat": "industry",
+      "sw": "社会服务",
+      "etfs": 3,
+      "srcDist": {
+        "sw": 3
+      },
+      "srcDetail": {
+        "sw:社会服务": 3
+      }
+    },
+    {
+      "sub": "半导体芯片",
+      "cat": "theme",
+      "sw": null,
+      "etfs": 55,
+      "srcDist": {
+        "theme": 55
+      },
+      "srcDetail": {
+        "theme:半导体/芯片": 55
+      }
+    },
+    {
+      "sub": "人工智能",
+      "cat": "theme",
+      "sw": null,
+      "etfs": 49,
+      "srcDist": {
+        "theme": 49
+      },
+      "srcDetail": {
+        "theme:人工智能": 49
+      }
+    },
+    {
+      "sub": "云计算与数据",
+      "cat": "theme",
+      "sw": null,
+      "etfs": 47,
+      "srcDist": {
+        "theme": 47
+      },
+      "srcDetail": {
+        "theme:云计算/大数据/物联网": 47
+      }
+    },
+    {
+      "sub": "科技综合",
+      "cat": "theme",
+      "sw": null,
+      "etfs": 36,
+      "srcDist": {
+        "theme": 36
+      },
+      "srcDetail": {
+        "theme:科技综合/TMT": 36
+      }
+    },
+    {
+      "sub": "航空航天",
+      "cat": "theme",
+      "sw": null,
+      "etfs": 31,
+      "srcDist": {
+        "theme": 31
+      },
+      "srcDetail": {
+        "theme:卫星/航天/航空": 31
+      }
+    },
+    {
+      "sub": "消费综合",
+      "cat": "theme",
+      "sw": null,
+      "etfs": 27,
+      "srcDist": {
+        "theme": 26,
+        "rule": 1
+      },
+      "srcDetail": {
+        "theme:消费综合": 26,
+        "rule": 1
+      }
+    },
+    {
+      "sub": "区域发展",
+      "cat": "theme",
+      "sw": null,
+      "etfs": 24,
+      "srcDist": {
+        "theme": 24
+      },
+      "srcDetail": {
+        "theme:区域主题": 24
+      }
+    },
+    {
+      "sub": "央国企改革",
+      "cat": "theme",
+      "sw": null,
+      "etfs": 23,
+      "srcDist": {
+        "theme": 19,
+        "rule": 4
+      },
+      "srcDetail": {
+        "theme:央企/国企改革": 19,
+        "rule": 4
+      }
+    },
+    {
+      "sub": "机器人",
+      "cat": "theme",
+      "sw": null,
+      "etfs": 21,
+      "srcDist": {
+        "theme": 21
+      },
+      "srcDetail": {
+        "theme:机器人/智能制造": 21
+      }
+    },
+    {
+      "sub": "金融科技",
+      "cat": "theme",
+      "sw": null,
+      "etfs": 16,
+      "srcDist": {
+        "theme": 16
+      },
+      "srcDetail": {
+        "theme:金融科技": 16
+      }
+    },
+    {
+      "sub": "新能源车",
+      "cat": "theme",
+      "sw": null,
+      "etfs": 14,
+      "srcDist": {
+        "theme": 14
+      },
+      "srcDetail": {
+        "theme:新能源车": 14
+      }
+    },
+    {
+      "sub": "互联网",
+      "cat": "theme",
+      "sw": null,
+      "etfs": 8,
+      "srcDist": {
+        "theme": 8
+      },
+      "srcDetail": {
+        "theme:互联网": 8
+      }
+    },
+    {
+      "sub": "金融地产",
+      "cat": "theme",
+      "sw": null,
+      "etfs": 6,
+      "srcDist": {
+        "theme": 6
+      },
+      "srcDetail": {
+        "theme:金融地产综合": 6
+      }
+    },
+    {
+      "sub": "红利低波",
+      "cat": "strategy",
+      "sw": null,
+      "etfs": 34,
+      "srcDist": {
+        "index": 31,
+        "rule": 3
+      },
+      "srcDetail": {
+        "index:策略指数": 31,
+        "rule": 3
+      }
+    },
+    {
+      "sub": "现金流策略",
+      "cat": "strategy",
+      "sw": null,
+      "etfs": 33,
+      "srcDist": {
+        "rule": 12,
+        "index": 21
+      },
+      "srcDetail": {
+        "rule": 12,
+        "index:策略指数": 21
+      }
+    },
+    {
+      "sub": "红利股息",
+      "cat": "strategy",
+      "sw": null,
+      "etfs": 28,
+      "srcDist": {
+        "index": 16,
+        "rule": 12
+      },
+      "srcDetail": {
+        "index:策略指数": 16,
+        "rule": 12
+      }
+    },
+    {
+      "sub": "价值策略",
+      "cat": "strategy",
+      "sw": null,
+      "etfs": 26,
+      "srcDist": {
+        "index": 15,
+        "rule": 11
+      },
+      "srcDetail": {
+        "index:风格指数": 11,
+        "index:策略指数": 4,
+        "rule": 11
+      }
+    },
+    {
+      "sub": "质量策略",
+      "cat": "strategy",
+      "sw": null,
+      "etfs": 22,
+      "srcDist": {
+        "rule": 17,
+        "index": 5
+      },
+      "srcDetail": {
+        "rule": 17,
+        "index:策略指数": 5
+      }
+    },
+    {
+      "sub": "成长策略",
+      "cat": "strategy",
+      "sw": null,
+      "etfs": 21,
+      "srcDist": {
+        "rule": 13,
+        "index": 8
+      },
+      "srcDetail": {
+        "rule": 13,
+        "index:风格指数": 4,
+        "index:策略指数": 4
+      }
+    },
+    {
+      "sub": "ESG治理",
+      "cat": "strategy",
+      "sw": null,
+      "etfs": 15,
+      "srcDist": {
+        "rule": 15
+      },
+      "srcDetail": {
+        "rule": 15
+      }
+    },
+    {
+      "sub": "综合策略",
+      "cat": "strategy",
+      "sw": null,
+      "etfs": 13,
+      "srcDist": {
+        "rule": 13
+      },
+      "srcDetail": {
+        "rule": 13
+      }
+    },
+    {
+      "sub": "科创债",
+      "cat": "bond",
+      "sw": null,
+      "etfs": 24,
+      "srcDist": {
+        "bond": 24
+      },
+      "srcDetail": {
+        "bond:科创债": 24
+      }
+    },
+    {
+      "sub": "信用债",
+      "cat": "bond",
+      "sw": null,
+      "etfs": 16,
+      "srcDist": {
+        "bond": 16
+      },
+      "srcDetail": {
+        "bond:信用债": 16
+      }
+    },
+    {
+      "sub": "利率债",
+      "cat": "bond",
+      "sw": null,
+      "etfs": 15,
+      "srcDist": {
+        "bond": 15
+      },
+      "srcDetail": {
+        "bond:利率债": 15
+      }
+    },
+    {
+      "sub": "地方债",
+      "cat": "bond",
+      "sw": null,
+      "etfs": 7,
+      "srcDist": {
+        "bond": 7
+      },
+      "srcDetail": {
+        "bond:地方债": 7
+      }
+    },
+    {
+      "sub": "港股科技",
+      "cat": "crossborder",
+      "sw": null,
+      "etfs": 53,
+      "srcDist": {
+        "crossborder": 53
+      },
+      "srcDetail": {
+        "crossborder:港股科技": 53
+      }
+    },
+    {
+      "sub": "港股医药",
+      "cat": "crossborder",
+      "sw": null,
+      "etfs": 42,
+      "srcDist": {
+        "crossborder": 42
+      },
+      "srcDetail": {
+        "crossborder:港股医药": 42
+      }
+    },
+    {
+      "sub": "港股红利",
+      "cat": "crossborder",
+      "sw": null,
+      "etfs": 34,
+      "srcDist": {
+        "crossborder": 34
+      },
+      "srcDetail": {
+        "crossborder:港股红利": 34
+      }
+    },
+    {
+      "sub": "港股宽基",
+      "cat": "crossborder",
+      "sw": null,
+      "etfs": 32,
+      "srcDist": {
+        "crossborder": 32
+      },
+      "srcDetail": {
+        "crossborder:港股宽基": 32
+      }
+    },
+    {
+      "sub": "海外宽基",
+      "cat": "crossborder",
+      "sw": null,
+      "etfs": 31,
+      "srcDist": {
+        "crossborder": 31
+      },
+      "srcDetail": {
+        "crossborder:海外宽基": 31
+      }
+    },
+    {
+      "sub": "港股互联网",
+      "cat": "crossborder",
+      "sw": null,
+      "etfs": 18,
+      "srcDist": {
+        "crossborder": 18
+      },
+      "srcDetail": {
+        "crossborder:港股互联网": 18
+      }
+    },
+    {
+      "sub": "港股消费",
+      "cat": "crossborder",
+      "sw": null,
+      "etfs": 14,
+      "srcDist": {
+        "crossborder": 14
+      },
+      "srcDetail": {
+        "crossborder:港股消费": 14
+      }
+    },
+    {
+      "sub": "港股汽车",
+      "cat": "crossborder",
+      "sw": null,
+      "etfs": 14,
+      "srcDist": {
+        "crossborder": 14
+      },
+      "srcDetail": {
+        "crossborder:港股汽车": 14
+      }
+    },
+    {
+      "sub": "海外行业",
+      "cat": "crossborder",
+      "sw": null,
+      "etfs": 10,
+      "srcDist": {
+        "crossborder": 10
+      },
+      "srcDetail": {
+        "crossborder:海外行业": 10
+      }
+    },
+    {
+      "sub": "港股金融",
+      "cat": "crossborder",
+      "sw": null,
+      "etfs": 8,
+      "srcDist": {
+        "crossborder": 8
+      },
+      "srcDetail": {
+        "crossborder:港股金融": 8
+      }
+    },
+    {
+      "sub": "黄金",
+      "cat": "commodity",
+      "sw": null,
+      "etfs": 16,
+      "srcDist": {
+        "commodity": 16
+      },
+      "srcDetail": {
+        "commodity:黄金现货": 16
+      }
+    },
+    {
+      "sub": "商品期货",
+      "cat": "commodity",
+      "sw": null,
+      "etfs": 3,
+      "srcDist": {
+        "commodity": 3
+      },
+      "srcDetail": {
+        "commodity:商品期货": 3
+      }
+    }
+  ],
+  "swL1": {
+    "total": 31,
+    "standalone": [
+      {
+        "sub": "电力设备",
+        "etfs": 82
+      },
+      {
+        "sub": "医药生物",
+        "etfs": 75
+      },
+      {
+        "sub": "有色金属",
+        "etfs": 62
+      },
+      {
+        "sub": "农林牧渔",
+        "etfs": 40
+      },
+      {
+        "sub": "计算机",
+        "etfs": 33
+      },
+      {
+        "sub": "非银金融",
+        "etfs": 32
+      },
+      {
+        "sub": "基础化工",
+        "etfs": 30
+      },
+      {
+        "sub": "公用事业",
+        "etfs": 29
+      },
+      {
+        "sub": "石油石化",
+        "etfs": 26
+      },
+      {
+        "sub": "机械设备",
+        "etfs": 24
+      },
+      {
+        "sub": "银行",
+        "etfs": 21
+      },
+      {
+        "sub": "食品饮料",
+        "etfs": 19
+      },
+      {
+        "sub": "环保",
+        "etfs": 18
+      },
+      {
+        "sub": "汽车",
+        "etfs": 17
+      },
+      {
+        "sub": "家用电器",
+        "etfs": 14
+      },
+      {
+        "sub": "电子",
+        "etfs": 14
+      },
+      {
+        "sub": "通信",
+        "etfs": 13
+      },
+      {
+        "sub": "传媒",
+        "etfs": 10
+      },
+      {
+        "sub": "国防军工",
+        "etfs": 7
+      },
+      {
+        "sub": "交通运输",
+        "etfs": 6
+      },
+      {
+        "sub": "房地产",
+        "etfs": 5
+      },
+      {
+        "sub": "建筑装饰",
+        "etfs": 4
+      },
+      {
+        "sub": "建筑材料",
+        "etfs": 3
+      },
+      {
+        "sub": "社会服务",
+        "etfs": 3
+      }
+    ],
+    "merged": [
+      {
+        "sw": "钢铁",
+        "mergedInto": "有色金属"
+      },
+      {
+        "sw": "纺织服饰",
+        "mergedInto": "（无 ETF 覆盖，未使用）"
+      },
+      {
+        "sw": "轻工制造",
+        "mergedInto": "（无 ETF 覆盖，未使用）"
+      },
+      {
+        "sw": "商贸零售",
+        "mergedInto": "（无 ETF 覆盖，未使用）"
+      },
+      {
+        "sw": "综合",
+        "mergedInto": "（无 ETF 覆盖，未使用）"
+      },
+      {
+        "sw": "煤炭",
+        "mergedInto": "石油石化"
+      },
+      {
+        "sw": "美容护理",
+        "mergedInto": "（无 ETF 覆盖，未使用）"
+      }
+    ]
+  },
+  "srcKinds": {
+    "crossborder": 256,
+    "index": 352,
+    "sw": 585,
+    "theme": 352,
+    "rule": 277,
+    "bond": 62,
+    "commodity": 19
+  },
+  "indexCoverage": {
+    "note": "ETF 的指数指纹能在 index_basic（SSE/SZSE/CSI/SW）里命中指数全名的比例，对应用户提到的「指数名包含匹配」口径",
+    "total": 1955,
+    "matched": 1397,
+    "rate": 0.7146,
+    "byCategory": {
+      "主题指数": 606,
+      "风格指数": 15,
+      "其他指数": 64,
+      "规模指数": 416,
+      "行业指数": 124,
+      "综合指数": 18,
+      "策略指数": 119,
+      "债券指数": 35
+    }
+  },
+  "excludedList": [
+    {
+      "code": "158900",
+      "name": "南方均衡配置主动管理ETF",
+      "benchmark": "中证800指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "158901",
+      "name": "富国价值优选量化选股主动管理ETF",
+      "benchmark": "中证800价值指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "158902",
+      "name": "大成红利智选主动管理ETF",
+      "benchmark": "中证红利指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "158903",
+      "name": "鹏华价值臻选主动管理ETF",
+      "benchmark": "中证800价值指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "158905",
+      "name": "工银瑞信红利主动管理ETF",
+      "benchmark": "中证红利指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "158906",
+      "name": "华宝均衡精选主动管理ETF",
+      "benchmark": "中证A500指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "158907",
+      "name": "国泰鑫汇均衡收益主动管理ETF",
+      "benchmark": "中证A500指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "158908",
+      "name": "天弘均衡量化选股主动管理ETF",
+      "benchmark": "中证800指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "158909",
+      "name": "建信均衡优选主动管理ETF",
+      "benchmark": "中证800指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "159001",
+      "name": "易方达保证金收益货币ETF-A",
+      "benchmark": "活期存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "159003",
+      "name": "招商保证金快线货币ETF-A",
+      "benchmark": "活期存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "159005",
+      "name": "汇添富收益快钱货币ETF-A",
+      "benchmark": "活期存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511600",
+      "name": "华安日日鑫货币ETF-H",
+      "benchmark": "7天通知存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511620",
+      "name": "国泰瞬利货币ETF-A",
+      "benchmark": "七天通知存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511650",
+      "name": "华夏快线货币ETF-E",
+      "benchmark": "七天通知存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511660",
+      "name": "建信现金添益货币ETF-H",
+      "benchmark": "七天通知存款利率×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511670",
+      "name": "华泰紫金天天金货币ETF-A",
+      "benchmark": "七天通知存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511680",
+      "name": "安信保证金货币ETF",
+      "benchmark": "七天通知存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511690",
+      "name": "大成添益货币ETF-E",
+      "benchmark": "活期存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511700",
+      "name": "平安货币ETF-E",
+      "benchmark": "七天通知存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511760",
+      "name": "德邦现金宝货币ETF-E",
+      "benchmark": "七天通知存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511770",
+      "name": "金鹰现金增益货币ETF-E",
+      "benchmark": "七天通知存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511800",
+      "name": "易方达货币ETF-E",
+      "benchmark": "活期存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511810",
+      "name": "南方理财金货币ETF-H",
+      "benchmark": "七天通知存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511820",
+      "name": "鹏华添利货币ETF-B",
+      "benchmark": "活期存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511830",
+      "name": "华泰柏瑞货币ETF-A",
+      "benchmark": "活期存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511850",
+      "name": "招商财富宝货币ETF-E",
+      "benchmark": "活期存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511860",
+      "name": "博时保证金实时货币ETF-A",
+      "benchmark": "七天通知存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511880",
+      "name": "银华货币ETF-A",
+      "benchmark": "活期存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511890",
+      "name": "景顺长城货币ETF",
+      "benchmark": "七天通知存款税后利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511900",
+      "name": "富国收益宝货币ETF-H",
+      "benchmark": "活期存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511910",
+      "name": "融通易支付货币ETF-E",
+      "benchmark": "活期存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511920",
+      "name": "广发货币ETF-E",
+      "benchmark": "活期存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511930",
+      "name": "国联日日盈货币ETF-A",
+      "benchmark": "七天通知存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511950",
+      "name": "广发添利货币ETF-A",
+      "benchmark": "活期存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511960",
+      "name": "嘉实快线货币ETF-H",
+      "benchmark": "活期存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511970",
+      "name": "国寿安保货币ETF-E",
+      "benchmark": "7天通知存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511980",
+      "name": "汇添富添富通货币ETF-E",
+      "benchmark": "活期存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "511990",
+      "name": "华宝现金添益货币ETF-A",
+      "benchmark": "7天通知存款利率(税后)×100%",
+      "reason": "货币型 ETF（v2 的 7 大类不含货币）"
+    },
+    {
+      "code": "513090",
+      "name": "易方达中证香港证券投资主题ETF",
+      "benchmark": "中证香港证券投资主题指数收益率(使用估值汇率折算)×100%",
+      "reason": "指数「中证香港证券投资主题」在指数库与关键词表中均无对应口径（主题指数）"
+    },
+    {
+      "code": "513400",
+      "name": "鹏华道琼斯工业平均ETF(QDII)",
+      "benchmark": "道琼斯工业平均指数收益率(经汇率调整后)×100%",
+      "reason": "指数「道琼斯工业平均」在指数库与关键词表中均无对应口径（指数库未收录）"
+    },
+    {
+      "code": "513800",
+      "name": "南方顶峰TOPIXETF(QDII)",
+      "benchmark": "经估值汇率调整的东证指数收益率×100%",
+      "reason": "指数「东证」在指数库与关键词表中均无对应口径（指数库未收录）"
+    },
+    {
+      "code": "517780",
+      "name": "浦银安盛中华交易服务沪深港300ETF",
+      "benchmark": "中华交易服务沪深港300指数收益率×100%",
+      "reason": "指数「中华交易服务沪深港300」在指数库与关键词表中均无对应口径（指数库未收录）"
+    },
+    {
+      "code": "581000",
+      "name": "摩根大盘成长主动管理ETF",
+      "benchmark": "沪深300成长指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "581010",
+      "name": "汇添富均衡策略智选主动管理ETF",
+      "benchmark": "中证800指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "581020",
+      "name": "华安均衡慧选主动管理ETF",
+      "benchmark": "中证800指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "581030",
+      "name": "华夏质量甄选主动管理ETF",
+      "benchmark": "中证800质量指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "581050",
+      "name": "易方达品质均衡主动管理ETF",
+      "benchmark": "中证800指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "581060",
+      "name": "永赢景气均衡主动管理ETF",
+      "benchmark": "中证A100指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "581070",
+      "name": "平安红利景气主动管理ETF",
+      "benchmark": "中证红利指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "581080",
+      "name": "招商价值智选主动管理ETF",
+      "benchmark": "中证800价值指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    },
+    {
+      "code": "581090",
+      "name": "华泰柏瑞价值精选主动管理ETF",
+      "benchmark": "中证800价值指数收益率×100%",
+      "reason": "主动管理 ETF，benchmark 仅为业绩比较基准、不跟踪指数"
+    }
+  ],
+  "crosswalk": {
+    "note": "旧 88 小类（taxonomy 773 只 + data/universe.json 深市 assign）→ v2 小类",
+    "rows": [
+      {
+        "from": "科创板宽基",
+        "to": "科创板宽基",
+        "cat": "broad",
+        "count": 81
+      },
+      {
+        "from": "A股大盘",
+        "to": "大盘宽基",
+        "cat": "broad",
+        "count": 73
+      },
+      {
+        "from": "创业板宽基",
+        "to": "创业板宽基",
+        "cat": "broad",
+        "count": 50
+      },
+      {
+        "from": "云计算与数据",
+        "to": "云计算与数据",
+        "cat": "theme",
+        "count": 44
+      },
+      {
+        "from": "半导体芯片",
+        "to": "半导体芯片",
+        "cat": "theme",
+        "count": 44
+      },
+      {
+        "from": "人工智能",
+        "to": "人工智能",
+        "cat": "theme",
+        "count": 41
+      },
+      {
+        "from": "A股全指",
+        "to": "中证A500",
+        "cat": "broad",
+        "count": 40
+      },
+      {
+        "from": "电池",
+        "to": "电力设备",
+        "cat": "industry",
+        "count": 35
+      },
+      {
+        "from": "科技综合",
+        "to": "港股科技",
+        "cat": "crossborder",
+        "count": 35
+      },
+      {
+        "from": "A股中盘",
+        "to": "中证500",
+        "cat": "broad",
+        "count": 34
+      },
+      {
+        "from": "A股大盘",
+        "to": "沪深300",
+        "cat": "broad",
+        "count": 33
+      },
+      {
+        "from": "软件与信创",
+        "to": "计算机",
+        "cat": "industry",
+        "count": 31
+      },
+      {
+        "from": "现金流策略",
+        "to": "现金流策略",
+        "cat": "strategy",
+        "count": 30
+      },
+      {
+        "from": "航空航天",
+        "to": "航空航天",
+        "cat": "theme",
+        "count": 29
+      },
+      {
+        "from": "券商",
+        "to": "非银金融",
+        "cat": "industry",
+        "count": 26
+      },
+      {
+        "from": "科技综合",
+        "to": "科技综合",
+        "cat": "theme",
+        "count": 26
+      },
+      {
+        "from": "价值策略",
+        "to": "价值策略",
+        "cat": "strategy",
+        "count": 25
+      },
+      {
+        "from": "有色金属",
+        "to": "有色金属",
+        "cat": "industry",
+        "count": 25
+      },
+      {
+        "from": "农业",
+        "to": "农林牧渔",
+        "cat": "industry",
+        "count": 25
+      },
+      {
+        "from": "港红利股息",
+        "to": "港股红利",
+        "cat": "crossborder",
+        "count": 25
+      },
+      {
+        "from": "电力",
+        "to": "公用事业",
+        "cat": "industry",
+        "count": 24
+      },
+      {
+        "from": "科创债",
+        "to": "科创债",
+        "cat": "bond",
+        "count": 24
+      },
+      {
+        "from": "红利低波",
+        "to": "红利低波",
+        "cat": "strategy",
+        "count": 23
+      },
+      {
+        "from": "消费综合",
+        "to": "消费综合",
+        "cat": "theme",
+        "count": 23
+      },
+      {
+        "from": "红利股息",
+        "to": "红利股息",
+        "cat": "strategy",
+        "count": 22
+      },
+      {
+        "from": "智能制造与机器人",
+        "to": "机器人",
+        "cat": "theme",
+        "count": 20
+      },
+      {
+        "from": "新能源综合",
+        "to": "电力设备",
+        "cat": "industry",
+        "count": 20
+      },
+      {
+        "from": "A股小盘",
+        "to": "中证2000",
+        "cat": "broad",
+        "count": 20
+      },
+      {
+        "from": "央国企改革",
+        "to": "央国企改革",
+        "cat": "theme",
+        "count": 20
+      },
+      {
+        "from": "医药综合",
+        "to": "医药生物",
+        "cat": "industry",
+        "count": 19
+      },
+      {
+        "from": "区域发展",
+        "to": "区域发展",
+        "cat": "theme",
+        "count": 19
+      },
+      {
+        "from": "港股宽基",
+        "to": "港股宽基",
+        "cat": "crossborder",
+        "count": 18
+      },
+      {
+        "from": "成长策略",
+        "to": "成长策略",
+        "cat": "strategy",
+        "count": 17
+      },
+      {
+        "from": "油气",
+        "to": "石油石化",
+        "cat": "industry",
+        "count": 17
+      },
+      {
+        "from": "环保与碳中和",
+        "to": "环保",
+        "cat": "industry",
+        "count": 17
+      },
+      {
+        "from": "稀有金属",
+        "to": "有色金属",
+        "cat": "industry",
+        "count": 16
+      },
+      {
+        "from": "互联网",
+        "to": "港股互联网",
+        "cat": "crossborder",
+        "count": 16
+      },
+      {
+        "from": "海外宽基",
+        "to": "海外宽基",
+        "cat": "crossborder",
+        "count": 16
+      },
+      {
+        "from": "光伏",
+        "to": "电力设备",
+        "cat": "industry",
+        "count": 16
+      },
+      {
+        "from": "A股小盘",
+        "to": "中证1000",
+        "cat": "broad",
+        "count": 16
+      },
+      {
+        "from": "金融科技",
+        "to": "金融科技",
+        "cat": "theme",
+        "count": 15
+      },
+      {
+        "from": "食品饮料",
+        "to": "食品饮料",
+        "cat": "industry",
+        "count": 14
+      },
+      {
+        "from": "银行",
+        "to": "银行",
+        "cat": "industry",
+        "count": 14
+      },
+      {
+        "from": "创新药",
+        "to": "医药生物",
+        "cat": "industry",
+        "count": 14
+      },
+      {
+        "from": "家电家居",
+        "to": "家用电器",
+        "cat": "industry",
+        "count": 13
+      },
+      {
+        "from": "石化化工",
+        "to": "基础化工",
+        "cat": "industry",
+        "count": 13
+      },
+      {
+        "from": "新能源汽车",
+        "to": "新能源车",
+        "cat": "theme",
+        "count": 13
+      },
+      {
+        "from": "ESG治理",
+        "to": "ESG治理",
+        "cat": "strategy",
+        "count": 13
+      },
+      {
+        "from": "医药综合",
+        "to": "港股医药",
+        "cat": "crossborder",
+        "count": 12
+      },
+      {
+        "from": "工程机械",
+        "to": "机械设备",
+        "cat": "industry",
+        "count": 12
+      },
+      {
+        "from": "通信",
+        "to": "通信",
+        "cat": "industry",
+        "count": 12
+      },
+      {
+        "from": "畜牧养殖",
+        "to": "农林牧渔",
+        "cat": "industry",
+        "count": 12
+      },
+      {
+        "from": "汽车与零部件",
+        "to": "汽车",
+        "cat": "industry",
+        "count": 12
+      },
+      {
+        "from": "生物医药",
+        "to": "医药生物",
+        "cat": "industry",
+        "count": 12
+      },
+      {
+        "from": "A股中盘",
+        "to": "中盘宽基",
+        "cat": "broad",
+        "count": 12
+      },
+      {
+        "from": "汽车与零部件",
+        "to": "港股汽车",
+        "cat": "crossborder",
+        "count": 11
+      },
+      {
+        "from": "消费电子",
+        "to": "电子",
+        "cat": "industry",
+        "count": 11
+      },
+      {
+        "from": "创新药",
+        "to": "港股医药",
+        "cat": "crossborder",
+        "count": 11
+      },
+      {
+        "from": "消费综合",
+        "to": "港股消费",
+        "cat": "crossborder",
+        "count": 10
+      },
+      {
+        "from": "A股全指",
+        "to": "A股全指",
+        "cat": "broad",
+        "count": 9
+      },
+      {
+        "from": "生物医药",
+        "to": "港股医药",
+        "cat": "crossborder",
+        "count": 9
+      },
+      {
+        "from": "新材料",
+        "to": "基础化工",
+        "cat": "industry",
+        "count": 9
+      },
+      {
+        "from": "传媒游戏",
+        "to": "传媒",
+        "cat": "industry",
+        "count": 9
+      },
+      {
+        "from": "信用债",
+        "to": "信用债",
+        "cat": "bond",
+        "count": 8
+      },
+      {
+        "from": "互联网",
+        "to": "互联网",
+        "cat": "theme",
+        "count": 8
+      },
+      {
+        "from": "红利股息",
+        "to": "质量策略",
+        "cat": "strategy",
+        "count": 7
+      },
+      {
+        "from": "医疗器械",
+        "to": "医药生物",
+        "cat": "industry",
+        "count": 7
+      },
+      {
+        "from": "沪深港宽基",
+        "to": "沪深港宽基",
+        "cat": "broad",
+        "count": 7
+      },
+      {
+        "from": "金融综合",
+        "to": "港股金融",
+        "cat": "crossborder",
+        "count": 6
+      },
+      {
+        "from": "贵金属",
+        "to": "有色金属",
+        "cat": "industry",
+        "count": 6
+      },
+      {
+        "from": "疫苗",
+        "to": "医药生物",
+        "cat": "industry",
+        "count": 6
+      },
+      {
+        "from": "中长期利率债",
+        "to": "利率债",
+        "cat": "bond",
+        "count": 6
+      },
+      {
+        "from": "交通物流",
+        "to": "交通运输",
+        "cat": "industry",
+        "count": 6
+      },
+      {
+        "from": "综合策略",
+        "to": "综合策略",
+        "cat": "strategy",
+        "count": 6
+      },
+      {
+        "from": "金融综合",
+        "to": "金融地产",
+        "cat": "theme",
+        "count": 6
+      },
+      {
+        "from": "国防军工",
+        "to": "国防军工",
+        "cat": "industry",
+        "count": 6
+      },
+      {
+        "from": "中药",
+        "to": "医药生物",
+        "cat": "industry",
+        "count": 5
+      },
+      {
+        "from": "地方政府债",
+        "to": "地方债",
+        "cat": "bond",
+        "count": 5
+      },
+      {
+        "from": "医疗服务与互联网医疗",
+        "to": "医药生物",
+        "cat": "industry",
+        "count": 5
+      },
+      {
+        "from": "能源综合",
+        "to": "石油石化",
+        "cat": "industry",
+        "count": 5
+      },
+      {
+        "from": "公用事业",
+        "to": "公用事业",
+        "cat": "industry",
+        "count": 4
+      },
+      {
+        "from": "海外宽基",
+        "to": "海外行业",
+        "cat": "crossborder",
+        "count": 4
+      },
+      {
+        "from": "基础设施",
+        "to": "建筑装饰",
+        "cat": "industry",
+        "count": 4
+      },
+      {
+        "from": "短期利率债",
+        "to": "利率债",
+        "cat": "bond",
+        "count": 4
+      },
+      {
+        "from": "房地产",
+        "to": "房地产",
+        "cat": "industry",
+        "count": 4
+      },
+      {
+        "from": "A股中盘",
+        "to": "大盘宽基",
+        "cat": "broad",
+        "count": 4
+      },
+      {
+        "from": "高端装备",
+        "to": "机械设备",
+        "cat": "industry",
+        "count": 4
+      },
+      {
+        "from": "区域发展",
+        "to": "科技综合",
+        "cat": "theme",
+        "count": 4
+      },
+      {
+        "from": "成长策略",
+        "to": "质量策略",
+        "cat": "strategy",
+        "count": 3
+      },
+      {
+        "from": "建筑材料",
+        "to": "建筑材料",
+        "cat": "industry",
+        "count": 3
+      },
+      {
+        "from": "半导体芯片",
+        "to": "电子",
+        "cat": "industry",
+        "count": 3
+      },
+      {
+        "from": "A股中盘",
+        "to": "A股全指",
+        "cat": "broad",
+        "count": 2
+      },
+      {
+        "from": "电力",
+        "to": "电力设备",
+        "cat": "industry",
+        "count": 2
+      },
+      {
+        "from": "金融综合",
+        "to": "非银金融",
+        "cat": "industry",
+        "count": 2
+      },
+      {
+        "from": "石化化工",
+        "to": "石油石化",
+        "cat": "industry",
+        "count": 2
+      },
+      {
+        "from": "旅游",
+        "to": "社会服务",
+        "cat": "industry",
+        "count": 2
+      },
+      {
+        "from": "资源综合",
+        "to": "有色金属",
+        "cat": "industry",
+        "count": 2
+      },
+      {
+        "from": "可转债与可交换债",
+        "to": "信用债",
+        "cat": "bond",
+        "count": 2
+      },
+      {
+        "from": "保险与非银",
+        "to": "非银金融",
+        "cat": "industry",
+        "count": 2
+      },
+      {
+        "from": "价值策略",
+        "to": "质量策略",
+        "cat": "strategy",
+        "count": 2
+      },
+      {
+        "from": "品牌消费",
+        "to": "消费综合",
+        "cat": "theme",
+        "count": 2
+      },
+      {
+        "from": "A股小盘",
+        "to": "中盘宽基",
+        "cat": "broad",
+        "count": 2
+      },
+      {
+        "from": "价值策略",
+        "to": "综合策略",
+        "cat": "strategy",
+        "count": 2
+      },
+      {
+        "from": "A股中盘",
+        "to": "质量策略",
+        "cat": "strategy",
+        "count": 1
+      },
+      {
+        "from": "A股大盘",
+        "to": "质量策略",
+        "cat": "strategy",
+        "count": 1
+      },
+      {
+        "from": "资源综合",
+        "to": "基础化工",
+        "cat": "industry",
+        "count": 1
+      },
+      {
+        "from": "超长期国债",
+        "to": "利率债",
+        "cat": "bond",
+        "count": 1
+      },
+      {
+        "from": "城投债",
+        "to": "信用债",
+        "cat": "bond",
+        "count": 1
+      },
+      {
+        "from": "短期融资券",
+        "to": "信用债",
+        "cat": "bond",
+        "count": 1
+      },
+      {
+        "from": "科技综合",
+        "to": "计算机",
+        "cat": "industry",
+        "count": 1
+      },
+      {
+        "from": "白酒",
+        "to": "食品饮料",
+        "cat": "industry",
+        "count": 1
+      },
+      {
+        "from": "互联网",
+        "to": "海外行业",
+        "cat": "crossborder",
+        "count": 1
+      },
+      {
+        "from": "教育",
+        "to": "海外行业",
+        "cat": "crossborder",
+        "count": 1
+      },
+      {
+        "from": "保险与非银",
+        "to": "港股金融",
+        "cat": "crossborder",
+        "count": 1
+      },
+      {
+        "from": "钢铁",
+        "to": "有色金属",
+        "cat": "industry",
+        "count": 1
+      },
+      {
+        "from": "煤炭",
+        "to": "石油石化",
+        "cat": "industry",
+        "count": 1
+      },
+      {
+        "from": "养老服务",
+        "to": "社会服务",
+        "cat": "industry",
+        "count": 1
+      },
+      {
+        "from": "船舶",
+        "to": "国防军工",
+        "cat": "industry",
+        "count": 1
+      },
+      {
+        "from": "风电与绿色能源",
+        "to": "电力设备",
+        "cat": "industry",
+        "count": 1
+      }
+    ],
+    "oldOnly": 310
+  }
+}

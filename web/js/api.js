@@ -10,6 +10,13 @@ const STATIC_DIR = "data";
 // 相对路径：本地服务在站点根（/api），GitHub Pages 子路径（如 /ebbflow/api）也能正确拼接
 const API_PREFIX = "api";
 
+/** 当前分类口径对应的数据子目录：v2 → ""（data/），legacy → "legacy"（data/legacy/） */
+let TAX_BASE = "";
+export function setTaxonomy(taxonomy) {
+  TAX_BASE = taxonomy === "legacy" ? "legacy" : "";
+}
+export const taxonomyBase = () => TAX_BASE;
+
 /** 只有本机/文件协议才可能跑着本地服务；静态托管时直接跳过探测，避免控制台 404 噪音 */
 function mayHaveService() {
   const h = location.hostname;
@@ -65,13 +72,15 @@ async function getJSON(url, { timeout = TIMEOUT } = {}) {
   }
 }
 
-/** key → 静态文件名 / API 路径 */
+/** key → 静态文件名 / API 路径（两套口径各自独立目录） */
 function paths(key) {
+  const dir = TAX_BASE ? `${STATIC_DIR}/${TAX_BASE}` : STATIC_DIR;
+  const api = TAX_BASE ? `${API_PREFIX}/${TAX_BASE}` : API_PREFIX;
   if (key.startsWith("charts:")) {
     const cat = key.slice(7);
-    return { static: `${STATIC_DIR}/charts-${encodeURIComponent(cat)}.json`, api: `${API_PREFIX}/charts/${encodeURIComponent(cat)}` };
+    return { static: `${dir}/charts-${encodeURIComponent(cat)}.json`, api: `${api}/charts/${encodeURIComponent(cat)}` };
   }
-  return { static: `${STATIC_DIR}/${key}.json`, api: `${API_PREFIX}/${key}` };
+  return { static: `${dir}/${key}.json`, api: `${api}/${key}` };
 }
 
 /**
@@ -79,8 +88,10 @@ function paths(key) {
  * @param {string} key meta|tables|subs|index|quality|market|charts:<catKey>
  */
 export function load(key) {
-  if (cache.has(key)) return Promise.resolve(cache.get(key));
-  if (inflight.has(key)) return inflight.get(key);
+  // 缓存键带上口径，避免两套 taxonomy 串数据
+  const cacheKey = TAX_BASE ? `${TAX_BASE}::${key}` : key;
+  if (cache.has(cacheKey)) return Promise.resolve(cache.get(cacheKey));
+  if (inflight.has(cacheKey)) return inflight.get(cacheKey);
   const { static: staticUrl, api: apiUrl } = paths(key);
   const p = (async () => {
     let staticErr = null;
@@ -88,7 +99,7 @@ export function load(key) {
       const data = await getJSON(staticUrl);
       if (!data || typeof data !== "object") throw new Error("空数据");
       net.mode = net.mode === "live" ? "live" : "static";
-      cache.set(key, data);
+      cache.set(cacheKey, data);
       return data;
     } catch (e) {
       staticErr = e;
@@ -97,7 +108,7 @@ export function load(key) {
       const data = await getJSON(apiUrl);
       if (!data || typeof data !== "object") throw new Error("空数据");
       net.mode = "live";
-      cache.set(key, data);
+      cache.set(cacheKey, data);
       return data;
     } catch (apiErr) {
       const msg = `无法加载 ${key}：静态(${staticErr?.message || "失败"}) / 服务(${apiErr?.message || "失败"})`;
@@ -107,13 +118,13 @@ export function load(key) {
       throw new ApiError(msg, { key, staticUrl, apiUrl });
     }
   })();
-  inflight.set(key, p);
-  p.catch(() => {}).finally(() => inflight.delete(key));
+  inflight.set(cacheKey, p);
+  p.catch(() => {}).finally(() => inflight.delete(cacheKey));
   return p;
 }
 
-export const peek = (key) => cache.get(key);
-export const isLoaded = (key) => cache.has(key);
+export const peek = (key) => cache.get(TAX_BASE ? `${TAX_BASE}::${key}` : key);
+export const isLoaded = (key) => cache.has(TAX_BASE ? `${TAX_BASE}::${key}` : key);
 export const failures = () => errors.slice();
 
 /** 探测本地服务（用于刷新按钮/数据源徽标） */
