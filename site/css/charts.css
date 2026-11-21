@@ -118,14 +118,20 @@
   font-weight: 500;
 }
 .legend-chip--main {
-  cursor: default;
+  cursor: pointer;
   border-color: var(--line);
   background: var(--surface-3);
   color: var(--ink);
   font-weight: 600;
 }
 .legend-chip--main:hover {
-  background: var(--surface-3);
+  border-color: var(--line-strong);
+  background: var(--surface-hover);
+}
+.legend-chip--main .lc-hint {
+  font-size: var(--fs-3xs);
+  color: var(--ink-4);
+  font-weight: 500;
 }
 .legend-chip--ov {
   border-color: var(--line);
@@ -405,7 +411,25 @@
 }
 
 /* 端点标签：画在绘图区右侧的 gutter 里，绝不压曲线 */
-.endlabel-layer .elab {
+.endlabel-layer .elab-lines {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.endlabel-layer .elab,
+.endlabel-layer .elab-more {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.elab.is-active {
+  background: var(--surface-3);
+  border-radius: 4px;
+}
+.elab {
   position: absolute;
   display: inline-flex;
   align-items: center;

@@ -295,26 +295,79 @@ export const isDark = () => {
 };
 
 /** 深色主题下把数据色提亮，浅色主题下压暗过亮的色，保证可辨识 */
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h;
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+  else if (max === g) h = ((b - r) / d + 2) / 6;
+  else h = ((r - g) / d + 4) / 6;
+  return [h, s, l];
+}
+
+function hslToHex(h, s, l) {
+  const f = (n) => {
+    const k = (n + h * 12) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const v = l - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)));
+    return Math.round(v * 255);
+  };
+  return rgb2hex(f(0), f(8), f(4));
+}
+
+// CIE Lab：深色主题统一抬 L*、浅色主题统一压 L*，尽量守住同大类内的 ΔE
+function rgbToLab(r, g, b) {
+  const lin = (v) => {
+    const c = v / 255;
+    return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  const R = lin(r), G = lin(g), B = lin(b);
+  const X = (R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047;
+  const Y = (R * 0.2126 + G * 0.7152 + B * 0.0722) / 1.0;
+  const Z = (R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883;
+  const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))];
+}
+
+function labToHex(L, a, b) {
+  const fy = (L + 16) / 116;
+  const fx = fy + a / 500;
+  const fz = fy - b / 200;
+  const inv = (t) => (t > 0.2069 ? t * t * t : (t - 16 / 116) / 7.787);
+  const X = inv(fx) * 0.95047, Y = inv(fy), Z = inv(fz) * 1.08883;
+  const R = X * 3.2406 + Y * -1.5372 + Z * -0.4986;
+  const G = X * -0.9689 + Y * 1.8758 + Z * 0.0415;
+  const B = X * 0.0557 + Y * -0.204 + Z * 1.057;
+  const gamma = (c) => {
+    const v = c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(Math.max(c, 0), 1 / 2.4) - 0.055;
+    return clamp(Math.round(v * 255), 0, 255);
+  };
+  return rgb2hex(gamma(R), gamma(G), gamma(B));
+}
+
 export function toneColor(hex, dark = isDark()) {
+  // 保证对背景 ≥3:1 的同时，用 Lab 的 L* 平移而不是混白/压暗，尽量不压缩同大类内 ΔE
+  const bgLum = dark ? 0.0041 : 1; // #0b0c0f / #ffffff
+  const contrastOf = (h) => {
+    const a = luminance(h);
+    const hi = Math.max(a, bgLum), lo = Math.min(a, bgLum);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  if (contrastOf(hex) >= 3.02) return hex;
   const [r, g, b] = hex2rgb(hex);
-  if (dark) {
-    const l = luminance(hex);
-    if (l < 0.22) {
-      const k = 0.55; // 混白
-      return rgb2hex(r + (255 - r) * k, g + (255 - g) * k, b + (255 - b) * k);
-    }
-    if (l > 0.62) {
-      const k = 0.18;
-      return rgb2hex(r * (1 - k), g * (1 - k), b * (1 - k));
-    }
-    return hex;
+  const [L, a, bb] = rgbToLab(r, g, b);
+  let out = hex;
+  let shift = 0;
+  for (let i = 0; i < 30 && contrastOf(out) < 3.02; i++) {
+    shift += dark ? 2.4 : -2.4;
+    out = labToHex(clamp(L + shift, 0, 100), a, bb);
+    if (L + shift <= 0 || L + shift >= 100) break;
   }
-  const l = luminance(hex);
-  if (l > 0.55) {
-    const k = 0.3;
-    return rgb2hex(r * (1 - k), g * (1 - k), b * (1 - k));
-  }
-  return hex;
+  return out;
 }
 
 export const cssVar = (name, root = document.documentElement) =>

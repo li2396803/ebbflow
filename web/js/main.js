@@ -37,7 +37,8 @@ import {
   range,
   indexOfDate,
 } from "./state.js";
-import { cnum, debounce, download, esc, fmtPct, fmtSigned, isDesktop, toCSV, toTSV, toneColor, isDark } from "./util.js";
+import { cnum, debounce, download, esc, fmtPct, fmtSigned, isDesktop, skeletonRows, toCSV, toTSV, toneColor, isDark } from "./util.js";
+import * as detail from "./detail.js";
 import { initDetail, openDetail, initAllSubs, openAllSubs, initQuality } from "./detail.js";
 import { toast } from "./ui.js";
 
@@ -794,7 +795,17 @@ function buildChartPayload(payload, catKey) {
       footNote = "对比：归一化到区间起点 = 100";
     }
   } else {
-    const list = (payload.series || []).filter((s) => (s[metric === "pct" ? "shares" : metric] || []).some((v) => v != null));
+    const allList = (payload.series || []).filter((s) => (s[metric === "pct" ? "shares" : metric] || []).some((v) => v != null));
+    // 默认只画规模 Top 12，其余合并成「其他」：24 条线同时画本来也读不出来
+    const TOPN = 12;
+    let list = allList;
+    let others = [];
+    if (!state.showAll && allList.length > TOPN) {
+      const rankOfSeries = (s) => lastNonNull(s.scale || [], a, b) ?? -Infinity;
+      const ranked = allList.slice().sort((x, y) => rankOfSeries(y) - rankOfSeries(x));
+      list = ranked.slice(0, TOPN);
+      others = ranked.slice(TOPN);
+    }
     series = list.map((s) => {
       let values;
       if (metric === "pct") {
@@ -805,11 +816,33 @@ function buildChartPayload(payload, catKey) {
       }
       return { name: s.name, color: s.color, values };
     });
+    // 「其他」= 其余小类按指标聚合
+    if (others.length) {
+      const n = Math.max(0, b - a + 1);
+      const agg = new Array(n).fill(null);
+      for (const s of others) {
+        const arr = s[metric === "pct" ? "shares" : metric] || [];
+        for (let i = 0; i < n; i++) {
+          const v = arr[a + i];
+          if (v == null) continue;
+          agg[i] = (agg[i] || 0) + v;
+        }
+      }
+      const values =
+        metric === "pct"
+          ? normalizeSeries(agg, a, b, state.norm === "all" ? null : a, { index100: false })
+          : agg;
+      series.push({ name: `其他 ${others.length} 个`, color: "#8a8f98", values, kind: "line", dash: true });
+    }
+
     if (metric === "pct") {
       footNote = state.norm === "all" ? "相对全历史首日的变化率" : "相对区间首日的变化率";
       unit = "%";
     } else if (metric === "flow") {
       footNote = "每日净流入（Δ份额 × 当日净值）";
+    }
+    if (others.length) {
+      footNote = `${footNote ? footNote + " · " : ""}只画规模 Top ${list.length}，其余 ${others.length} 个合并为「其他」`;
     }
 
     // tooltip 第二列
@@ -1011,6 +1044,8 @@ function buildFocusPayload(payload, catKey, name) {
 }
 
 async function renderCatChart(catKey, opts = {}) {
+  if (!app.ready) return;
+  const taxAtStart = state.taxonomy;
   const token = ++freshChartToken;
   const loading = document.getElementById("mainLoading");
   const catNameEl = document.getElementById("mainLoadingCat");
@@ -1019,7 +1054,9 @@ async function renderCatChart(catKey, opts = {}) {
   try {
     let payload = getChart(catKey);
     if (!payload) {
+      if (taxAtStart !== state.taxonomy) return;
       payload = await api.load(`charts:${catKey}`);
+      if (taxAtStart !== state.taxonomy) return;
       setChart(catKey, payload);
     }
     // 对比对象可能在别的大类，需要补齐
@@ -1062,8 +1099,11 @@ async function renderCatChart(catKey, opts = {}) {
     }
     chart.renderMain(p);
     if (p.focusMode) {
-      views.renderFocusLegend(p.legend, (id) => toggleOverlayFromUI(id));
+      views.renderFocusLegend(p.legend, (id) => toggleOverlayFromUI(id), () => exitFocus());
+      renderFocusEtf(state.sub);
     } else {
+      const feCard = document.getElementById("focusEtfCard");
+      if (feCard) feCard.hidden = true;
       views.renderLegend(
         p.series.map((s) => ({
           name: s.name,
@@ -1156,44 +1196,71 @@ function toggleOverlayFromUI(id) {
   renderCatChart(state.cat, { silent: true });
 }
 
-/** 聚焦态 UI：聚焦胶囊 + 叠加开关（只在单系列聚焦时出现） */
-function syncFocusUI() {
-  const bar = document.getElementById("focusBar");
-  if (!bar) return;
-  const on = isFocusMode();
-  bar.hidden = !on;
-  if (!on) return;
-  const name = state.sub;
-  const sub = app.subs?.[name];
-  const dot = document.getElementById("focusDot");
-  if (dot) dot.style.background = toneColor(sub?.color || "#4b57d6", isDark());
-  const nm = document.getElementById("focusName");
-  if (nm) nm.textContent = name;
+/** Top-N 切换按钮状态 */
+function syncShowAllUI() {
+  const btn = document.getElementById("btnShowAll");
+  if (!btn) return;
+  const single = isFocusMode();
+  btn.hidden = single;
+  btn.setAttribute("aria-pressed", String(state.showAll));
+  btn.textContent = state.showAll ? "全部" : "Top 12";
+  btn.title = state.showAll
+    ? "当前显示全部小类，点击回到规模 Top 12"
+    : "默认只画规模最大的 12 条，其余合并为「其他」；点这里显示全部小类";
+}
 
-  // 小屏：最多 2 项，超出直接截断（进入时可能来自分享链接）
+/** 聚焦态内嵌成分 ETF 表（与抽屉共用渲染组件） */
+async function renderFocusEtf(name) {
+  const card = document.getElementById("focusEtfCard");
+  const host = document.getElementById("focusEtfBody");
+  if (!card || !host) return;
+  if (!name || !isFocusMode()) {
+    card.hidden = true;
+    return;
+  }
+  const sub = app.subs?.[name];
+  const subLine = document.getElementById("focusEtfSub");
+  if (subLine) {
+    subLine.textContent = `${name} · ${sub ? `${(sub.etfs || []).length} 只成分` : "暂无成分明细"} · 区间 ${rangeTextForChart()}`;
+  }
+  card.hidden = false;
+  host.innerHTML = `<div class="sk-row">${skeletonRows(3, 6)}</div>`;
+  if (!app.subs) {
+    try {
+      await ensureSubs();
+    } catch (e) {
+      /* 加载失败时保留占位 */
+    }
+  }
+  if (!isFocusMode() || state.sub !== name) return;
+  detail.renderInlineEtfTable(app, name, host);
+}
+
+/** 聚焦态 UI：4 个指标按钮变多选 + 顶部「返回大类」入口 */
+function syncFocusUI() {
+  const on = isFocusMode();
+  const exit = document.getElementById("btnExitFocus");
+  if (exit) exit.hidden = !on;
+
+  // 小屏：最多 2 项叠加（分享链接可能带 3 项）
   const max = isDesktop() ? Infinity : 2;
-  if (state.overlay.length > max) {
+  if (on && state.overlay.length > max) {
     state.overlay = state.overlay.slice(0, max);
     writeURL({ replace: true });
   }
-  const group = document.getElementById("overlayGroup");
-  if (group) {
-    const allowed = overlayAllowed();
-    group.innerHTML = allowed
-      .map(
-        (m) => `<button class="ov-pill" type="button" data-overlay="${m}" aria-pressed="${
-          state.overlay.includes(m)
-        }" title="叠加${METRIC_LABEL[m]}（${METRIC_UNIT[m]}）">
-          <span class="ov-name">${METRIC_LABEL[m]}</span><span class="ov-unit">${METRIC_UNIT[m]}</span>
-        </button>`
-      )
-      .join("");
-  }
-  const tip = document.getElementById("overlayTip");
-  if (tip) {
-    tip.textContent = isDesktop() ? "" : max === 2 ? `小屏最多叠加 ${max} 项` : "";
-    tip.hidden = isDesktop();
-  }
+  views.renderMetricSegs(on);
+  syncShowAllUI();
+  const log = document.getElementById("chartLog");
+  if (log && on) log.hidden = true;
+}
+
+/** 退出单系列聚焦，回到该大类合并视图 */
+function exitFocus() {
+  if (!state.sub) return;
+  clearFocus();
+  writeURL({ replace: true });
+  syncFocusUI();
+  if (state.view === "cat") renderCatChart(state.cat, { silent: true });
 }
 
 /* ==========================================================================
@@ -1679,10 +1746,12 @@ function scheduleChartPrefetch() {
   const conn = navigator.connection;
   if (conn?.saveData || /(^|-)2g$/.test(conn?.effectiveType || "")) return;
   const run = async () => {
+    // 口径可能在中途切换：拿到的 key 只属于当时的 taxonomy，切了就停，避免用新口径去请求旧 catKey（404）
+    const tax = state.taxonomy;
     const queue = api.catKeys().filter((k) => !hasChart(k));
     let done = 0;
     const worker = async () => {
-      while (queue.length) {
+      while (queue.length && tax === state.taxonomy) {
         const k = queue.shift();
         try {
           setChart(k, await api.load(`charts:${k}`));
@@ -1787,12 +1856,22 @@ function wireEvents() {
     }
     const metric = closest("[data-metric]");
     if (metric) {
-      if (state.metric === metric.dataset.metric) return;
-      state.metric = metric.dataset.metric;
+      const id = metric.dataset.metric;
+      if (isFocusMode()) {
+        // 聚焦态：主指标不动，其它指标点一下 = 叠加/取消叠加
+        if (id === state.metric) {
+          toast("主指标已固定，要换主指标请先「返回大类」", "info", 1800);
+          return;
+        }
+        toggleOverlayFromUI(id);
+        return;
+      }
+      if (state.metric === id) return;
+      state.metric = id;
       state.focused = null;
       // 主指标不能同时出现在叠加里
       if (state.overlay.includes(state.metric)) state.overlay = state.overlay.filter((m) => m !== state.metric);
-      views.renderMetricSegs();
+      views.renderMetricSegs(false);
       writeURL({ replace: true });
       syncLogUI();
       if (state.view === "cat") renderCatChart(state.cat, { silent: true });
@@ -1801,7 +1880,7 @@ function wireEvents() {
     const norm = closest("[data-norm]");
     if (norm) {
       state.norm = norm.dataset.norm;
-      views.renderMetricSegs();
+      views.renderMetricSegs(isFocusMode());
       writeURL({ replace: true });
       if (state.view === "cat") renderCatChart(state.cat, { silent: true });
       return;
@@ -1848,15 +1927,13 @@ function wireEvents() {
       ui.closePopover();
       return;
     }
-    const ovPill = closest("[data-overlay]");
-    if (ovPill && ovPill.closest("#focusBar")) {
-      toggleOverlayFromUI(ovPill.dataset.overlay);
+    if (closest("#btnExitFocus")) {
+      exitFocus();
       return;
     }
-    if (closest("#focusClear")) {
-      clearFocus();
-      writeURL({ replace: true });
-      syncFocusUI();
+    if (closest("#btnShowAll")) {
+      state.showAll = !state.showAll;
+      syncShowAllUI();
       if (state.view === "cat") renderCatChart(state.cat, { silent: true });
       return;
     }
@@ -2324,7 +2401,13 @@ async function switchTaxonomy(next, { silent = false } = {}) {
   syncTaxonomyUI();
   if (!silent) setGlobalLoading(true, `正在切换到${TAX_LABEL[next]}…`);
   try {
-    await loadTaxonomyData();
+    try {
+      await loadTaxonomyData();
+    } catch (firstErr) {
+      // 网络抖动再给一次机会（首次失败多半是瞬时错误）
+      await new Promise((r) => setTimeout(r, 450));
+      await loadTaxonomyData();
+    }
     if (!silent) toast(`已切换到${TAX_LABEL[next]}`, "ok", 1800);
     ensureMarketChart()
       .then(() => chart.repaintAll())
@@ -2345,8 +2428,10 @@ async function switchTaxonomy(next, { silent = false } = {}) {
     try {
       await loadTaxonomyData();
     } catch (err) {
-      document.documentElement.setAttribute("data-app-ready", "1");
+      /* 回滚也失败：保留旧内容，恢复可交互，避免永久卡在未就绪 */
     }
+    app.ready = true;
+    document.documentElement.setAttribute("data-app-ready", "1");
   } finally {
     setGlobalLoading(false);
   }

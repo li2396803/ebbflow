@@ -53,6 +53,102 @@ let current = null;
 let etfSort = { key: "scale", dir: -1 };
 let drawerHooks = {};
 
+/* ------------------------- 聚焦态内嵌成分表（复用抽屉表） ------------------------- */
+const inlineTableState = new Map(); // subName → { key, dir, page }
+
+export function renderInlineEtfTable(app, subName, host) {
+  if (!host) return;
+  const entry = app.subs?.[subName];
+  if (!entry) {
+    host.innerHTML = `<div class="state state--sm" style="padding:var(--sp-6) 0">
+      <p class="state-title">成分 ETF 明细暂未收录</p>
+      <p class="state-desc">当前数据包还没有这个小类的成分明细，补齐后会出现在这里。</p></div>`;
+    return;
+  }
+  const rows = entry.etfs || [];
+  if (!rows.length) {
+    host.innerHTML = `<div class="state state--sm" style="padding:var(--sp-6) 0"><p class="state-desc">该小类暂无成分 ETF</p></div>`;
+    return;
+  }
+  const st = inlineTableState.get(subName) || { key: "scale", dir: -1, page: 0 };
+  inlineTableState.set(subName, st);
+  const totalScale = rows.reduce((acc, r) => acc + (r.scale || 0), 0);
+  const sorted = sortEtfRows(rows, st);
+  const paged = sorted.length > 120;
+  const pages = paged ? Math.ceil(sorted.length / 50) : 1;
+  st.page = Math.min(st.page, pages - 1);
+  const view = paged ? sorted.slice(st.page * 50, st.page * 50 + 50) : sorted;
+  const sortHead = (key, label, extra = "", numeric = true) =>
+    `<th scope="col" data-isort="${key}" class="${extra}" aria-sort="${
+      st.key === key ? (st.dir > 0 ? "ascending" : "descending") : "none"
+    }" data-type="${numeric ? "num" : "text"}"><button type="button">${label}<span class="sort-ico"></span></button></th>`;
+
+  host.innerHTML = `
+    <div class="etf-inline">
+      <div class="etf-inline-head">
+        <span class="dim t-2xs">${rows.length} 只 · 按${st.key === "scale" ? "规模" : "所选列"}${st.dir > 0 ? "升序" : "降序"}${
+          paged ? ` · 第 ${st.page + 1}/${pages} 页` : ""
+        }</span>
+        <span class="etf-inline-actions">
+          ${paged ? `<button class="btn btn--ghost btn--sm" type="button" data-ipage="-1" ${st.page === 0 ? "disabled" : ""}>上一页</button>
+          <button class="btn btn--ghost btn--sm" type="button" data-ipage="1" ${st.page >= pages - 1 ? "disabled" : ""}>下一页</button>` : ""}
+          <button class="btn btn--sm" type="button" data-icsv="1"><svg aria-hidden="true"><use href="#i-download"/></svg>CSV</button>
+        </span>
+      </div>
+      <div class="table-scroll">
+        <table class="dt dt--inline" id="tblFocusEtf">
+          <thead><tr>
+            ${sortHead("code", "代码", "t-2xs", false)}
+            ${sortHead("name", "名称", "", false)}
+            ${sortHead("shares", "最新份额", "num")}
+            ${sortHead("delta", "区间变化", "num")}
+            ${sortHead("nav", "净值", "num etf-nav")}
+            ${sortHead("scale", "规模", "num")}
+            ${sortHead("flow", "净流入", "num etf-flow")}
+            <th scope="col" class="num">占本类</th>
+          </tr></thead>
+          <tbody>${view.map((r) => etfRowHTML(r, totalScale, app)).join("")}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  host.onclick = (e) => {
+    const th = e.target.closest("th[data-isort]");
+    if (th) {
+      const key = th.dataset.isort;
+      const numeric = th.dataset.type !== "text";
+      st.dir = st.key === key ? -st.dir : numeric ? -1 : 1;
+      st.key = key;
+      st.page = 0;
+      renderInlineEtfTable(app, subName, host);
+      return;
+    }
+    const page = e.target.closest("[data-ipage]");
+    if (page) {
+      st.page = Math.max(0, Math.min(pages - 1, st.page + Number(page.dataset.ipage)));
+      renderInlineEtfTable(app, subName, host);
+      return;
+    }
+    if (e.target.closest("[data-icsv]")) {
+      const csv = toCSV([
+        ["代码", "名称", "市场", "最新份额(亿份)", "区间变化(亿份)", "净值", "规模(亿元)", "净流入(亿元)", "占本类(%)"],
+        ...sorted.map((r) => [
+          r.code,
+          r.name,
+          r.market || "",
+          r.shares ?? "",
+          r.delta ?? "",
+          r.nav ?? "",
+          r.scale ?? "",
+          r.flow ?? "",
+          totalScale && r.scale != null ? ((r.scale / totalScale) * 100).toFixed(2) : "",
+        ]),
+      ]);
+      download(`${subName}-成分ETF-${state.rangeInfo.from}-${state.rangeInfo.to}.csv`, csv, "text/csv;charset=utf-8");
+    }
+  };
+}
+
 export function initDetail(app, hooks = {}) {
   drawerHooks = { app, ...hooks };
   document.getElementById("drawerClose")?.addEventListener("click", () => closeDetail());
@@ -303,6 +399,32 @@ function renderMissingDetail(app, name, s) {
   else back?.remove();
 }
 
+/** 成分 ETF 行内容（抽屉表与聚焦内嵌表共用） */
+export function etfRowHTML(r, totalScale, app) {
+  const share = totalScale && r.scale != null ? (r.scale / totalScale) * 100 : null;
+  return `<tr>
+    <td class="mono t-2xs">${esc(r.code)}</td>
+    <td class="etf-name-cell">
+      <span class="truncate" style="max-width:15ch;display:inline-block" title="${esc(r.name)}">${esc(r.name)}</span>
+      <span class="chip chip--sm chip--line" style="margin-left:4px">${esc(r.market || "—")}</span>
+      ${renderTags(r.tags, app?.meta?.tagDims)}
+    </td>
+    <td class="num">${esc(cnum(r.shares, 1))}</td>
+    <td class="num ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "flat"}">${esc(fmtSigned(r.delta, 1))}</td>
+    <td class="num etf-nav">${r.nav != null ? esc(cnum(r.nav, 3)) : "—"}</td>
+    <td class="num">${r.scale != null ? esc(cnum(r.scale, 1)) : "—"}</td>
+    <td class="num etf-flow ${r.flow > 0 ? "up" : r.flow < 0 ? "down" : "flat"}">${r.flow != null ? esc(fmtSigned(r.flow, 1)) : "—"}</td>
+    <td class="num"><span class="barcell"><span class="barcell-track"><span class="barcell-fill" style="width:${share ? Math.min(100, share * 3).toFixed(1) : 0}%"></span></span><span class="barcell-val">${share != null ? share.toFixed(1) + "%" : "—"}</span></span></td>
+  </tr>`;
+}
+
+export function sortEtfRows(rows, { key, dir }) {
+  return rows.slice().sort((a, b) => {
+    if (key === "code" || key === "name") return dir * String(a[key] || "").localeCompare(String(b[key] || ""), "zh-CN");
+    return dir * ((a[key] ?? -Infinity) - (b[key] ?? -Infinity));
+  });
+}
+
 function renderEtfTable(rows, totalScale) {
   const tbody = document.querySelector("#tblEtf tbody");
   if (!tbody) return;
@@ -316,25 +438,7 @@ function renderEtfTable(rows, totalScale) {
     return;
   }
   const app = drawerHooks.app;
-  tbody.innerHTML = sorted
-    .map((r) => {
-      const share = totalScale && r.scale != null ? (r.scale / totalScale) * 100 : null;
-      return `<tr>
-        <td class="mono t-2xs">${esc(r.code)}</td>
-        <td class="etf-name-cell">
-          <span class="truncate" style="max-width:15ch;display:inline-block" title="${esc(r.name)}">${esc(r.name)}</span>
-          <span class="chip chip--sm chip--line" style="margin-left:4px">${esc(r.market || "—")}</span>
-          ${renderTags(r.tags, app?.meta?.tagDims)}
-        </td>
-        <td class="num">${esc(cnum(r.shares, 1))}</td>
-        <td class="num ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "flat"}">${esc(fmtSigned(r.delta, 1))}</td>
-        <td class="num etf-nav">${r.nav != null ? esc(cnum(r.nav, 3)) : "—"}</td>
-        <td class="num">${r.scale != null ? esc(cnum(r.scale, 1)) : "—"}</td>
-        <td class="num etf-flow ${r.flow > 0 ? "up" : r.flow < 0 ? "down" : "flat"}">${r.flow != null ? esc(fmtSigned(r.flow, 1)) : "—"}</td>
-        <td class="num"><span class="barcell"><span class="barcell-track"><span class="barcell-fill" style="width:${share ? Math.min(100, share * 3).toFixed(1) : 0}%"></span></span><span class="barcell-val">${share != null ? share.toFixed(1) + "%" : "—"}</span></span></td>
-      </tr>`;
-    })
-    .join("");
+  tbody.innerHTML = sorted.map((r) => etfRowHTML(r, totalScale, app)).join("");
   document.querySelectorAll("#tblEtf th[data-esort]").forEach((th) => {
     if (th.dataset.esort === key) th.setAttribute("aria-sort", dir > 0 ? "ascending" : "descending");
     else th.removeAttribute("aria-sort");

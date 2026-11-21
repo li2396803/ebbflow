@@ -45,7 +45,8 @@ export const state = {
   preset: DEFAULT_PRESET,
   custom: null, // {from,to} 自定义区间（≤ 日历范围）
   compare: [], // 最多 2 个小类名
-  overlay: [], // 单系列聚焦时叠加的指标：scale / flow / pct
+  overlay: [],
+  showAll: false, // 单系列聚焦时叠加的指标：scale / flow / pct
   log: false, // 对数坐标（份额/规模）
   focused: null, // 图例聚焦的系列名
   marketMetric: "scale", // 市场图指标：scale | shares

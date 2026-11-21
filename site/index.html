@@ -394,6 +394,7 @@
             <button class="btn btn--sm" type="button" id="btnLog" aria-pressed="false" title="对数坐标：适合量级差异很大的多个系列（仅份额/规模）">
               对数
             </button>
+            <button class="btn btn--sm" type="button" id="btnShowAll" aria-pressed="false" title="默认只画规模最大的 12 条，其余合并为「其他」；点这里显示全部小类">Top 12</button>
             <button class="btn btn--sm" type="button" id="btnResetZoom" title="重置缩放（也可双击图表）">
               <svg aria-hidden="true"><use href="#i-zoom-reset"/></svg>重置
             </button>
@@ -420,6 +421,17 @@
             <span id="chartNoteRange"></span>
           </div>
         </div>
+      </section>
+
+      <!-- 聚焦态：该小类成分 ETF（复用抽屉表组件） -->
+      <section class="card" id="focusEtfCard" hidden>
+        <div class="card-head">
+          <div class="card-title">
+            <h2>成分 ETF</h2>
+            <p class="card-sub" id="focusEtfSub">—</p>
+          </div>
+        </div>
+        <div class="card-body card-body--flush" id="focusEtfBody"></div>
       </section>
 
       <div class="split-2-1">

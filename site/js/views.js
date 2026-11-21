@@ -164,12 +164,26 @@ export function renderRangeSegs() {
   renderMetricSegs();
 }
 
-export function renderMetricSegs() {
+export function renderMetricSegs(focusMode = false) {
   const host = document.getElementById("chartMetrics");
   if (host) {
-    host.innerHTML = METRICS.map(
-      (m) => `<button class="seg-btn" type="button" data-metric="${m.id}" aria-pressed="${state.metric === m.id}">${m.label}</button>`
-    ).join("");
+    host.innerHTML = METRICS.map((m) => {
+      const primary = state.metric === m.id;
+      const overlaid = focusMode && state.overlay.includes(m.id);
+      const cls = ["seg-btn"];
+      if (primary) cls.push("is-primary");
+      if (overlaid) cls.push("is-overlay");
+      const title = focusMode
+        ? primary
+          ? "主指标（决定左轴单位；要更换请先返回大类）"
+          : overlaid
+            ? "再点一次取消叠加"
+            : "点击叠加这个指标"
+        : "";
+      return `<button class="${cls.join(" ")}" type="button" data-metric="${m.id}" aria-pressed="${
+        primary || overlaid
+      }" ${title ? `title="${esc(title)}"` : ""}><span class="seg-mark" aria-hidden="true"></span>${m.label}</button>`;
+    }).join("");
   }
   const norm = document.getElementById("chartNorm");
   if (norm) norm.hidden = state.metric !== "pct";
@@ -688,6 +702,9 @@ export function renderCategory(app, opts = {}) {
         2
       )}</span>`,
       `<span class="dim">区间净流入${app.chartData?.has(key) ? "" : "（估算）"} ${esc(fmtSigned(flow, 1))} 亿元</span>`,
+      state.sub && (app.subsByCat?.get(key) || []).includes(state.sub)
+        ? `<span class="chip chip--accent">聚焦 · ${esc(state.sub)}</span>`
+        : "",
       state.compare.length
         ? `<span class="chip chip--accent">对比 ${esc(state.compare.join(" vs "))}<button class="rc-x" type="button" data-clear-compare="1" aria-label="退出对比" title="退出对比" style="width:16px;height:16px;margin-left:2px"><svg width="9" height="9"><use href="#i-close"/></svg></button></span>`
         : "",
@@ -791,7 +808,7 @@ function renderCatSide(app, key) {
 /* ============================ 图表图例 ============================ */
 
 /** 聚焦态图例：主指标只展示；叠加项可点击单独开关（带单位） */
-export function renderFocusLegend(items, onToggle) {
+export function renderFocusLegend(items, onToggle, onExit) {
   const host = document.getElementById("chartLegend");
   if (!host) return;
   host.innerHTML = (items || [])
@@ -802,12 +819,16 @@ export function renderFocusLegend(items, onToggle) {
         <span class="lc-name">${esc(it.label)}</span><span class="lc-unit">${esc(it.unit)}</span>${val}`;
       return it.toggle
         ? `<button class="legend-chip legend-chip--ov" type="button" data-overlay-toggle="${esc(it.id)}" aria-pressed="true" title="点击移除叠加">${inner}</button>`
-        : `<span class="legend-chip legend-chip--main" aria-current="true" title="主指标（在上方切换）">${inner}</span>`;
+        : `<button class="legend-chip legend-chip--main" type="button" data-exit-focus="1" aria-current="true" title="主指标；点击恢复该大类全部小类">${inner}<span class="lc-hint">· 点此返回大类</span></button>`;
     })
     .join("");
   host.onclick = (e) => {
-    const b = e.target.closest("[data-overlay-toggle]");
-    if (b) onToggle(b.dataset.overlayToggle);
+    const ov = e.target.closest("[data-overlay-toggle]");
+    if (ov) {
+      onToggle(ov.dataset.overlayToggle);
+      return;
+    }
+    if (e.target.closest("[data-exit-focus]")) onExit?.();
   };
 }
 

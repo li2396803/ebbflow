@@ -85,6 +85,8 @@ const AXIS_FONT = 10;
 /* ==========================================================================
    主图
    ========================================================================== */
+export let activeLabelName = null;
+
 export const main = {
   ec: null,
   el: null,
@@ -146,6 +148,54 @@ export async function initMain(el, hooks = {}) {
   main.ec.on("dblclick", () => main.hooks.onReset?.());
   // 有些情况下（内部 dataZoom 拦截）实例级 dblclick 不稳定，用 zrender 层兜底
   main.ec.getZr().on("dblclick", () => main.hooks.onReset?.());
+  // 曲线 hover/点击 → 对应端点标签高亮
+  main.ec.on("mouseover", (params) => {
+    if (params.componentType !== "series") return;
+    const name = params.seriesName;
+    main.labelsLayer?.querySelectorAll(".elab").forEach((el) => {
+      el.classList.toggle("is-active", el.dataset.name === name);
+    });
+  });
+  main.ec.on("globalout", () => {
+    main.labelsLayer?.querySelectorAll(".elab").forEach((el) => el.classList.remove("is-active"));
+  });
+
+  // 曲线 hover → 端点标签高亮（用 zrender 坐标反查最近的线，避免依赖 series 级 hover 语义）
+  const onZrMove = throttleRAF((e) => {
+    const p = main.lastPayload;
+    const layer = main.labelsLayer;
+    if (!p || !layer || !main.ec) return;
+    const pt = [e.offsetX, e.offsetY];
+    let active = null;
+    try {
+      if (main.ec.containPixel({ gridIndex: 0 }, pt)) {
+        const idx = Math.round(main.ec.convertFromPixel({ gridIndex: 0 }, pt)[0]);
+        let best = 16;
+        (p.series || []).forEach((s, i) => {
+          if (s.kind === "bar") return;
+          const v = s.values?.[idx];
+          if (v == null || !Number.isFinite(+v)) return;
+          const y = main.ec.convertToPixel({ yAxisIndex: Number.isInteger(s.axis) ? s.axis : 0 }, +v);
+          if (!Number.isFinite(y)) return;
+          const d = Math.abs(y - pt[1]);
+          if (d < best) {
+            best = d;
+            active = s.name;
+          }
+        });
+      }
+    } catch (err) {
+      active = null;
+    }
+    activeLabelName = active;
+    layer.querySelectorAll(".elab").forEach((el) => el.classList.toggle("is-active", el.dataset.name === active));
+  });
+  main.ec.getZr().on("mousemove", onZrMove);
+  main.ec.getZr().on("globalout", () => {
+    activeLabelName = null;
+    main.labelsLayer?.querySelectorAll(".elab").forEach((el) => el.classList.remove("is-active"));
+  });
+
   main.ec.on("rendered", scheduleLabels);
   main.ec.getZr().on("mouseup", scheduleLabels);
 
@@ -274,7 +324,7 @@ function paintEndLabels() {
   const html = shown
     .map(
       (it) => `<i class="elab-tick" style="left:${left - 7}px;top:${Math.round(it.tickY)}px;--c:${it.color}"></i>
-      <span class="elab" style="left:${left}px;top:${Math.round(it.y)}px;max-width:${maxW}px;--c:${it.color}">
+      <span class="elab${activeLabelName === it.name ? " is-active" : ""}" data-name="${esc(it.name)}" style="left:${left}px;top:${Math.round(it.y)}px;max-width:${maxW}px;--c:${it.color}">
         <i class="elab-dot"></i><span class="elab-name">${esc(it.name)}</span><span class="elab-val">${esc(
         p.endLabelDigits === 1 ? cnum(it.value, 1) : cnum(it.value, Math.abs(it.value) >= 100 ? 0 : 1)
       )}</span>
@@ -288,6 +338,43 @@ function paintEndLabels() {
         )}px;max-width:${maxW}px" title="还有 ${hidden} 条未显示，点击查看全部端点数值">+${hidden} 查看全部</button>`
       : "";
   layer.innerHTML = html + more;
+
+  // 引线：从曲线末端水平引到标签，标签被避让时加折点（颜色 = 线色）
+  const svgNS = "http://www.w3.org/2000/svg";
+  const lines = document.createElementNS(svgNS, "svg");
+  lines.setAttribute("class", "elab-lines");
+  lines.setAttribute("aria-hidden", "true");
+  const x0 = Math.round(rect.x + rect.width);
+  const x1 = left - 2;
+  lines.innerHTML = shown
+    .map((it) => {
+      const y0 = Math.round(it.tickY);
+      const y1 = Math.round(it.y + ELAB_H / 2);
+      const color = it.color || "currentColor";
+      const pts =
+        Math.abs(y1 - y0) < 1.5
+          ? `${x0},${y0} ${x1},${y0}`
+          : `${x0},${y0} ${x1 - 7},${y0} ${x1 - 7},${y1} ${x1},${y1}`;
+      return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" opacity="0.85"/>`;
+    })
+    .join("");
+  layer.prepend(lines);
+
+  // 标签 hover → 高亮对应曲线（其余降到 18%）
+  const ec = main.ec;
+  const seriesIndexOf = (name) => (p.series || []).findIndex((x) => x.name === name);
+  layer.querySelectorAll(".elab").forEach((el) => {
+    const name = el.dataset.name;
+    el.addEventListener("mouseenter", () => {
+      const i = seriesIndexOf(name);
+      if (i < 0) return;
+      el.classList.add("is-active");
+      ec.dispatchAction({ type: "downplay" });
+      ec.dispatchAction({ type: "highlight", seriesIndex: i, dataIndex: (p.dates || []).length - 1 });
+    });
+    el.addEventListener("mouseleave", () => el.classList.remove("is-active"));
+    el.addEventListener("mouseout", () => ec.dispatchAction({ type: "downplay" }));
+  });
 
   const btn = layer.querySelector("[data-more-labels]");
   if (btn) {
@@ -410,6 +497,7 @@ function baseOption(p) {
       connectNulls: false,
       smooth: 0.12,
       sampling: "lttb",
+      triggerLineEvent: true,
       lineStyle: {
         width: (p.focused === s.name ? 2.4 : 1.7) * (p.mixed ? 1.05 : 1),
         color,
@@ -864,6 +952,7 @@ export function createMiniChart(el, opts = {}) {
             showSymbol: false,
             smooth: 0.12,
             sampling: "lttb",
+      triggerLineEvent: true,
             connectNulls: true,
             lineStyle: { width: 1.8, color },
             itemStyle: { color },

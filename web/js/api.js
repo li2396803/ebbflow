@@ -12,6 +12,7 @@ const API_PREFIX = "api";
 
 /** 当前分类口径对应的数据子目录：v2 → ""（data/），legacy → "legacy"（data/legacy/） */
 let TAX_BASE = "";
+const KEY_SETS = { "": [], legacy: [] };
 export function setTaxonomy(taxonomy) {
   TAX_BASE = taxonomy === "legacy" ? "legacy" : "";
 }
@@ -94,6 +95,16 @@ function paths(key) {
 export function load(key) {
   // 缓存键带上口径，避免两套 taxonomy 串数据
   const base = TAX_BASE;
+  // 防御：另一个口径的 catKey 不要用当前目录去请求（切口径瞬间的延迟调用会产生 404）
+  if (key.startsWith("charts:")) {
+    const cat = key.slice(7);
+    const mine = KEY_SETS[base] || [];
+    const other = KEY_SETS[base === "legacy" ? "" : "legacy"] || [];
+    const invalid = (mine.length && !mine.includes(cat)) || (!mine.length && other.includes(cat));
+    if (invalid) {
+      return Promise.reject(new ApiError(`小类 ${cat} 不属于当前分类口径`, { stale: true, key }));
+    }
+  }
   const cacheKey = base ? `${base}::${key}` : key;
   if (cache.has(cacheKey)) return Promise.resolve(cache.get(cacheKey));
   if (inflight.has(cacheKey)) return inflight.get(cacheKey);
@@ -189,6 +200,7 @@ const CAT_KEYS = new Map();
 export function rememberCatKeys(keys) {
   CAT_KEYS.clear();
   for (const k of keys) CAT_KEYS.set(k, true);
+  KEY_SETS[TAX_BASE] = Array.from(CAT_KEYS.keys());
 }
 
 export const catKeys = () => Array.from(CAT_KEYS.keys());
