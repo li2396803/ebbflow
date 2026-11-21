@@ -771,8 +771,8 @@ function renderCatTable(app, key) {
       <td class="num">${esc(cnum(s.last, 1))}</td>
       <td class="num ${s.delta > 0 ? "up" : s.delta < 0 ? "down" : "flat"}">${esc(fmtSigned(s.delta, 1))}</td>
       <td class="num ${s.pct > 0 ? "up" : s.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s.pct, 2))}</td>
-      <td class="num">${s.scale != null ? esc(cnum(s.scale, 1)) : "—"}</td>
-      <td class="num">${sparkSVG(s.series, { w: 76, h: 22, color, stroke: 1.3 })}</td>
+      <td class="num cat-scale">${s.scale != null ? esc(cnum(s.scale, 1)) : "—"}</td>
+      <td class="num cat-spark">${sparkSVG(s.series, { w: 76, h: 22, color, stroke: 1.3 })}</td>
     </tr>`;
     })
     .join("");

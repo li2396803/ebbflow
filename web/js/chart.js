@@ -274,6 +274,11 @@ function paintEndLabels() {
   const layer = main.labelsLayer;
   const p = main.lastPayload;
   if (!layer) return;
+  // 聚焦模式：每条线都有自己的彩色坐标轴 + 图例数值，不再画右侧端点标注与引线
+  if (p && p.focusMode) {
+    layer.innerHTML = "";
+    return;
+  }
   const labelsFor = p && (p.layout === "panes" ? p.paneEndLabels : p.endLabels);
   if (!p || !labelsFor || !isDesktop() || !(p.series || []).some((x) => x.kind !== "bar")) {
     layer.innerHTML = "";

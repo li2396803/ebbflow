@@ -2822,6 +2822,14 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
   }
 }
 
+@media (max-width: 640px) {
+  /* 大类明细表：手机只保「小类 / 份额 / 区间变化 / 变化率」四列，避免横向裁切 */
+  #tblCat .cat-scale,
+  #tblCat .cat-spark {
+    display: none;
+  }
+}
+
 @media (max-width: 480px) {
   #dataBadge {
     display: none;

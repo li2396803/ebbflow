@@ -1012,7 +1012,8 @@ function buildFocusPayload(payload, catKey, name) {
     toggle: true,
   }));
 
-  const gutter = isDesktop() ? 92 : 8;
+  // 聚焦模式不再画右侧端点标注，右侧只为坐标轴留位
+  const gutter = isDesktop() ? 14 : 6;
   const axisW = 58;
   const gridLeft = 14 + (leftCount > 1 ? (leftCount - 1) * axisW : 0);
   const gridRight = 14 + (rightCount > 0 ? rightCount * axisW : 0) + gutter;
