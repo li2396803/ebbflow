@@ -6,7 +6,7 @@
    ========================================================================== */
 
 import { big, cnum, dirCn, esc, fmtPct, fmtSigned, skeletonRows, sparkSVG, toneColor, isDark } from "./util.js";
-import { PRESETS, METRICS, rankOf, state } from "./state.js";
+import { PRESETS, METRICS, rankOf, state, otherWatch } from "./state.js";
 import { marketRangeStats } from "./state.js";
 
 /* ------------------------------ 共享小件 ------------------------------ */
@@ -602,6 +602,7 @@ export function watchCardHTML(app, name) {
 }
 
 export function renderWatch(app) {
+  state.watchOther = otherWatch().length;
   const body = document.getElementById("watchBody");
   const kpis = document.getElementById("watchKpis");
   const sub = document.getElementById("watchSub");
@@ -609,9 +610,10 @@ export function renderWatch(app) {
   const watchNames = state.watch.filter((n) => !app.subs || app.subs[n]);
   const missing = state.watch.length - watchNames.length;
   if (sub) {
+    const otherCount = state.watchOther || 0;
     sub.textContent = `${watchNames.length} 个小类 · ${rangeText(app)} · 保存在本地浏览器${
-      missing > 0 ? ` · 另有 ${missing} 个暂无数据或不在当前分类口径下` : ""
-    }`;
+      missing > 0 ? ` · 另有 ${missing} 个暂无数据` : ""
+    }${otherCount > 0 ? ` · 另有 ${otherCount} 个在另一套口径中` : ""}`;
   }
   if (watchNames.length && !app.subsReady) {
     if (kpis) kpis.innerHTML = Array.from({ length: 4 }).map(() => `<div class="kpi" aria-hidden="true"><div class="sk sk-line" style="width:70px"></div><div class="sk" style="height:26px;width:110px;margin:8px 0"></div><div class="sk sk-line" style="width:120px"></div></div>`).join("");

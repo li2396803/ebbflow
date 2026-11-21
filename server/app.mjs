@@ -263,7 +263,7 @@ export function createApp({ port = 5188, host = "127.0.0.1", autoRefresh = true,
     close: () => server.close(),
     refresh,
     get payloads() {
-      return payloads();
+      return payloadsFallback();
     },
   };
 }

@@ -202,10 +202,30 @@ export function resetRange() {
   emit("range", { source: "reset" });
 }
 
-/* ------------------------------- 自选 ------------------------------- */
-export function loadWatch() {
+/* ------------------------------- 自选（按口径独立） ------------------------------- */
+const watchKey = (tax = state.taxonomy) => `ebbflow-watch::${tax === "legacy" ? "legacy" : "v2"}`;
+
+/** 迁移旧键：老数据归到 legacy 口径下 */
+function migrateWatch() {
   try {
-    const raw = localStorage.getItem(WATCH_KEY);
+    if (localStorage.getItem(watchKey("legacy"))) return;
+    // 兼容两代旧键：etf-watch / ebbflow-watch → 归到 legacy 口径
+    for (const legacyKey of ["ebbflow-watch", WATCH_KEY]) {
+      const old = localStorage.getItem(legacyKey);
+      if (!old) continue;
+      localStorage.setItem(watchKey("legacy"), old);
+      localStorage.removeItem(legacyKey);
+      break;
+    }
+  } catch (e) {
+    /* 忽略 */
+  }
+}
+
+export function loadWatch(tax = state.taxonomy) {
+  migrateWatch();
+  try {
+    const raw = localStorage.getItem(watchKey(tax));
     const arr = raw ? JSON.parse(raw) : [];
     state.watch = Array.isArray(arr) ? arr.filter((x) => typeof x === "string") : [];
   } catch (e) {
@@ -216,11 +236,24 @@ export function loadWatch() {
 
 export function saveWatch() {
   try {
-    localStorage.setItem(WATCH_KEY, JSON.stringify(state.watch));
+    localStorage.setItem(watchKey(), JSON.stringify(state.watch));
   } catch (e) {
     /* 隐私模式下可能失败，忽略 */
   }
   emit("watch", state.watch.slice());
+}
+
+/** 另一套口径里的自选（用于「另有 N 个在另一套口径中」） */
+export function otherWatch(tax = state.taxonomy) {
+  try {
+    const other = tax === "legacy" ? "v2" : "legacy";
+    const raw = localStorage.getItem(watchKey(other));
+    const arr = raw ? JSON.parse(raw) : [];
+    const list = Array.isArray(arr) ? arr.filter((x) => typeof x === "string") : [];
+    return list.filter((n) => !state.watch.includes(n));
+  } catch (e) {
+    return [];
+  }
 }
 
 export const inWatch = (name) => state.watch.includes(name);

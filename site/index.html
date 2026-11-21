@@ -640,6 +640,9 @@
         <button class="btn btn--sm" type="button" id="allCsv">
           <svg aria-hidden="true"><use href="#i-download"/></svg>CSV
         </button>
+        <button class="btn btn--sm" type="button" id="btnExportEtfs" title="导出全部成分 ETF 的多维标签清单（CSV）">
+          <svg aria-hidden="true"><use href="#i-download"/></svg>全部 ETF
+        </button>
       </div>
       <div class="table-wrap" style="max-height:min(64dvh,720px);overflow:auto">
         <table class="dt dt--dense dt--click" id="tblAll">
@@ -711,6 +714,7 @@
 
 <!-- 设置弹层 -->
 <div class="popover" id="settingsPop" role="dialog" aria-label="显示设置" hidden></div>
+<div class="popover" id="popover" role="dialog" aria-label="选项" hidden></div>
 
 <div class="toast-host" id="toastHost" aria-live="polite" aria-atomic="false"></div>
 

@@ -204,6 +204,9 @@ npm start        # → http://localhost:5188
 
 `data/etf.db` 是**本地缓存**：不进 git，可由「原始快照 + 接口」重建（backfill / update 见 §4）。
 
+> **延伸阅读**：[`docs/API.md`](docs/API.md) —— HTTP/JSON 契约（端点、字段、单位、空值、错误码，含 `/api/legacy/*`）；
+> [`docs/DICTIONARY.md`](docs/DICTIONARY.md) —— SQLite 数据字典（13 张表的字段、来源与更新频率）。
+
 ---
 
 ## 4. 命令参考

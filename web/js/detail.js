@@ -471,10 +471,72 @@ function renderEtfTable(rows, totalScale) {
 let allHooks = {};
 let allCache = null; // 金额口径的补充数据 { name: {first,last,delta,pct} }
 
+/** 导出全部成分 ETF 的多维标签清单（数据源 subs.json） */
+export async function exportAllEtfs() {
+  const btn = document.getElementById("btnExportEtfs");
+  const app = allHooks.app;
+  if (!app?.subs) {
+    try {
+      await allHooks.ensureSubs?.();
+    } catch (e) {
+      toast("成分数据尚未就绪，请稍后再试", "error", 2600);
+      return;
+    }
+  }
+  const subs = app?.subs || {};
+  const dims = app?.meta?.tagDims || {};
+  const prefixCols = [
+    ["sw", "申万一级"],
+    ["csi", "中证一级"],
+    ["index", "指数类别"],
+    ["theme", "主题"],
+    ["region", "地区"],
+    ["factor", "因子"],
+  ];
+  const header = [
+    "代码", "名称", "大类", "小类", "市场",
+    ...prefixCols.map(([, label]) => label),
+    "份额(亿份)", "规模(亿元)", "折溢价(%)", "成交额(亿元)", "换手率(%)", "上市日",
+  ];
+  const rows = [];
+  for (const [subName, sub] of Object.entries(subs)) {
+    const catLabel = app?.catMap?.get(sub.cat)?.label || sub.cat || "";
+    for (const e of sub.etfs || []) {
+      const tagMap = {};
+      for (const t of e.tags || []) {
+        const i = String(t).indexOf(":");
+        if (i > 0) tagMap[String(t).slice(0, i)] = String(t).slice(i + 1);
+      }
+      rows.push([
+        e.code,
+        e.name,
+        catLabel,
+        subName,
+        e.market || "",
+        ...prefixCols.map(([p]) => tagMap[p] || ""),
+        e.shares ?? "",
+        e.scale ?? "",
+        e.premium ?? "",
+        e.amount ?? "",
+        e.turnover ?? "",
+        e.listDate ?? "",
+      ]);
+    }
+  }
+  if (!rows.length) {
+    toast("没有可导出的 ETF 数据", "info", 2200);
+    return;
+  }
+  download(`Ebbflow-ETF清单-${state.taxonomy}-${state.rangeInfo.to || ""}.csv`, toCSV([header, ...rows]), "text/csv;charset=utf-8");
+  toast(`已导出 ${rows.length} 只 ETF（含多维标签）`, "ok", 2600);
+  btn?.blur();
+}
+
 export function initAllSubs(app, hooks) {
   allHooks = { app, ...hooks };
   const mask = document.getElementById("allMask");
   document.getElementById("allClose")?.addEventListener("click", () => closeOverlay(mask.querySelector(".modal")));
+  document.getElementById("btnExportEtfs")?.addEventListener("click", () => exportAllEtfs());
   document.getElementById("btnAllSubsNav")?.addEventListener("click", () => openAllSubs());
   document.getElementById("btnAllSubsFromGrid")?.addEventListener("click", () => openAllSubs());
   document.getElementById("allSearch")?.addEventListener("input", (e) => {

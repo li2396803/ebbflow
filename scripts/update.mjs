@@ -7,7 +7,8 @@ import path from "node:path";
 import { openDb, putShares, recordRun, metaSet, metaGet, dbStats, tradingDates } from "../lib/db.mjs";
 import { fetchSseDay, candidateDates, mapLimit } from "../lib/sources.mjs";
 import { shareOnDate, navOnDate, hasToken, bindBudget, callStats } from "../lib/tushare.mjs";
-import { rebuild, refreshFunds, exportSeriesJson, ingestExchangeRange, ingestTushareRange, ingestTushareNav, etfCodes } from "../lib/pipeline.mjs";
+import { rebuild, refreshFunds, exportSeriesJson, ingestExchangeRange, ingestTushareRange, ingestTushareNav, ingestQuotes, detectShareEvents, etfCodes } from "../lib/pipeline.mjs";
+import { putEvents } from "../lib/db.mjs";
 import { putNav } from "../lib/db.mjs";
 import { buildSite } from "../lib/build/site.mjs";
 import { loadUniverse } from "../lib/universe.mjs";
@@ -158,6 +159,21 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     }
   } catch (e) {
     warn.push("序列兜底失败：" + String(e.message || e).slice(0, 60));
+  }
+
+  // 2.6) 行情（收盘价/成交额）与份额折算事件：每天增量维护，供折溢价/成交额/净流入修正使用
+  try {
+    const q = await ingestQuotes(db, { from, to: end, quiet: true });
+    if (!quiet && q.days) log(`行情：${q.days} 天 / ${q.rows} 行`);
+  } catch (e) {
+    warn.push("行情更新失败：" + String(e.message || e).slice(0, 60));
+  }
+  try {
+    const evs = detectShareEvents(db);
+    putEvents(db, evs);
+    if (!quiet) log(`份额折算事件：${evs.length} 起`);
+  } catch (e) {
+    warn.push("折算检测失败：" + String(e.message || e).slice(0, 60));
   }
 
   // 3) 基金名录（每周一次）

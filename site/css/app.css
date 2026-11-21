@@ -1923,6 +1923,14 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
   padding-top: 5px;
   padding-bottom: 5px;
 }
+.dt td.is-strong {
+  font-weight: 700;
+}
+@media (max-width: 768px) {
+  .dt .col-price {
+    display: none;
+  }
+}
 .th-info {
   display: inline-grid;
   place-items: center;
@@ -2630,7 +2638,7 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
     flex: 0 0 auto;
   }
   #btnBrush {
-    display: none;
+    display: inline-flex;
   }
   .toolbar-r {
     flex-direction: row;

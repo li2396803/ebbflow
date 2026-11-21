@@ -302,6 +302,11 @@ function openSettings() {
           : ""
       }
       <div class="popover-sep"></div>
+      <button class="popover-item" type="button" data-export-etfs="1">
+        <span class="pi-check" aria-hidden="true"><svg width="12" height="12"><use href="#i-download"/></svg></span>
+        导出全部 ETF 清单（含标签）
+      </button>
+      <div class="popover-sep"></div>
       <button class="popover-item" type="button" data-open-quality="1">
         <span class="pi-check" aria-hidden="true"></span>
         <svg width="14" height="14" aria-hidden="true" style="color:var(--ink-4)"><use href="#i-shield"/></svg>数据质量
@@ -1181,19 +1186,56 @@ function onFocusSeries(name) {
   if (state.view === "cat") renderCatChart(state.cat, { silent: true });
 }
 
-/** 叠加项开关（胶囊 / 图例共用） */
+/** 叠加项开关（指标按钮 / 图例共用） */
 function toggleOverlayFromUI(id) {
   if (!isFocusMode()) return;
   const max = isDesktop() ? Infinity : 2;
   const res = toggleOverlay(id, { max });
+  if (window.__OVDEBUG) console.log("[ov]", id, "max", max, "reason", res.reason, "overlay", JSON.stringify(state.overlay));
   if (res.reason === "limit") {
-    toast(`小屏最多叠加 ${max} 项`, "error", 2200);
+    // 小屏：不硬截断，让用户选择替换掉哪一项
+    openOverlayReplacePicker(id, max);
     return;
   }
   if (!res.changed) return;
   writeURL({ replace: true });
   syncFocusUI();
   renderCatChart(state.cat, { silent: true });
+}
+
+/** 小屏叠加上限时：选一个已有叠加项替换 */
+function openOverlayReplacePicker(id, max) {
+  const current = state.overlay.slice(0, max);
+  const anchor = document.getElementById("chartMetrics")?.querySelector(`[data-metric="${id}"]`) || document.getElementById("chartMetrics");
+  const pop = document.getElementById("popover");
+  if (!current.length || !pop || !anchor) {
+    toast(`小屏最多叠加 ${max} 项`, "error", 2200);
+    return;
+  }
+  ui.openPopover(pop, anchor, (node) => {
+    node.innerHTML = `<div class="popover-title">最多叠加 ${max} 项</div>
+      <div class="popover-note">选一项替换为「${esc(METRIC_LABEL[id])}」</div>
+      ${current
+        .map(
+          (m) =>
+            `<button class="popover-item" type="button" data-replace-overlay="${m}">替换「${esc(METRIC_LABEL[m])}」</button>`
+        )
+        .join("")}
+      <div class="popover-sep"></div>
+      <button class="popover-item" type="button" data-replace-overlay="">取消</button>`;
+    node.onclick = (e) => {
+      const btn = e.target.closest("[data-replace-overlay]");
+      if (!btn) return;
+      const old = btn.dataset.replaceOverlay;
+      ui.closePopover();
+      if (!old) return;
+      state.overlay = state.overlay.filter((m) => m !== old);
+      toggleOverlay(id, { max });
+      writeURL({ replace: true });
+      syncFocusUI();
+      renderCatChart(state.cat, { silent: true });
+    };
+  });
 }
 
 /** Top-N 切换按钮状态 */
@@ -1858,9 +1900,21 @@ function wireEvents() {
     if (metric) {
       const id = metric.dataset.metric;
       if (isFocusMode()) {
-        // 聚焦态：主指标不动，其它指标点一下 = 叠加/取消叠加
+        // 聚焦态：点主指标 = 循环切换主指标；点其它 = 叠加/取消叠加
         if (id === state.metric) {
-          toast("主指标已固定，要换主指标请先「返回大类」", "info", 1800);
+          const order = METRICS.map((m) => m.id);
+          const next = order[(order.indexOf(state.metric) + 1) % order.length];
+          const wasOverlay = state.overlay.includes(next);
+          state.overlay = state.overlay.filter((m) => m !== next);
+          if (wasOverlay) {
+            state.overlay = state.overlay.filter((m) => m !== state.metric);
+            state.overlay.push(state.metric);
+          }
+          state.metric = next;
+          views.renderMetricSegs(true);
+          writeURL({ replace: true });
+          syncLogUI();
+          renderCatChart(state.cat, { silent: true });
           return;
         }
         toggleOverlayFromUI(id);
@@ -1920,6 +1974,11 @@ function wireEvents() {
       const cur = document.documentElement.getAttribute("data-motion") === "off";
       applyMotion(cur);
       ui.closePopover();
+      return;
+    }
+    if (closest("[data-export-etfs]")) {
+      ui.closePopover();
+      detail.exportAllEtfs();
       return;
     }
     if (closest("[data-set-rail]")) {
@@ -2397,6 +2456,7 @@ async function switchTaxonomy(next, { silent = false } = {}) {
   api.setTaxonomy(next);
   api.clearCache();
   resetTaxonomyState();
+  loadWatch(next);
   writeURL({ replace: true });
   syncTaxonomyUI();
   if (!silent) setGlobalLoading(true, `正在切换到${TAX_LABEL[next]}…`);
