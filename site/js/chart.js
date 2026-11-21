@@ -256,6 +256,9 @@ function paintEndLabels() {
   const maxY = bottom - ELAB_H;
   const clampY = (v) => Math.min(Math.max(v, top), maxY);
   const desired = shown.map((it) => clampY(it.y - ELAB_H / 2));
+  shown.forEach((it, i) => {
+    it.tickY = Math.round(it.y); // 曲线真实末端 y（避让前）
+  });
   const placed = desired.slice();
   for (let i = 1; i < placed.length; i++) placed[i] = Math.max(placed[i], placed[i - 1] + step);
   if (placed.length && placed[placed.length - 1] > maxY) {
@@ -270,7 +273,8 @@ function paintEndLabels() {
   const maxW = Math.max(56, Math.round((layer.clientWidth || left + 100) - left - 6));
   const html = shown
     .map(
-      (it) => `<span class="elab" style="left:${left}px;top:${Math.round(it.y)}px;max-width:${maxW}px;--c:${it.color}">
+      (it) => `<i class="elab-tick" style="left:${left - 7}px;top:${Math.round(it.tickY)}px;--c:${it.color}"></i>
+      <span class="elab" style="left:${left}px;top:${Math.round(it.y)}px;max-width:${maxW}px;--c:${it.color}">
         <i class="elab-dot"></i><span class="elab-name">${esc(it.name)}</span><span class="elab-val">${esc(
         p.endLabelDigits === 1 ? cnum(it.value, 1) : cnum(it.value, Math.abs(it.value) >= 100 ? 0 : 1)
       )}</span>

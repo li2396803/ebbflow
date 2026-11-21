@@ -395,6 +395,15 @@
   overflow: hidden;
   pointer-events: none;
 }
+.endlabel-layer .elab-tick {
+  position: absolute;
+  width: 6px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: var(--c);
+  opacity: 0.55;
+  pointer-events: none;
+}
 .endlabel-layer .elab-dot {
   width: 5px;
   height: 5px;
