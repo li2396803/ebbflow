@@ -164,15 +164,30 @@ jobs:
       # 只提交站点与载荷 JSON。data/etf.db、data/shares/、data/lastrun.json 都在 .gitignore 里。
       # 这里故意写显式文件名而不用 data/*.json：shell 会先把 data/*.json 展开成真实文件名
       # （其中包含被忽略的 data/lastrun.json），而 git add 一个被忽略的路径会以退出码 1 失败。
+      # 用原生 git 提交，并在冲突时自动 rebase 重试 —— 避免「维护者刚好也推送了一次」导致整条流水线失败
       - name: 提交站点数据
         if: success() && github.ref == 'refs/heads/master'
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "chore(data): 自动更新站点数据"
-          file_pattern: "site data/quality.json data/series.json"
-          commit_user_name: "etf-flow bot"
-          commit_user_email: "41898282+github-actions[bot]@users.noreply.github.com"
-          commit_author: "etf-flow bot <41898282+github-actions[bot]@users.noreply.github.com>"
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "etf-flow bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site data/series.json data/quality.json
+          if git diff --cached --quiet; then
+            echo "没有需要提交的数据变化"
+            exit 0
+          fi
+          git commit -m "chore(data): 自动更新站点数据"
+          for i in 1 2 3 4; do
+            if git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              echo "已推送（第 $i 次尝试）"
+              exit 0
+            fi
+            echo "推送被拒（第 $i 次），3 秒后重试…"
+            sleep 3
+          done
+          echo "::error::连续 4 次推送失败"
+          exit 1
 
       # 把构建好的静态站点打成可下载产物：从 Actions 页面下载 zip 即可离线打开/托管
       - name: 上传站点产物
