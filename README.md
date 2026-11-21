@@ -1,5 +1,10 @@
 # ETF 细分行业资金流向 · 开源版
 
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A522.5-brightgreen.svg)](package.json)
+[![Daily Data](https://github.com/li2396803/etf-flow/actions/workflows/daily.yml/badge.svg)](https://github.com/li2396803/etf-flow/actions/workflows/daily.yml)
+[![站点](https://img.shields.io/badge/online-li2396803.github.io%2Fetf--flow-1f6feb.svg)](https://li2396803.github.io/etf-flow/)
+
 > **鸣谢｜本项目复刻自 B 站 UP 主「生炸瓜」的《ETF 细分行业资金流向》看板。**
 > 9 大类 / 86 个细分行业的分类体系、「份额＝成分 ETF 之和、债券 ×100」的口径、以及看板的整体形态，都源自
 > **哔哩哔哩（B站）UP 主「生炸瓜」** 的公开作品 —— 原看板的设计与制作成果归原作者所有，**没有原作就没有这个项目**。
@@ -9,7 +14,7 @@
 > **免责声明｜不构成任何投资建议。** 数据来自上交所 / 深交所 / Tushare 等公开接口，可能延迟、缺失或出错；
 > 「规模」「净流入」是按单位净值折算的估算值。仅供研究与技术学习，任何人据此决策风险自负。
 >
-> 协议 **MIT** ｜ 仓库 <https://github.com/li2396803/etf-flow> ｜ 署名与溯源详见 [`NOTICE.md`](NOTICE.md)
+> **在线站点** <https://li2396803.github.io/etf-flow/> ｜ 协议 **MIT** ｜ 仓库 <https://github.com/li2396803/etf-flow> ｜ 署名与溯源详见 [`NOTICE.md`](NOTICE.md)
 
 一句话：把「ETF 份额（资金流向）看板」搬到自己机器上 —— 每天从**上交所 / 深交所 / Tushare** 三处取 ETF 每日份额，落进本地 SQLite，重算 **86 个细分行业 / 10 个大类**的份额序列，生成本地静态站点，并提供本地 HTTP 服务随时打开看。
 
