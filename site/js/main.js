@@ -53,6 +53,7 @@ const app = {
   subsByCat: new Map(),
   pinyin: new Map(),
   stats: null,
+  ready: false,
   subsReady: false,
   indexReady: false,
   chartData: new Map(),
@@ -498,7 +499,7 @@ export function ensureSubs() {
     })
     .catch((e) => {
       subsPromise = null;
-      toast("成分数据加载失败，请检查 data/subs.json", "error", 3600);
+      if (!api.isStale?.(e)) toast("成分数据加载失败，请检查 data/subs.json", "error", 3600);
       throw e;
     });
   return subsPromise;
@@ -586,6 +587,7 @@ async function ensureCalendar() {
    视图渲染
    ========================================================================== */
 function renderView({ chart: withChart = true } = {}) {
+  if (!app.ready) return;
   try {
     chart.hideTooltips?.();
   } catch (e) {}
@@ -1252,7 +1254,8 @@ function navigate(view, opts = {}) {
   if (opts.cat !== undefined) {
     if (state.cat !== opts.cat) state.focused = null;
     state.cat = opts.cat;
-    if (state.sub && app.subs?.[state.sub]?.cat !== state.cat) {
+    const lostFocus = state.sub && (app.subs?.[state.sub]?.cat !== state.cat || opts.clearFocus);
+    if (lostFocus || opts.clearFocus) {
       state.sub = null;
       state.overlay = [];
     }
@@ -1423,6 +1426,10 @@ function searchProvider(q, mode) {
 }
 
 function openSearch(mode = "search") {
+  if (!app.ready) {
+    toast(LOADING_TIP, "info", 1600);
+    return;
+  }
   if (!app.indexReady) {
     toast("正在加载搜索索引…", "info", 1200);
     ensureIndex()
@@ -1716,11 +1723,23 @@ function scheduleDeferredData() {
 /* ==========================================================================
    事件绑定
    ========================================================================== */
+const LOADING_TIP = "正在加载数据，请稍候…";
+function blockIfLoading(closest) {
+  if (app.ready) return false;
+  const target = closest(
+    "[data-nav],[data-cat],[data-cat-toggle],[data-tax],[data-preset],[data-metric],[data-norm],[data-sub],[data-navsub],[data-overlay],[data-focus],#searchOpen,#tabCats,#tabSearch,#btnAllSubsNav,#btnAllSubsFromGrid"
+  );
+  if (!target) return false;
+  toast(LOADING_TIP, "info", 1600);
+  return true;
+}
+
 function wireEvents() {
   // 全局点击委托
   document.addEventListener("click", (e) => {
     const t = e.target;
     const closest = (sel) => t.closest?.(sel);
+    if (blockIfLoading(closest)) return;
 
     if (closest("[data-retry-chart]")) {
       renderCatChart(state.cat);
@@ -1741,6 +1760,13 @@ function wireEvents() {
     const catToggle = closest("[data-cat-toggle]");
     if (catToggle) {
       const group = catToggle.closest(".cat-nav");
+      const key = catToggle.dataset.catToggle;
+      const sameCat = state.view === "cat" && state.cat === key;
+      if (!sameCat) {
+        // 点另一个大类 = 直接看该大类全部小类的合并视图（不带 sub）
+        navigate("cat", { cat: key, clearFocus: true });
+        return;
+      }
       const open = group.dataset.open === "1";
       group.dataset.open = open ? "0" : "1";
       catToggle.setAttribute("aria-expanded", String(!open));
@@ -1896,7 +1922,7 @@ function wireEvents() {
     const catEl = closest("[data-cat]");
     if (catEl) {
       closeSheet();
-      navigate("cat", { cat: catEl.dataset.cat });
+      navigate("cat", { cat: catEl.dataset.cat, clearFocus: true });
       return;
     }
     const jump = closest("[data-open-all]");
@@ -2145,6 +2171,8 @@ async function loadTaxonomyData() {
   }
 
   recomputeStats();
+  app.ready = true;
+  document.documentElement.setAttribute("data-app-ready", "1");
   // 口径切换后 cat 可能被重置，这里把 URL 对齐一次，保证刷新可还原
   writeURL({ replace: true });
   setDataBadge(api.net.mode === "live" ? "live" : "static", api.net.mode === "live" ? "本地服务" : "静态数据");
@@ -2157,6 +2185,8 @@ async function loadTaxonomyData() {
 }
 
 async function boot() {
+  app.ready = false;
+  document.documentElement.setAttribute("data-app-ready", "0");
   stampIdentity();
   updateThemeBtn();
   readURL();
@@ -2285,6 +2315,8 @@ async function switchTaxonomy(next, { silent = false } = {}) {
   try {
     localStorage.setItem("ebbflow-taxonomy", next);
   } catch (e) {}
+  app.ready = false;
+  document.documentElement.setAttribute("data-app-ready", "0");
   api.setTaxonomy(next);
   api.clearCache();
   resetTaxonomyState();
@@ -2312,7 +2344,9 @@ async function switchTaxonomy(next, { silent = false } = {}) {
     syncTaxonomyUI();
     try {
       await loadTaxonomyData();
-    } catch (err) {}
+    } catch (err) {
+      document.documentElement.setAttribute("data-app-ready", "1");
+    }
   } finally {
     setGlobalLoading(false);
   }

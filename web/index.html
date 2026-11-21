@@ -352,6 +352,9 @@
           <button class="btn btn--ghost btn--sm" type="button" id="btnCatBack">
             <svg aria-hidden="true"><use href="#i-arrow-left"/></svg>总览
           </button>
+          <button class="btn btn--sm" type="button" id="btnExitFocus" hidden title="退出单系列聚焦，回到该大类合并视图">
+            <svg aria-hidden="true"><use href="#i-layers"/></svg>返回大类
+          </button>
           <button class="btn" type="button" id="btnCatCompare" aria-pressed="false">
             <svg aria-hidden="true"><use href="#i-compare"/></svg>对比
           </button>
@@ -387,21 +390,6 @@
               <svg aria-hidden="true"><use href="#i-download"/></svg>
             </button>
           </div>
-        </div>
-
-        <div class="focusbar" id="focusBar" hidden>
-          <span class="focus-chip">
-            <span class="cat-dot" id="focusDot"></span>
-            <span class="focus-name" id="focusName">—</span>
-            <span class="chip chip--line chip--sm">单系列聚焦</span>
-            <button class="focus-x" type="button" id="focusClear" aria-label="退出聚焦" title="退出聚焦">
-              <svg width="10" height="10" aria-hidden="true"><use href="#i-close"/></svg>
-            </button>
-          </span>
-          <span class="toolbar-sep" aria-hidden="true"></span>
-          <span class="ov-label">叠加</span>
-          <div class="ov-group" id="overlayGroup" role="group" aria-label="叠加指标"></div>
-          <span class="ov-tip" id="overlayTip" hidden></span>
         </div>
 
         <div class="card-body card-body--pad" style="padding-bottom:var(--sp-3)">

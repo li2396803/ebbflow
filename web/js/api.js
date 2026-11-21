@@ -44,7 +44,11 @@ export class ApiError extends Error {
 }
 
 const TIMEOUT = 15000;
+const RETRY_DELAY = 300;
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 网络错误/超时重试一次（300ms 退避）；HTTP 4xx 不重试（没意义） */
 async function getJSON(url, { timeout = TIMEOUT } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
@@ -89,28 +93,44 @@ function paths(key) {
  */
 export function load(key) {
   // 缓存键带上口径，避免两套 taxonomy 串数据
-  const cacheKey = TAX_BASE ? `${TAX_BASE}::${key}` : key;
+  const base = TAX_BASE;
+  const cacheKey = base ? `${base}::${key}` : key;
   if (cache.has(cacheKey)) return Promise.resolve(cache.get(cacheKey));
   if (inflight.has(cacheKey)) return inflight.get(cacheKey);
+
   const { static: staticUrl, api: apiUrl } = paths(key);
   const p = (async () => {
+    const attempt = async (url) => {
+      try {
+        return await getJSON(url);
+      } catch (e) {
+        if (e?.name === "AbortError" || /HTTP 4/.test(String(e?.message))) throw e;
+        // 网络错误 / 超时：退避 300ms 重试一次
+        await sleep(RETRY_DELAY);
+        return await getJSON(url);
+      }
+    };
     let staticErr = null;
     try {
-      const data = await getJSON(staticUrl);
+      const data = await attempt(staticUrl);
       if (!data || typeof data !== "object") throw new Error("空数据");
+      if (base !== TAX_BASE) throw new ApiError("已切换分类口径，丢弃过期响应", { stale: true, key });
       net.mode = net.mode === "live" ? "live" : "static";
       cache.set(cacheKey, data);
       return data;
     } catch (e) {
+      if (e?.detail?.stale) throw e;
       staticErr = e;
     }
     try {
-      const data = await getJSON(apiUrl);
+      const data = await attempt(apiUrl);
       if (!data || typeof data !== "object") throw new Error("空数据");
+      if (base !== TAX_BASE) throw new ApiError("已切换分类口径，丢弃过期响应", { stale: true, key });
       net.mode = "live";
       cache.set(cacheKey, data);
       return data;
     } catch (apiErr) {
+      if (apiErr?.detail?.stale) throw apiErr;
       const msg = `无法加载 ${key}：静态(${staticErr?.message || "失败"}) / 服务(${apiErr?.message || "失败"})`;
       net.lastError = msg;
       errors.push({ key, staticUrl, apiUrl, staticErr: staticErr?.message, apiErr: apiErr?.message });
@@ -119,9 +139,14 @@ export function load(key) {
     }
   })();
   inflight.set(cacheKey, p);
-  p.catch(() => {}).finally(() => inflight.delete(cacheKey));
+  // 无论成功失败都要清掉 inflight：失败的 Promise 留在 map 里会让后续所有调用复用同一个 rejection
+  p.finally(() => {
+    if (inflight.get(cacheKey) === p) inflight.delete(cacheKey);
+  }).catch(() => {});
   return p;
 }
+
+export const isStale = (e) => !!(e && e.detail && e.detail.stale);
 
 export const peek = (key) => cache.get(TAX_BASE ? `${TAX_BASE}::${key}` : key);
 export const isLoaded = (key) => cache.has(TAX_BASE ? `${TAX_BASE}::${key}` : key);
