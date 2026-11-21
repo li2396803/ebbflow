@@ -6,7 +6,7 @@
    · 自选只存 localStorage，不做任何网络上报
    ========================================================================== */
 
-import { addMonths, clamp } from "./util.js";
+import { addMonths, clamp, isDesktop } from "./util.js";
 
 /* ------------------------------- 常量 ------------------------------- */
 export const METRICS = [
@@ -34,7 +34,7 @@ export const PRESETS = [
 
 export const DEFAULT_PRESET = "1m";
 const WATCH_KEY = "etf-watch";
-const MAX_COMPARE = 2;
+const maxCompare = () => (isDesktop() ? 8 : 4);
 
 /* ------------------------------- 状态 ------------------------------- */
 export const state = {
@@ -48,7 +48,9 @@ export const state = {
   norm: "win", // 变化率基准：win（区间首日）| all（全历史首日）
   preset: DEFAULT_PRESET,
   custom: null, // {from,to} 自定义区间（≤ 日历范围）
-  compare: [], // 最多 2 个小类名
+  compare: [], // 对比小类（2–8 个，移动端 4）
+  compareHidden: [], // 对比模式下被图例关掉的系列
+  catTableExpanded: false, // 本类明细表是否展开全部行
   overlay: [], // 旧字段，保留以兼容老链接（不再写入）
   showAll: false, // 单系列聚焦时叠加的指标：scale / flow / pct
   log: false, // 对数坐标（份额/规模）
@@ -352,19 +354,39 @@ export function toggleCompare(name) {
   const i = state.compare.indexOf(name);
   if (i >= 0) {
     state.compare.splice(i, 1);
-    emit("compare");
-    return { ok: true, added: false };
+    state.compareHidden = state.compareHidden.filter((n) => n !== name);
+    emit("compare", state.compare.slice());
+    return { ok: true, added: false, count: state.compare.length };
   }
-  if (state.compare.length >= MAX_COMPARE) {
-    state.compare.shift();
+  if (state.compare.length >= maxCompare()) {
+    return { ok: false, reason: "limit", max: maxCompare() };
   }
   state.compare.push(name);
-  emit("compare");
-  return { ok: true, added: true };
+  emit("compare", state.compare.slice());
+  return { ok: true, added: true, count: state.compare.length };
 }
+
+export function setCompare(list) {
+  const seen = new Set();
+  const next = [];
+  for (const n of list || []) {
+    if (typeof n !== "string" || seen.has(n)) continue;
+    seen.add(n);
+    next.push(n);
+    if (next.length >= maxCompare()) break;
+  }
+  state.compare = next;
+  state.compareHidden = state.compareHidden.filter((n) => next.includes(n));
+  emit("compare", state.compare.slice());
+  return next;
+}
+
+export const compareLimit = () => maxCompare();
+
 
 export function clearCompare() {
   state.compare = [];
+  state.compareHidden = [];
   state.focused = null;
   emit("compare");
 }
@@ -411,8 +433,13 @@ export function readURL() {
   state.norm = p.get("norm") === "all" ? "all" : "win";
   state.log = p.get("log") === "1";
   state.sub = p.get("sub") || null;
-  const cmp = p.get("cmp");
-  state.compare = cmp ? cmp.split("|").filter(Boolean).slice(0, MAX_COMPARE) : [];
+  const cmpRaw = p.get("compare") || p.get("cmp") || "";
+  const cmps = cmpRaw
+    .split(cmpRaw.includes(",") ? "," : "|")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  state.compare = Array.from(new Set(cmps)).slice(0, maxCompare());
+  state.compareHidden = [];
 
   const from = p.get("from");
   const to = p.get("to");
@@ -449,7 +476,7 @@ export function writeURL({ push = false, replace = true } = {}) {
   if (state.norm === "all") p.set("norm", "all");
   if (state.log) p.set("log", "1");
   if (state.sub) p.set("sub", state.sub);
-  if (state.compare.length) p.set("cmp", state.compare.join("|"));
+  if (state.compare.length) p.set("compare", state.compare.join(","));
   // metric 用逗号分隔更可读：URLSearchParams 会把 , 编码成 %2C，这里还原
   const qs = p.toString().replace(/%2C/g, ",");
   const url = location.pathname + (qs ? "?" + qs : "") + location.hash;

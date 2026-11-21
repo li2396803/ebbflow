@@ -32,6 +32,8 @@ import {
   toggleWatch,
   toggleCompare,
   clearCompare,
+  setCompare,
+  compareLimit,
   inWatch,
   computeStats,
   marketRangeStats,
@@ -68,7 +70,7 @@ let palette = null;
 let marketReady = false;
 let mainReady = false;
 let freshChartToken = 0;
-const COMPARE_COLORS = ["#4b57d6", "#d97a2b"];
+const COMPARE_COLORS = ["#4B57D6", "#0E9C9C", "#C8322D", "#8B5CF6", "#C36D13", "#34921C", "#C3139B", "#1C8892"];
 const FOCUS_COLORS = { shares: "#4B57D6", scale: "#0E9C9C", pct: "#8B5CF6" };
 const OVERLAY_COLORS = { scale: "#0e9c9c", pct: "#8b5cf6", flow: "#8b93a7" };
 const METRIC_LABEL = { shares: "份额", scale: "规模", flow: "份额净申购", pct: "变化率" };
@@ -495,15 +497,21 @@ export function ensureSubs() {
   if (subsPromise) return subsPromise;
   subsPromise = api
     .load("subs")
-    .then((data) => {
-      app.subs = data;
+    .then((raw) => {
+      // subs.json 顶层可能带 __dates（交易日轴，只存一份）；剥离后再当成「小类字典」用，
+      // 否则 __dates 会被当成一个小类混进列表/搜索/对比面板。
+      const data = raw && typeof raw === "object" ? raw : {};
+      if (Array.isArray(data.__dates)) app.subsDates = data.__dates;
+      const subs = {};
+      for (const [k, v] of Object.entries(data)) if (!k.startsWith("__")) subs[k] = v;
+      app.subs = subs;
       app.subsReady = true;
       buildCatalog();
       recomputeStats();
       app.flowOf = flowOf;
       app.catFlowOf = catFlowOf;
       afterSubsReady();
-      return data;
+      return subs;
     })
     .catch((e) => {
       subsPromise = null;
@@ -756,13 +764,14 @@ function buildChartPayload(payload, catKey) {
   const b = idxIn(dates, r.to);
   const metric = state.metric;
   const compare =
-    state.compare.length > 0
+    state.compare.length >= 2
       ? state.compare
+          .filter((name) => !state.compareHidden.includes(name))
           .map((name) => {
             const cat = app.subs?.[name]?.cat;
             const p = getChart(cat);
-            const s = p?.series?.find((x) => x.name === name);
-            return s ? { name, color: s.color, series: s } : null;
+            const ser = p?.series?.find((x) => x.name === name);
+            return ser ? { name, series: ser } : null;
           })
           .filter(Boolean)
       : [];
@@ -787,7 +796,7 @@ function buildChartPayload(payload, catKey) {
           acc += v;
           return +acc.toFixed(2);
         });
-        return { name: c.name, color: COMPARE_COLORS[i % 2], values: vals };
+        return { name: c.name, color: toneColor(COMPARE_COLORS[i % COMPARE_COLORS.length], isDark()), values: vals };
       });
       footNote = "对比：区间累计份额净申购";
     } else {
@@ -797,7 +806,7 @@ function buildChartPayload(payload, catKey) {
         const baseIdx = state.norm === "all" ? 0 : a;
         return {
           name: c.name,
-          color: COMPARE_COLORS[i % 2],
+          color: toneColor(COMPARE_COLORS[i % COMPARE_COLORS.length], isDark()),
           values: normalizeSeries(arr, a, b, state.norm === "all" ? null : baseIdx, { index100: true }),
         };
       });
@@ -1074,21 +1083,11 @@ function buildFocusPayload(payload, catKey, name) {
 
 function onFocusSeries(name) {
   if (state.compare.length) {
-    // 对比模式：维持「淡化其它」的语义
-    state.focused = name || null;
-    if (state.view !== "cat") return;
-    const payload = getChart(state.cat);
-    if (!payload) return;
-    chart.renderMain(buildChartPayload(payload, state.cat));
-    views.renderLegend(
-      (payload.series || []).map((s) => ({
-        name: s.name,
-        color: s.color,
-        endValue: legendValue({ name: s.name, values: (state.metric === "pct" ? s.shares : s[state.metric]) || [] }, payload),
-      })),
-      state.focused,
-      onFocusSeries
-    );
+    // 对比模式：点图例 = 单独开关该系列（不影响其它）
+    if (!name) return;
+    const hidden = state.compareHidden.includes(name);
+    state.compareHidden = hidden ? state.compareHidden.filter((n) => n !== name) : [...state.compareHidden, name];
+    if (state.view === "cat") renderCatChart(state.cat, { silent: true });
     return;
   }
   if (!name) return; // 多系列里的「全部」= 已经是全部
@@ -1248,15 +1247,34 @@ async function renderCatChart(catKey, opts = {}) {
     } else {
       const feCard = document.getElementById("focusEtfCard");
       if (feCard) feCard.hidden = true;
-      views.renderLegend(
-        p.series.map((s) => ({
-          name: s.name,
-          color: s.color,
-          endValue: legendValue(s, payload),
-        })),
-        state.focused,
-        onFocusSeries
-      );
+      if (p.compare) {
+        views.renderLegend(
+          state.compare.map((n, i) => {
+            const cat = app.subs?.[n]?.cat;
+            const ser = getChart(cat)?.series?.find((x) => x.name === n);
+            const vals = ser?.[state.metric === "pct" ? "shares" : state.metric] || [];
+            return {
+              name: n,
+              color: toneColor(COMPARE_COLORS[i % COMPARE_COLORS.length], isDark()),
+              endValue: lastNonNull(vals, 0, vals.length - 1),
+              hidden: state.compareHidden.includes(n),
+            };
+          }),
+          null,
+          onFocusSeries,
+          { compare: true }
+        );
+      } else {
+        views.renderLegend(
+          p.series.map((s) => ({
+            name: s.name,
+            color: s.color,
+            endValue: legendValue(s, payload),
+          })),
+          state.focused,
+          onFocusSeries
+        );
+      }
     }
     const unitEl = document.getElementById("chartUnit");
     const metricObj = METRICS.find((m) => m.id === state.metric);
@@ -1411,6 +1429,7 @@ function navigate(view, opts = {}) {
     renderView();
     return;
   }
+  const prevCat = state.cat;
   state.view = view;
   if (opts.cat !== undefined) {
     if (state.cat !== opts.cat) state.focused = null;
@@ -1420,6 +1439,7 @@ function navigate(view, opts = {}) {
       state.sub = null;
     }
   }
+  if (view === "cat" && opts.cat && opts.cat !== prevCat) state.catTableExpanded = false;
   if (view === "cat" && !state.cat && app.cats.length) state.cat = app.cats[0].key;
   if (view === "cat" && opts.cat && !hasChart(opts.cat)) {
     // 先切视图再拉数据，loading 覆盖层接管反馈
@@ -1653,14 +1673,112 @@ function syncLogUI() {
 function syncCompareUI() {
   const btn = document.getElementById("btnCatCompare");
   if (!btn) return;
-  const on = state.compare.length > 0;
+  const n = state.compare.length;
+  const on = n >= 2;
   btn.setAttribute("aria-pressed", String(on));
-  btn.title = on ? `对比中：${state.compare.join(" vs ")}（点击退出）` : "选择 2 个小类做归一化对比";
+  btn.textContent = n >= 2 ? `对比 ${n} 个` : "对比";
+  btn.title = n >= 2 ? `对比中：${state.compare.join(" / ")}（点击修改）` : "选择 2–8 个小类做归一化对比";
 }
 
 function writeCompareUrl() {
   writeURL({ replace: true });
   syncCompareUI();
+}
+
+let cmpSelected = new Set();
+
+async function openCompareModal() {
+  if (!app.subsReady) {
+    ensureSubs().then(() => openCompareModal()).catch(() => toast("小类清单加载失败", "error", 2600));
+    return;
+  }
+  const mask = document.getElementById("cmpMask");
+  const list = document.getElementById("cmpList");
+  if (!mask || !list) return;
+  if (!app.indexReady || !app.subsReady) {
+    toast("正在加载小类清单…", "info", 1500);
+    try {
+      await Promise.all([ensureIndex(), ensureSubs()]);
+    } catch (e) {
+      toast("小类清单加载失败，请稍后重试", "error", 2600);
+      return;
+    }
+  }
+  cmpSelected = new Set(state.compare);
+  const limit = compareLimit();
+  const sub = document.getElementById("cmpSub");
+  if (sub) sub.textContent = `勾选 2–${limit} 个细分行业，归一化到区间起点对比${isDesktop() ? "" : "（移动端最多 4 个）"}`;
+
+  const renderList = () => {
+    const q = (document.getElementById("cmpSearch")?.value || "").trim().toLowerCase();
+    const items = [];
+    for (const [name, entry] of Object.entries(app.subs || {})) {
+      if (q) {
+        const py = (app.pinyin?.get(name) || "").toLowerCase();
+        if (!name.toLowerCase().includes(q) && !py.includes(q)) continue;
+      }
+      items.push({ name, cat: entry.cat });
+    }
+    items.sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+    if (!items.length) {
+      list.innerHTML = `<div class="state state--sm" style="padding:var(--sp-6) 0"><p class="state-desc">没有匹配的小类</p></div>`;
+      return;
+    }
+    list.innerHTML = items
+      .map((it) => {
+        const checked = cmpSelected.has(it.name);
+        const full = !checked && cmpSelected.size >= limit;
+        return `<label class="cmp-row${full ? " is-disabled" : ""}">
+          <input type="checkbox" data-cmp-name="${esc(it.name)}" ${checked ? "checked" : ""} ${full ? "disabled" : ""}>
+          <span>${esc(it.name)}</span>
+          <span class="cmp-cat">${esc(app.catMap?.get(it.cat)?.label || it.cat || "")}</span>
+        </label>`;
+      })
+      .join("");
+    const count = document.getElementById("cmpCount");
+    if (count) count.textContent = `已选 ${cmpSelected.size} 个（2–${limit}）`;
+  };
+
+  renderList();
+  list.onchange = (e) => {
+    const cb = e.target.closest("[data-cmp-name]");
+    if (!cb) return;
+    const name = cb.dataset.cmpName;
+    if (cb.checked) {
+      if (cmpSelected.size >= limit) {
+        cb.checked = false;
+        toast(`最多选 ${limit} 个`, "info", 1800);
+        return;
+      }
+      cmpSelected.add(name);
+    } else {
+      cmpSelected.delete(name);
+    }
+    renderList();
+  };
+  const search = document.getElementById("cmpSearch");
+  if (search) {
+    search.value = "";
+    search.oninput = renderList;
+  }
+  const close = () => ui.closeOverlay(mask.querySelector(".modal"));
+  document.getElementById("cmpClose").onclick = close;
+  document.getElementById("cmpCancel").onclick = close;
+  document.getElementById("cmpApply").onclick = () => {
+    if (cmpSelected.size < 2) {
+      toast("至少选 2 个再开始对比", "error", 2200);
+      return;
+    }
+    setCompare([...cmpSelected]);
+    writeURL({ replace: true });
+    close();
+    if (state.view === "cat") renderCatChart(state.cat, { silent: true });
+    syncCompareUI();
+    views.syncCatHeading(app);
+    toast(`对比 ${state.compare.length} 个小类`, "ok", 1800);
+  };
+  ui.openOverlay(mask, mask.querySelector(".modal"));
+  setTimeout(() => document.getElementById("cmpSearch")?.focus(), 30);
 }
 
 function openComparePicker() {
@@ -1972,6 +2090,17 @@ function wireEvents() {
       if (state.view === "cat") renderCatChart(state.cat, { silent: true });
       return;
     }
+    const uncompare = closest("[data-uncompare]");
+    if (uncompare) {
+      const name = uncompare.dataset.uncompare;
+      toggleCompare(name);
+      writeURL({ replace: true });
+      syncCompareUI();
+      views.syncCatHeading(app);
+      if (state.view === "cat") renderCatChart(state.cat, { silent: true });
+      toast(`已移出对比：${name}`, "info", 1600);
+      return;
+    }
     if (closest("[data-clear-compare]")) {
       state.compare = [];
       state.focused = null;
@@ -2031,6 +2160,11 @@ function wireEvents() {
       writeURL({ replace: true });
       syncFocusUI();
       if (state.view === "cat") renderCatChart(state.cat, { silent: true });
+      return;
+    }
+    if (closest("#catTableMore")) {
+      state.catTableExpanded = !state.catTableExpanded;
+      views.renderCategory(app, { chart: false });
       return;
     }
     if (closest("#btnShowAll")) {
@@ -2167,16 +2301,7 @@ function wireEvents() {
     document.getElementById("mainWrap").dataset.mode = on ? "brush" : "pan";
   });
   document.getElementById("btnCatCompare")?.addEventListener("click", () => {
-    if (state.compare.length) {
-      state.compare = [];
-      state.focused = null;
-      clearCompare();
-      writeCompareUrl();
-      if (state.view === "cat") renderCatChart(state.cat, { silent: true });
-      toast("已退出对比模式", "info", 1600);
-    } else {
-      openComparePicker();
-    }
+    openCompareModal();
   });
 
   // 端点标签「查看全部」→ 打开该小类明细抽屉

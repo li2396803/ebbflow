@@ -14,7 +14,7 @@
 <!-- ebbflow · ETF 细分行业资金流向 · built by dreemetoo · https://github.com/li2396803/ebbflow -->
 <!-- signature 01965be232d20323 · license MIT · based on a work by 生炸瓜 (哔哩哔哩（B站）) -->
 <meta name="author" content="dreemetoo">
-<meta name="generator" content="ebbflow/3.6.0 (+https://github.com/li2396803/ebbflow)">
+<meta name="generator" content="ebbflow/3.7.0 (+https://github.com/li2396803/ebbflow)">
 <meta name="ebbflow:signature" content="01965be232d20323">
 <meta name="ebbflow:license" content="MIT">
 <meta name="ebbflow:origin" content="生炸瓜 @ 哔哩哔哩（B站）">
@@ -264,7 +264,7 @@
         </div>
       </section>
 
-      <div class="split-2-1">
+      <div class="split-2-1 split-eq">
         <section class="card" aria-labelledby="topInTitle">
           <div class="card-head">
             <div class="card-title">
@@ -453,6 +453,7 @@
               <button class="icon-btn" type="button" data-table-csv="cattable" aria-label="导出 CSV" title="导出 CSV">
                 <svg aria-hidden="true"><use href="#i-download"/></svg>
               </button>
+              <button class="btn btn--ghost btn--sm" type="button" id="catTableMore" hidden>展开全部</button>
             </div>
           </div>
           <div class="card-body card-body--flush">
@@ -544,7 +545,7 @@
         <section class="foot-card foot-about">
           <h3><span class="foot-tag">项目</span>开源 · MIT</h3>
           <p>
-            版本 <b>v3.6.0</b> ｜ 作者 <a href="https://github.com/li2396803" target="_blank" rel="noopener">dreemetoo</a>
+            版本 <b>v3.7.0</b> ｜ 作者 <a href="https://github.com/li2396803" target="_blank" rel="noopener">dreemetoo</a>
             ｜ 仓库 <a href="https://github.com/li2396803/ebbflow" target="_blank" rel="noopener">https://github.com/li2396803/ebbflow</a>
           </p>
           <p id="taxLine">分类口径：—</p>
@@ -670,6 +671,37 @@
     <div class="modal-foot">
       <span id="allCount">—</span>
       <span>点击任意行查看明细与成分 ETF</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ 对比多选 ============================ -->
+<div class="modal-mask" id="cmpMask" hidden>
+  <div class="modal modal--md" role="dialog" aria-modal="true" aria-labelledby="cmpTitle">
+    <div class="modal-head">
+      <div style="flex:1;min-width:0">
+        <h2 id="cmpTitle">选择对比小类</h2>
+        <p class="modal-sub" id="cmpSub">勾选 2–8 个细分行业，归一化到区间起点对比</p>
+      </div>
+      <button class="icon-btn" type="button" id="cmpClose" aria-label="关闭">
+        <svg aria-hidden="true"><use href="#i-close"/></svg>
+      </button>
+    </div>
+    <div class="modal-body modal-body--flush">
+      <div class="filterbar" style="padding:var(--sp-3) var(--sp-5)">
+        <label class="field field--grow">
+          <svg aria-hidden="true"><use href="#i-search"/></svg>
+          <input type="search" id="cmpSearch" placeholder="搜索小类 / 拼音首字母" autocomplete="off" aria-label="搜索小类">
+        </label>
+      </div>
+      <div class="cmp-list" id="cmpList"></div>
+    </div>
+    <div class="modal-foot">
+      <span id="cmpCount">已选 0 个</span>
+      <span class="cmp-foot-actions">
+        <button class="btn btn--ghost btn--sm" type="button" id="cmpCancel">取消</button>
+        <button class="btn btn--sm" type="button" id="cmpApply">开始对比</button>
+      </span>
     </div>
   </div>
 </div>

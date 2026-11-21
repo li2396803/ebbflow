@@ -714,6 +714,16 @@ html[data-rail="collapsed"] .shell {
   gap: var(--sp-4);
   align-items: start;
 }
+/* TOP8 双卡等宽 */
+.split-2-1.split-eq {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+@media (max-width: 1024px) {
+  .split-2-1.split-eq {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 
 /* 提示条 */
 .notice {
@@ -1352,9 +1362,45 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
 .dt tbody tr.is-selected td {
   background: var(--accent-soft);
 }
+.dt thead th.num,
+.dt thead th[data-align="right"] {
+  text-align: right;
+}
+.dt thead th[data-align="center"] {
+  text-align: center;
+}
 .dt tbody td.num,
 .dt tbody td[data-align="right"] {
   text-align: right;
+}
+.dt tbody tr {
+  height: 40px;
+}
+#tblCat {
+  table-layout: fixed;
+}
+#tblCat thead th:first-child,
+#tblCat tbody td:first-child {
+  min-width: 140px;
+}
+#tblCat thead th:nth-child(2),
+#tblCat thead th:nth-child(3),
+#tblCat thead th:nth-child(4),
+#tblCat thead th:nth-child(5),
+#tblCat tbody td:nth-child(2),
+#tblCat tbody td:nth-child(3),
+#tblCat tbody td:nth-child(4),
+#tblCat tbody td:nth-child(5) {
+  width: 12ch;
+}
+#tblCat thead th:last-child,
+#tblCat tbody td:last-child {
+  width: 120px;
+  text-align: center;
+}
+#tblCat .cat-spark svg {
+  display: inline-block;
+  vertical-align: middle;
 }
 .dt tbody td[data-align="center"] {
   text-align: center;
@@ -1796,7 +1842,7 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
   z-index: var(--z-drawer);
   display: flex;
   flex-direction: column;
-  width: min(672px, 100vw);
+  width: min(880px, 100vw);
   background: var(--surface);
   border-left: 1px solid var(--line);
   box-shadow: var(--sh-3);
@@ -1908,8 +1954,14 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
   font-size: var(--fs-2xs);
 }
 #drawerBody .dt thead th,
+#drawerBody .dt tbody td,
+#drawerBody .dt thead th {
+  padding-left: var(--sp-2);
+  padding-right: var(--sp-2);
+}
 #drawerBody .dt tbody td {
-  padding: 6px var(--sp-2);
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 #drawerBody .dt .cell-name {
   gap: 4px;
@@ -2525,6 +2577,59 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
 .sheet-body {
   overflow-y: auto;
   padding: var(--sp-3) var(--sp-3) var(--sp-8);
+}
+
+.cmp-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.cmp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 2px;
+}
+.legend-chip.is-off {
+  opacity: 0.42;
+  text-decoration: line-through;
+}
+
+/* 对比多选 */
+.cmp-list {
+  max-height: min(56dvh, 520px);
+  overflow: auto;
+  padding: 0 var(--sp-5) var(--sp-4);
+}
+.cmp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 38px;
+  padding: 0 var(--sp-2);
+  border-bottom: 1px solid var(--line-inset);
+  font-size: var(--fs-xs);
+}
+.cmp-row:hover {
+  background: var(--surface-hover);
+}
+.cmp-row input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+.cmp-row.is-disabled {
+  opacity: 0.45;
+}
+.cmp-row .cmp-cat {
+  margin-left: auto;
+  color: var(--ink-4);
+  font-size: var(--fs-2xs);
+}
+.cmp-foot-actions {
+  display: inline-flex;
+  gap: var(--sp-2);
 }
 
 /* ============================ 13. 响应式 ============================ */

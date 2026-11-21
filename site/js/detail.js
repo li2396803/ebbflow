@@ -829,7 +829,7 @@ function renderQuality(q) {
     </div>
     <div class="drawer-sec-head"><h3>逐日差异</h3><span class="t-2xs dim">生成于 ${esc((q.generatedAt || "").slice(0, 19).replace("T", " "))}</span></div>
     <div class="table-wrap" style="border:1px solid var(--line);border-radius:var(--r-md)">
-      <table class="dt dt--dense" style="table-layout:fixed;width:100%">
+      <table class="dt dt--dense" id="tblQuality" style="table-layout:fixed;width:100%">
         <thead><tr><th scope="col" style="width:96px">日期</th><th class="num" scope="col" style="width:76px">差异条数</th><th scope="col">样例</th></tr></thead>
         <tbody>
           ${

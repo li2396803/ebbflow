@@ -498,8 +498,9 @@ function renderCatGrid(app) {
 
 function topRows(app, dir, n = 8) {
   const subs = (app.stats?.subs || []).filter((s) => Number.isFinite(s.delta));
+  // in：delta 降序取前 n（增加最多）；out：delta 升序取前 n（减少最多，负值）
   const sorted = subs.slice().sort((a, b) => (dir === "in" ? b.delta - a.delta : a.delta - b.delta));
-  const base = dir === "in" ? sorted.slice(0, n) : sorted.slice(-n);
+  const base = sorted.slice(0, n);
   const sort = state.topSort[dir] || { key: "delta", dir: dir === "in" ? -1 : 1 };
   const list = base.slice().sort((a, b) => {
     if (sort.key === "name") return sort.dir * String(a.name).localeCompare(String(b.name), "zh-CN");
@@ -715,7 +716,14 @@ export function syncCatHeading(app) {
     )}</span>`,
     `<span class="dim">区间份额净申购${app.chartData?.has(key) ? "" : "（估算）"} ${esc(fmtSigned(flow, 1))} 亿元</span>`,
     state.compare.length
-      ? `<span class="chip chip--accent">对比 ${esc(state.compare.join(" vs "))}<button class="rc-x" type="button" data-clear-compare="1" aria-label="退出对比" title="退出对比" style="width:16px;height:16px;margin-left:2px"><svg width="9" height="9"><use href="#i-close"/></svg></button></span>`
+      ? `<span class="cmp-chips"><span class="dim">对比 ${state.compare.length} 个</span>${state.compare
+          .map(
+            (n) =>
+              `<span class="chip chip--accent cmp-chip">${esc(n)}<button class="rc-x" type="button" data-uncompare="${esc(
+                n
+              )}" aria-label="移出对比 ${esc(n)}" title="移出对比"><svg width="9" height="9"><use href="#i-close"/></svg></button></span>`
+          )
+          .join("")}<button class="linkbtn" type="button" data-clear-compare="1">清空</button></span>`
       : "",
   ].join("");
 }
@@ -763,7 +771,11 @@ function renderCatTable(app, key) {
     const bv = b[sortKey] ?? -Infinity;
     return dir * (av - bv);
   });
-  tbody.innerHTML = rows
+  // 默认折叠前 12 行，可展开全部（行多时避免把页面拉太长）
+  const COLLAPSE_AT = 12;
+  const expanded = !!state.catTableExpanded;
+  const shown = expanded ? rows : rows.slice(0, COLLAPSE_AT);
+  tbody.innerHTML = shown
     .map((s) => {
       const color = toneColor(s.color, isDark());
       return `<tr data-sub="${esc(s.name)}" data-cat="${esc(s.cat)}" tabindex="0">
@@ -776,6 +788,12 @@ function renderCatTable(app, key) {
     </tr>`;
     })
     .join("");
+  const more = document.getElementById("catTableMore");
+  if (more) {
+    more.hidden = rows.length <= COLLAPSE_AT;
+    more.textContent = expanded ? "收起" : `展开全部 ${rows.length} 行`;
+    more.setAttribute("aria-expanded", String(expanded));
+  }
   tbl.querySelectorAll("thead th[data-sort-key]").forEach((th) => {
     const k = th.dataset.sortKey;
     if (k === sortKey) th.setAttribute("aria-sort", dir > 0 ? "ascending" : "descending");
@@ -844,7 +862,7 @@ export function renderFocusLegend(items, onToggle) {
   };
 }
 
-export function renderLegend(series, focused, onFocus) {
+export function renderLegend(series, focused, onFocus, { compare = false } = {}) {
   const host = document.getElementById("chartLegend");
   if (!host) return;
   if (!series.length) {
@@ -852,20 +870,18 @@ export function renderLegend(series, focused, onFocus) {
     return;
   }
   host.innerHTML =
-    `<button class="legend-chip legend-chip--all" type="button" data-focus="" aria-pressed="${!focused}">全部</button>` +
+    (compare
+      ? ""
+      : `<button class="legend-chip legend-chip--all" type="button" data-focus="" aria-pressed="${!focused}">全部</button>`) +
     series
       .map(
-        (s) => `<button class="legend-chip" type="button" data-focus="${esc(s.name)}" aria-pressed="${focused === s.name}" style="--lc:${esc(
-          toneColor(s.color, isDark())
-        )}" title="${esc(s.name)}：点击聚焦，双击只看该系列">
+        (s) => `<button class="legend-chip${s.hidden ? " is-off" : ""}" type="button" data-focus="${esc(s.name)}" aria-pressed="${
+          s.hidden ? "false" : focused === s.name
+        }" style="--lc:${esc(toneColor(s.color, isDark()))}" title="${esc(s.name)}：点击${focused === null && s.hidden !== undefined ? "开关该系列" : "聚焦，双击只看该系列"}">
           <span class="lc-dot"></span><span class="lc-name">${esc(s.name)}</span>
           <span class="lc-val">${esc(s.endValue == null ? "" : cnum(s.endValue, 1))}</span>
         </button>`
       )
       .join("");
-  host.onclick = (e) => {
-    const b = e.target.closest("[data-focus]");
-    if (!b) return;
-    onFocus(b.dataset.focus || null);
-  };
+  // 点击由全局委托处理（document 上的 [data-focus] 分支），避免同一次点击触发两次
 }

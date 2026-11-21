@@ -56,7 +56,8 @@ export function fmtSigned(v, dp = 1) {
 
 export function fmtPct(v, dp = 2) {
   if (v == null || !Number.isFinite(+v)) return "—";
-  return (v > 0 ? "+" : v < 0 ? MINUS : "") + Math.abs(v).toFixed(dp) + "%";
+  // 0 用 figure space 占住正负号的位置，保证一列百分比宽度一致
+  return (v > 0 ? "+" : v < 0 ? MINUS : "\u2007") + Math.abs(v).toFixed(dp) + "%";
 }
 
 /** 亿 → 万亿 自动降级；返回 { num, unit, dp } */
