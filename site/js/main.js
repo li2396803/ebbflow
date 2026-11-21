@@ -69,7 +69,7 @@ let mainReady = false;
 let freshChartToken = 0;
 const COMPARE_COLORS = ["#4b57d6", "#d97a2b"];
 const OVERLAY_COLORS = { scale: "#0e9c9c", pct: "#8b5cf6", flow: "#8b93a7" };
-const METRIC_LABEL = { shares: "份额", scale: "规模", flow: "净流入", pct: "变化率" };
+const METRIC_LABEL = { shares: "份额", scale: "规模", flow: "份额净申购", pct: "变化率" };
 const METRIC_UNIT = { shares: "亿份", scale: "亿元", flow: "亿元/日", pct: "%" };
 const TAG_PREFIXES = ["index", "sw", "csi", "theme", "region", "factor", "bond", "commodity"];
 const TAG_ALIAS = {
@@ -354,7 +354,7 @@ function applyMeta() {
   if (desc && subs && etfs) {
     desc.setAttribute(
       "content",
-      `Ebbflow · ETF 细分行业资金流向：${cats} 大类 / ${subs} 个细分行业 / ${etfs} 只 ETF 的份额、规模与净流入长期序列，含区间对比、自选、全市场总览与数据质量校验。`
+      `Ebbflow · ETF 细分行业资金流向：${cats} 大类 / ${subs} 个细分行业 / ${etfs} 只 ETF 的份额、规模与份额净申购长期序列，含区间对比、自选、全市场总览与数据质量校验。`
     );
   }
   fillFoot();
@@ -632,7 +632,7 @@ function renderRangeChip() {
 }
 
 /**
- * 区间净流入：优先用已加载图表里的「每日净流入」求和（精确），
+ * 区间份额净申购：优先用已加载图表里的「每日份额净申购」求和（精确），
  * 未加载时退回 Δ份额 × 最新净值（近似）。两处 UI 都标「估算」，避免口径承诺。
  */
 function flowOf(name, stats) {
@@ -697,7 +697,7 @@ async function ensureMainChart() {
   mainReady = true;
 }
 
-/** 图例右侧的数值：净流入显示区间累计（当日值没有比较意义），其余显示窗口末端值 */
+/** 图例右侧的数值：份额净申购显示区间累计（当日值没有比较意义），其余显示窗口末端值 */
 function legendValue(series, payload) {
   if (state.metric !== "flow" || !payload?.series) return lastNonNull(series.values, 0, series.values.length - 1);
   const { fromIdx, toIdx } = state.rangeInfo;
@@ -780,7 +780,7 @@ function buildChartPayload(payload, catKey) {
         });
         return { name: c.name, color: COMPARE_COLORS[i % 2], values: vals };
       });
-      footNote = "对比：区间累计净流入";
+      footNote = "对比：区间累计份额净申购";
     } else {
       unit = "指数（区间起点 = 100）";
       series = compare.map((c, i) => {
@@ -839,7 +839,7 @@ function buildChartPayload(payload, catKey) {
       footNote = state.norm === "all" ? "相对全历史首日的变化率" : "相对区间首日的变化率";
       unit = "%";
     } else if (metric === "flow") {
-      footNote = "每日净流入（Δ份额 × 当日净值）";
+      footNote = "每日份额净申购（Δ份额 × 当日净值）";
     }
     if (others.length) {
       footNote = `${footNote ? footNote + " · " : ""}只画规模 Top ${list.length}，其余 ${others.length} 个合并为「其他」`;
@@ -907,9 +907,9 @@ function buildChartPayload(payload, catKey) {
 
 /**
  * 单系列聚焦 + 指标叠加：
- *  · 左轴 = 金额（份额/规模；主指标是净流入时左轴就是 亿元/日）
+ *  · 左轴 = 金额（份额/规模；主指标是份额净申购时左轴就是 亿元/日）
  *  · 右轴 = 百分比（变化率，仅在勾选时出现）
- *  · 净流入永远是柱子，且有独立轴（不与折线共用刻度），z 轴压在折线下方
+ *  · 份额净申购永远是柱子，且有独立轴（不与折线共用刻度），z 轴压在折线下方
  */
 function buildFocusPayload(payload, catKey, name) {
   const dates = payload.dates || state.calendar;
@@ -1730,7 +1730,7 @@ function closeSheet() {
 
 /* ==========================================================================
    后台预取：首屏之后逐个拉取其余大类图表
-   · 目的：① 区间净流入从「估算」升级为「每日求和」的精确值；
+   · 目的：① 区间份额净申购从「估算」升级为「每日求和」的精确值；
             ② 大类切换即时（命中缓存），不阻塞首屏
    · 尊重 saveData / 2G 网络，串行加载避免抢带宽
    ========================================================================== */

@@ -104,7 +104,7 @@ export function renderInlineEtfTable(app, subName, host) {
             ${sortHead("delta", "区间变化", "num")}
             ${sortHead("nav", "净值", "num etf-nav")}
             ${sortHead("scale", "规模", "num")}
-            ${sortHead("flow", "净流入", "num etf-flow")}
+            ${sortHead("flow", "份额净申购", "num etf-flow")}
             <th scope="col" class="num">占本类</th>
           </tr></thead>
           <tbody>${view.map((r) => etfRowHTML(r, totalScale, app)).join("")}</tbody>
@@ -131,7 +131,7 @@ export function renderInlineEtfTable(app, subName, host) {
     }
     if (e.target.closest("[data-icsv]")) {
       const csv = toCSV([
-        ["代码", "名称", "市场", "最新份额(亿份)", "区间变化(亿份)", "净值", "规模(亿元)", "净流入(亿元)", "占本类(%)"],
+        ["代码", "名称", "市场", "最新份额(亿份)", "区间变化(亿份)", "净值", "规模(亿元)", "份额净申购(亿元)", "占本类(%)"],
         ...sorted.map((r) => [
           r.code,
           r.name,
@@ -269,7 +269,7 @@ function renderDetail(app, name, s, entry) {
         <div><dt>最新份额</dt><dd class="num">${esc(cnum(s?.last, 1))}<span class="unit">亿份</span></dd></div>
         <div><dt>规模（估算）</dt><dd class="num">${s?.scale != null ? esc(cnum(s.scale, 1)) : "—"}<span class="unit">亿元</span></dd></div>
         <div><dt>区间变化</dt><dd class="num ${s?.pct > 0 ? "up" : s?.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s?.pct, 2))}</dd></div>
-        <div><dt>区间净流入${app.chartData?.has(s?.cat || entry?.cat) ? "" : "（估算）"}</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>
+        <div><dt>区间份额净申购${app.chartData?.has(s?.cat || entry?.cat) ? "" : "（估算）"}</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>
       </dl>
       <p class="t-2xs dim" style="margin-top:2px">份额变化 ${esc(fmtSigned(s?.delta, 1))} 亿份 ｜ 成分 ETF ${rows.length} 只${
         nav ? ` ｜ 净值覆盖 ${nav.hit}/${nav.total}` : ""
@@ -306,14 +306,14 @@ function renderDetail(app, name, s, entry) {
               <th scope="col" data-esort="delta" class="num" aria-sort="none"><button type="button">近期变化<span class="sort-ico"></span></button></th>
               <th scope="col" data-esort="nav" class="num etf-nav" aria-sort="none"><button type="button">净值<span class="sort-ico"></span></button></th>
               <th scope="col" data-esort="scale" class="num" aria-sort="descending"><button type="button">规模<span class="sort-ico"></span></button></th>
-              <th scope="col" data-esort="flow" class="num etf-flow" aria-sort="none"><button type="button">净流入<span class="sort-ico"></span></button><span class="th-info" tabindex="0" role="note" title="份额拆分/合并已从净流入中剔除" aria-label="份额拆分/合并已从净流入中剔除">i</span></th>
+              <th scope="col" data-esort="flow" class="num etf-flow" aria-sort="none"><button type="button">份额净申购<span class="sort-ico"></span></button><span class="th-info" tabindex="0" role="note" title="份额拆分/合并已从份额净申购中剔除" aria-label="份额拆分/合并已从份额净申购中剔除">i</span></th>
               <th scope="col" class="num">占本类</th>
             </tr>
           </thead>
           <tbody></tbody>
         </table>
       </div>
-      <p class="t-2xs faint">「近期变化 / 净流入」沿用数据管线的近一周窗口口径；「份额 / 规模 / 净值」为最新交易日快照。净流入按当日净值折算，部分已退市成分无净值时不计入（见上方净值覆盖）；份额拆分/合并已从净流入中剔除。</p>
+      <p class="t-2xs faint">「近期变化 / 份额净申购」沿用数据管线的近一周窗口口径；「份额 / 规模 / 净值」为最新交易日快照。份额净申购按当日净值折算，部分已退市成分无净值时不计入（见上方净值覆盖）；份额拆分/合并已从份额净申购中剔除。</p>
     </section>`;
 
   renderEtfTable(rows, totalScale);
@@ -337,7 +337,7 @@ function renderDetail(app, name, s, entry) {
   });
 
   document.getElementById("etfCsv")?.addEventListener("click", () => {
-    const header = ["代码", "名称", "市场", "份额(亿份)", "近期变化(亿份)", "净值(元)", "规模(亿元)", "净流入(亿元)", "占本类规模"];
+    const header = ["代码", "名称", "市场", "份额(亿份)", "近期变化(亿份)", "净值(元)", "规模(亿元)", "份额净申购(亿元)", "占本类规模"];
     const data = rows.map((r) => [
       r.code,
       r.name,
@@ -380,7 +380,7 @@ function renderMissingDetail(app, name, s) {
               <div><dt>最新份额</dt><dd class="num">${esc(cnum(s.last, 1))}<span class="unit">亿份</span></dd></div>
               <div><dt>规模（估算）</dt><dd class="num">${s.scale != null ? esc(cnum(s.scale, 1)) : "—"}<span class="unit">亿元</span></dd></div>
               <div><dt>区间变化</dt><dd class="num ${s.pct > 0 ? "up" : s.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s.pct, 2))}</dd></div>
-              <div><dt>区间净流入</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>
+              <div><dt>区间份额净申购</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>
             </dl>`
           : ""
       }

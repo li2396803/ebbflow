@@ -433,7 +433,7 @@ function yAxisOption(a, index, t, p) {
     logBase: 10,
     position: a.position || "left",
     offset: a.offset || 0,
-    // 金额轴按数据自适应；净流入含正负、变化率含 0，都强制包含 0
+    // 金额轴按数据自适应；份额净申购含正负、变化率含 0，都强制包含 0
     scale: !isFlow && !isPct && !p.log,
     splitNumber: 4,
     axisLine: { show: false },

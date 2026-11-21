@@ -12,7 +12,7 @@ import { addMonths, clamp } from "./util.js";
 export const METRICS = [
   { id: "shares", label: "份额", unit: "亿份", short: "份额" },
   { id: "scale", label: "规模", unit: "亿元", short: "规模" },
-  { id: "flow", label: "净流入", unit: "亿元", short: "净流入" },
+  { id: "flow", label: "份额净申购", unit: "亿元", short: "份额净申购" },
   { id: "pct", label: "变化率", unit: "%", short: "变化率" },
 ];
 

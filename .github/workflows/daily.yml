@@ -82,6 +82,22 @@ jobs:
             npm install --no-audit --no-fund --package-lock=false
           fi
 
+      # 冷启动兜底：没有缓存时下载数据库种子（Release 资产），避免全量回补几十分钟
+      - name: 数据库种子兜底
+        if: hashFiles('data/etf.db') == ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          echo "没有 data/etf.db，尝试下载种子…"
+          if gh release download db-seed --repo "$GITHUB_REPOSITORY" --pattern 'etf-db.sqlite.gz' --dir /tmp/seed 2>/dev/null; then
+            gunzip -c /tmp/seed/etf-db.sqlite.gz > data/etf.db
+            echo "::notice::已使用数据库种子恢复（$(du -h data/etf.db | cut -f1)），本次只做增量"
+          else
+            echo "::notice::没有可用种子，将执行全量回补（首次可能较久）"
+          fi
+
       - name: 恢复 SQLite 缓存
         id: db-restore
         uses: actions/cache/restore@v4

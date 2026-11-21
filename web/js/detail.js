@@ -102,9 +102,12 @@ export function renderInlineEtfTable(app, subName, host) {
             ${sortHead("name", "名称", "", false)}
             ${sortHead("shares", "最新份额", "num")}
             ${sortHead("delta", "区间变化", "num")}
+            ${sortHead("price", "收盘价", "num col-price")}
+            ${sortHead("premium", "折溢价", "num")}
+            ${sortHead("amount", "成交额", "num")}
             ${sortHead("nav", "净值", "num etf-nav")}
             ${sortHead("scale", "规模", "num")}
-            ${sortHead("flow", "净流入", "num etf-flow")}
+            ${sortHead("flow", "份额净申购", "num etf-flow")}
             <th scope="col" class="num">占本类</th>
           </tr></thead>
           <tbody>${view.map((r) => etfRowHTML(r, totalScale, app)).join("")}</tbody>
@@ -131,13 +134,17 @@ export function renderInlineEtfTable(app, subName, host) {
     }
     if (e.target.closest("[data-icsv]")) {
       const csv = toCSV([
-        ["代码", "名称", "市场", "最新份额(亿份)", "区间变化(亿份)", "净值", "规模(亿元)", "净流入(亿元)", "占本类(%)"],
+        ["代码", "名称", "市场", "最新份额(亿份)", "区间变化(亿份)", "收盘价", "折溢价(%)", "成交额(亿元)", "换手率(%)", "净值", "规模(亿元)", "份额净申购(亿元)", "占本类(%)"],
         ...sorted.map((r) => [
           r.code,
           r.name,
           r.market || "",
           r.shares ?? "",
           r.delta ?? "",
+          r.price ?? "",
+          r.premium ?? "",
+          r.amount ?? "",
+          r.turnover ?? "",
           r.nav ?? "",
           r.scale ?? "",
           r.flow ?? "",
@@ -269,7 +276,7 @@ function renderDetail(app, name, s, entry) {
         <div><dt>最新份额</dt><dd class="num">${esc(cnum(s?.last, 1))}<span class="unit">亿份</span></dd></div>
         <div><dt>规模（估算）</dt><dd class="num">${s?.scale != null ? esc(cnum(s.scale, 1)) : "—"}<span class="unit">亿元</span></dd></div>
         <div><dt>区间变化</dt><dd class="num ${s?.pct > 0 ? "up" : s?.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s?.pct, 2))}</dd></div>
-        <div><dt>区间净流入${app.chartData?.has(s?.cat || entry?.cat) ? "" : "（估算）"}</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>
+        <div><dt>区间份额净申购${app.chartData?.has(s?.cat || entry?.cat) ? "" : "（估算）"}</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>
       </dl>
       <p class="t-2xs dim" style="margin-top:2px">份额变化 ${esc(fmtSigned(s?.delta, 1))} 亿份 ｜ 成分 ETF ${rows.length} 只${
         nav ? ` ｜ 净值覆盖 ${nav.hit}/${nav.total}` : ""
@@ -303,17 +310,20 @@ function renderDetail(app, name, s, entry) {
               <th scope="col" data-esort="code" aria-sort="none"><button type="button">代码<span class="sort-ico"></span></button></th>
               <th scope="col" data-esort="name" aria-sort="none"><button type="button">名称<span class="sort-ico"></span></button></th>
               <th scope="col" data-esort="shares" class="num" aria-sort="none"><button type="button">份额<span class="sort-ico"></span></button></th>
-              <th scope="col" data-esort="delta" class="num" aria-sort="none"><button type="button">近期变化<span class="sort-ico"></span></button></th>
+              <th scope="col" data-esort="delta" class="num" aria-sort="none"><button type="button">区间变化<span class="sort-ico"></span></button></th>
+              <th scope="col" data-esort="price" class="num col-price" aria-sort="none"><button type="button">收盘价<span class="sort-ico"></span></button></th>
+              <th scope="col" data-esort="premium" class="num" aria-sort="none"><button type="button">折溢价<span class="sort-ico"></span></button><span class="th-info" tabindex="0" role="note" title="折溢价 =（收盘价 − 单位净值）/ 单位净值；>0 溢价、<0 折价" aria-label="折溢价 =（收盘价 − 单位净值）/ 单位净值">i</span></th>
+              <th scope="col" data-esort="amount" class="num" aria-sort="none"><button type="button">成交额<span class="sort-ico"></span></button><span class="th-info" tabindex="0" role="note" title="成交额（亿元），鼠标悬停单元格可看换手率（成交额 / 规模）" aria-label="成交额（亿元），悬停可看换手率">i</span></th>
               <th scope="col" data-esort="nav" class="num etf-nav" aria-sort="none"><button type="button">净值<span class="sort-ico"></span></button></th>
               <th scope="col" data-esort="scale" class="num" aria-sort="descending"><button type="button">规模<span class="sort-ico"></span></button></th>
-              <th scope="col" data-esort="flow" class="num etf-flow" aria-sort="none"><button type="button">净流入<span class="sort-ico"></span></button><span class="th-info" tabindex="0" role="note" title="份额拆分/合并已从净流入中剔除" aria-label="份额拆分/合并已从净流入中剔除">i</span></th>
+              <th scope="col" data-esort="flow" class="num etf-flow" aria-sort="none"><button type="button">份额净申购<span class="sort-ico"></span></button><span class="th-info" tabindex="0" role="note" title="份额拆分/合并已从份额净申购中剔除" aria-label="份额拆分/合并已从份额净申购中剔除">i</span></th>
               <th scope="col" class="num">占本类</th>
             </tr>
           </thead>
           <tbody></tbody>
         </table>
       </div>
-      <p class="t-2xs faint">「近期变化 / 净流入」沿用数据管线的近一周窗口口径；「份额 / 规模 / 净值」为最新交易日快照。净流入按当日净值折算，部分已退市成分无净值时不计入（见上方净值覆盖）；份额拆分/合并已从净流入中剔除。</p>
+      <p class="t-2xs faint">「近期变化 / 份额净申购」沿用数据管线的近一周窗口口径；「份额 / 规模 / 净值」为最新交易日快照。份额净申购按当日净值折算，部分已退市成分无净值时不计入（见上方净值覆盖）；份额拆分/合并已从份额净申购中剔除。</p>
     </section>`;
 
   renderEtfTable(rows, totalScale);
@@ -337,13 +347,17 @@ function renderDetail(app, name, s, entry) {
   });
 
   document.getElementById("etfCsv")?.addEventListener("click", () => {
-    const header = ["代码", "名称", "市场", "份额(亿份)", "近期变化(亿份)", "净值(元)", "规模(亿元)", "净流入(亿元)", "占本类规模"];
+    const header = ["代码", "名称", "市场", "份额(亿份)", "区间变化(亿份)", "收盘价(元)", "折溢价(%)", "成交额(亿元)", "换手率(%)", "净值(元)", "规模(亿元)", "份额净申购(亿元)", "占本类规模"];
     const data = rows.map((r) => [
       r.code,
       r.name,
       r.market || "",
       r.shares ?? "",
       r.delta ?? "",
+      r.price ?? "",
+      r.premium ?? "",
+      r.amount ?? "",
+      r.turnover ?? "",
       r.nav ?? "",
       r.scale ?? "",
       r.flow ?? "",
@@ -380,7 +394,7 @@ function renderMissingDetail(app, name, s) {
               <div><dt>最新份额</dt><dd class="num">${esc(cnum(s.last, 1))}<span class="unit">亿份</span></dd></div>
               <div><dt>规模（估算）</dt><dd class="num">${s.scale != null ? esc(cnum(s.scale, 1)) : "—"}<span class="unit">亿元</span></dd></div>
               <div><dt>区间变化</dt><dd class="num ${s.pct > 0 ? "up" : s.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s.pct, 2))}</dd></div>
-              <div><dt>区间净流入</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>
+              <div><dt>区间份额净申购</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>
             </dl>`
           : ""
       }
@@ -402,6 +416,10 @@ function renderMissingDetail(app, name, s) {
 /** 成分 ETF 行内容（抽屉表与聚焦内嵌表共用） */
 export function etfRowHTML(r, totalScale, app) {
   const share = totalScale && r.scale != null ? (r.scale / totalScale) * 100 : null;
+  const prem = r.premium;
+  const premCls = prem == null ? "flat" : prem > 0.3 ? "up" : prem < -0.3 ? "down" : "flat";
+  const premStrong = prem != null && Math.abs(prem) > 2 ? " is-strong" : "";
+  const turnover = r.turnover == null ? "" : `换手率 ${cnum(r.turnover, 2)}%`;
   return `<tr>
     <td class="mono t-2xs">${esc(r.code)}</td>
     <td class="etf-name-cell">
@@ -411,13 +429,15 @@ export function etfRowHTML(r, totalScale, app) {
     </td>
     <td class="num">${esc(cnum(r.shares, 1))}</td>
     <td class="num ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "flat"}">${esc(fmtSigned(r.delta, 1))}</td>
+    <td class="num col-price">${r.price != null ? esc(cnum(r.price, 3)) : "—"}</td>
+    <td class="num ${premCls}${premStrong}" title="（收盘价 − 单位净值）/ 单位净值${prem != null ? ` = ${prem.toFixed(2)}%` : ""}">${prem != null ? esc(fmtSigned(prem, 2)) + "%" : "—"}</td>
+    <td class="num" title="${esc(turnover)}">${r.amount != null ? esc(cnum(r.amount, 1)) : "—"}</td>
     <td class="num etf-nav">${r.nav != null ? esc(cnum(r.nav, 3)) : "—"}</td>
     <td class="num">${r.scale != null ? esc(cnum(r.scale, 1)) : "—"}</td>
     <td class="num etf-flow ${r.flow > 0 ? "up" : r.flow < 0 ? "down" : "flat"}">${r.flow != null ? esc(fmtSigned(r.flow, 1)) : "—"}</td>
     <td class="num"><span class="barcell"><span class="barcell-track"><span class="barcell-fill" style="width:${share ? Math.min(100, share * 3).toFixed(1) : 0}%"></span></span><span class="barcell-val">${share != null ? share.toFixed(1) + "%" : "—"}</span></span></td>
   </tr>`;
 }
-
 export function sortEtfRows(rows, { key, dir }) {
   return rows.slice().sort((a, b) => {
     if (key === "code" || key === "name") return dir * String(a[key] || "").localeCompare(String(b[key] || ""), "zh-CN");
@@ -434,7 +454,7 @@ function renderEtfTable(rows, totalScale) {
     return dir * ((a[key] ?? -Infinity) - (b[key] ?? -Infinity));
   });
   if (!sorted.length) {
-    tbody.innerHTML = `<tr><td colspan="8"><div class="state state--sm"><p class="state-desc">该小类暂无成分 ETF 明细</p></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="11"><div class="state state--sm"><p class="state-desc">该小类暂无成分 ETF 明细</p></div></td></tr>`;
     return;
   }
   const app = drawerHooks.app;

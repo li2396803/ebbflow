@@ -263,8 +263,10 @@ function renderOverviewKpis(app) {
   const down = getComputedStyle(document.documentElement).getPropertyValue("--down").trim();
 
   const pending = `<span class="dim">数据加载中…</span>`;
-  const card = (label, num, unit, foot, spark, color) => `<div class="kpi">
-      <div class="kpi-top"><span class="kpi-label"><span class="kpi-dot" style="background:${color}"></span>${esc(label)}</span></div>
+  const card = (label, num, unit, foot, spark, color, info) => `<div class="kpi">
+      <div class="kpi-top"><span class="kpi-label"><span class="kpi-dot" style="background:${color}"></span>${esc(label)}${
+        info ? `<span class="th-info" tabindex="0" role="note" title="${esc(info)}" aria-label="${esc(info)}">i</span>` : ""
+      }</span></div>
       <div class="kpi-val num">${esc(num)}<span class="unit">${esc(unit)}</span></div>
       <div class="kpi-foot">${foot}</div>
       ${spark ? `<div class="kpi-spark">${spark}</div>` : ""}
@@ -311,23 +313,24 @@ function renderOverviewKpis(app) {
       sc.delta >= 0 ? "var(--up)" : "var(--down)"
     ),
     card(
-      !ready ? "区间净流入" : app.flowComplete ? "区间净流入" : "区间净流入（估算）",
+      !ready ? "区间份额净申购" : app.flowComplete ? "区间份额净申购" : "区间份额净申购（估算）",
       ready ? fmtSigned(flowEst, 1) : "—",
       "亿元",
       !ready
         ? pending
         : app.flowComplete
-          ? `<span class="dim">逐日净流入累加</span><span class="chip chip--line chip--sm" title="口径：按当日单位净值折算的每日净流入逐日累加；份额拆分/合并已剔除">口径</span>`
-          : `<span class="dim">Δ份额 × 最新净值近似</span><span class="chip chip--line chip--sm" title="口径：区间份额变化量 × 最新单位净值（近似）；全量图表加载完成后会自动切换为每日净流入求和">估算</span>`,
+          ? `<span class="dim">逐日份额净申购累加</span><span class="chip chip--line chip--sm" title="口径：按当日单位净值折算的每日份额净申购逐日累加；份额拆分/合并已剔除">口径</span>`
+          : `<span class="dim">Δ份额 × 最新净值近似</span><span class="chip chip--line chip--sm" title="口径：区间份额变化量 × 最新单位净值（近似）；全量图表加载完成后会自动切换为每日份额净申购求和">估算</span>`,
       "",
-      "var(--ink-3)"
+      "var(--ink-3)",
+      "份额净申购＝成分 ETF 份额变动×净值（估算）。ETF 在二级市场买卖不改变份额，只有一级申购赎回才改变，因此该指标反映的是一级申赎，不等于二级成交额。"
     ),
     card(
       "大类分化",
       ready && app.cats.length ? `${catIn}/${app.cats.length}` : "—",
-      "类净流入",
+      "类份额净申购",
       ready
-        ? `<span class="dim">净流入合计</span><span class="delta ${catFlowSum > 0 ? "delta--up" : catFlowSum < 0 ? "delta--down" : "delta--flat"}">${esc(fmtSigned(catFlowSum, 1))} 亿元</span>`
+        ? `<span class="dim">份额净申购合计</span><span class="delta ${catFlowSum > 0 ? "delta--up" : catFlowSum < 0 ? "delta--down" : "delta--flat"}">${esc(fmtSigned(catFlowSum, 1))} 亿元</span>`
         : pending,
       "",
       "var(--ink-3)"
@@ -335,7 +338,7 @@ function renderOverviewKpis(app) {
   ].join("");
 }
 
-/** 区间净流入估算：Δ份额 × 最新单位净值（scale/shares 得到加权净值） */
+/** 区间份额净申购估算：Δ份额 × 最新单位净值（scale/shares 得到加权净值） */
 export function flowEstimate(subStat) {
   if (!subStat) return 0;
   const nav = subStat.scale != null && subStat.last ? subStat.scale / subStat.last : null;
@@ -649,7 +652,7 @@ export function renderWatch(app) {
         fmtPct(avgPct, 2),
         "",
         `<span class="delta ${flow > 0 ? "delta--up" : flow < 0 ? "delta--down" : "delta--flat"}">${esc(fmtSigned(flow, 1))} 亿元</span><span class="dim">${
-          app.flowComplete ? "区间净流入" : "净流入估算"
+          app.flowComplete ? "区间份额净申购" : "份额净申购估算"
         }</span>`,
         avgPct != null ? (avgPct >= 0 ? "var(--up)" : "var(--down)") : undefined
       ),
@@ -665,8 +668,8 @@ export function renderWatch(app) {
       <svg aria-hidden="true"><use href="#i-info"/></svg>
       <span>${
         app.flowComplete
-          ? "「区间净流入」为区间内每日净流入（Δ份额 × 当日单位净值）之和；已退市或缺少净值的成分不计入。不等同于交易所口径的申赎金额。"
-          : "「区间净流入」为区间份额变化量乘以该小类最新单位净值的估算值；全量图表加载完成后会自动切换为每日净流入求和。不等同于交易所口径的申赎金额。"
+          ? "「区间份额净申购」为区间内每日份额净申购（Δ份额 × 当日单位净值）之和；已退市或缺少净值的成分不计入。不等同于交易所口径的申赎金额。"
+          : "「区间份额净申购」为区间份额变化量乘以该小类最新单位净值的估算值；全量图表加载完成后会自动切换为每日份额净申购求和。不等同于交易所口径的申赎金额。"
       }</span>
     </p>`;
 }
@@ -701,7 +704,7 @@ export function renderCategory(app, opts = {}) {
         summary?.pct,
         2
       )}</span>`,
-      `<span class="dim">区间净流入${app.chartData?.has(key) ? "" : "（估算）"} ${esc(fmtSigned(flow, 1))} 亿元</span>`,
+      `<span class="dim">区间份额净申购${app.chartData?.has(key) ? "" : "（估算）"} ${esc(fmtSigned(flow, 1))} 亿元</span>`,
       state.sub && (app.subsByCat?.get(key) || []).includes(state.sub)
         ? `<span class="chip chip--accent">聚焦 · ${esc(state.sub)}</span>`
         : "",
@@ -779,7 +782,7 @@ function renderCatSide(app, key) {
     kpis.innerHTML = `<div><dt>区间起点份额</dt><dd class="num">${esc(cnum(first, 1))}<span class="unit">亿份</span></dd></div>
       <div><dt>区间终点份额</dt><dd class="num">${esc(cnum(last, 1))}<span class="unit">亿份</span></dd></div>
       <div><dt>区间变化率</dt><dd class="num ${pct > 0 ? "up" : pct < 0 ? "down" : "flat"}">${esc(fmtPct(pct, 2))}</dd></div>
-      <div><dt>区间净流入</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>`;
+      <div><dt>区间份额净申购</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>`;
   }
   const renderRank = (hostId, dir) => {
     const host = document.getElementById(hostId);
@@ -787,7 +790,7 @@ function renderCatSide(app, key) {
     const sorted = stats.slice().sort((a, b) => (dir === "in" ? b.delta - a.delta : a.delta - b.delta));
     const list = dir === "in" ? sorted.filter((s) => s.delta > 0).slice(0, 3) : sorted.filter((s) => s.delta < 0).slice(0, 3);
     if (!list.length) {
-      host.innerHTML = `<p class="t-2xs dim" style="padding:6px 12px">该区间无${dir === "in" ? "净流入" : "净流出"}的小类</p>`;
+      host.innerHTML = `<p class="t-2xs dim" style="padding:6px 12px">该区间无${dir === "in" ? "份额净申购" : "净流出"}的小类</p>`;
       return;
     }
     host.innerHTML = list
