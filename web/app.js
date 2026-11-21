@@ -36,6 +36,22 @@ const s1 = (v) => (tidy(v) == null ? "—" : (tidy(v) >= 0 ? "+" : "") + tidy(v)
 /** 涨跌配色 class（涨红跌绿） */
 const ud = (v) => (tidy(v) == null ? "" : tidy(v) > 0 ? "up" : tidy(v) < 0 ? "down" : "");
 
+/** 口径单位：优先用 meta.metricUnits（份额=亿份、规模/净流入=亿元），缺省给兜底 */
+function unit(key, dflt) {
+  const u = S.meta?.metricUnits?.[key];
+  return typeof u === "string" && u ? u : dflt;
+}
+const U_SHARES = () => unit("shares", "亿份");
+const U_SCALE = () => unit("scale", "亿元");
+const U_FLOW = () => unit("flow", "亿元");
+
+/** meta.metrics 声明了哪些口径；老数据没有该字段时按「有」处理 */
+function hasMetric(key) {
+  const m = S.meta?.metrics;
+  if (Array.isArray(m) && m.length) return m.includes(key);
+  return true;
+}
+
 const ymd = (s) => String(s ?? "").slice(0, 10);
 const mmdd = (s) => String(s ?? "").slice(5);
 const hhmm = (iso) => {
@@ -1123,7 +1139,7 @@ async function openSub(name) {
 }
 
 function renderSubDrawer(name, rec) {
-  const { body, eyebrow, title, panel } = drawerEls();
+  const { body, eyebrow, title } = drawerEls();
   const catKey = rec?.cat || subCat.get(name) || "";
   const catLabel = catLabelOf(catKey);
   const row = (S.tables?.all || []).find((r) => r.sub === name) || null;
@@ -1133,23 +1149,62 @@ function renderSubDrawer(name, rec) {
   const color = rec?.color || catColorOf(catKey) || "#1f6feb";
   const win = S.tables?.window || {};
 
+  // 金额口径（规模 / 净流入）是可空的新字段，缺就不渲染，避免出现一堆「—」
+  const hasScale = hasMetric("scale") && !!rec && Object.hasOwn(rec, "scale");
+  const hasFlow = hasMetric("flow") && !!rec && Object.hasOwn(rec, "flow");
+  const scale = tidy(rec?.scale);
+  const flow = tidy(rec?.flow);
+  const navCov = rec?.navCoverage || null;
+  const navHit = tidy(navCov?.hit);
+  const navTotal = tidy(navCov?.total);
+  const navGap = navHit != null && navTotal != null && navHit < navTotal;
+  const navTip = navGap
+    ? `该小类 ${navTotal} 只成分 ETF 中有 ${navTotal - navHit} 只缺净值，规模 / 净流入按有净值部分汇总，为下限估计`
+    : "";
+
+  const etfs = (rec?.etfs || []).map((e) => ({ ...e }));
+  const etfNav = etfs.some((e) => Object.hasOwn(e, "nav"));
+  const etfScale = etfs.some((e) => Object.hasOwn(e, "scale"));
+  const etfFlow = etfs.some((e) => Object.hasOwn(e, "flow"));
+
   eyebrow.innerHTML = `<span class="badge-cat" style="--c:${esc(color)}">${esc(catLabel)}</span> 细分行业详情`;
   title.textContent = name;
 
-  const kpi = (k, v, cls = "") => `<div class="kpi"><div class="kpi-k">${k}</div><div class="kpi-v ${cls}">${v}</div></div>`;
+  const kpi = (k, v, cls = "", flag = "") =>
+    `<div class="kpi"><div class="kpi-k">${k}${flag}</div><div class="kpi-v ${cls}">${v}</div></div>`;
+  const navFlag = navGap ? `<span class="kpi-flag" title="${esc(navTip)}">部分无净值</span>` : "";
+
+  const kpis = [
+    kpi(`当前份额（${U_SHARES()}）`, n1(cur)),
+    kpi(`近一周变化（${win.days ?? 7} 交易日）`, row ? `<span class="${ud(row.delta)}">${s1(row.delta)}</span>` : "—"),
+    kpi("近一周变化率", row ? `<span class="${ud(row.pct)}">${p2(row.pct)}</span>` : "—"),
+  ];
+  if (hasScale) kpis.push(kpi(`当前规模（${U_SCALE()}）`, n1(scale), "", navFlag));
+  if (hasFlow)
+    kpis.push(kpi(`近一周净流入（${U_FLOW()}）`, flow == null ? "—" : `<span class="${ud(flow)}">${s1(flow)}</span>`, "", navFlag));
+  kpis.push(kpi("小类排名", rank ? `<span class="${ud(row?.delta)}">#${rank}</span>` : "—"));
+
+  const noteBits = [
+    `${esc(name)} 属于 <b>${esc(catLabel)}</b>，当前共 ${esc(rec?.etfs?.length ?? etfsOfSub(name).length)} 只 ETF 标的。`,
+  ];
+  if (row) {
+    noteBits.push(
+      `近 ${win.days ?? 7} 个交易日份额${tidy(row.delta) >= 0 ? "增加" : "减少"} <b class="${ud(row.delta)}">${n1(Math.abs(tidy(row.delta)))}</b> ${U_SHARES()}（${p2(row.pct)}），在 ${total} 个小类中排名第 ${rank}。`
+    );
+  }
+  if (hasScale && scale != null) noteBits.push(`当前规模约 <b>${n1(scale)}</b> ${U_SCALE()}。`);
+  if (hasFlow && flow != null) {
+    noteBits.push(`近一周净流入 <b class="${ud(flow)}">${s1(flow)}</b> ${U_FLOW()}。`);
+  }
+  if (navGap) noteBits.push(`金额口径覆盖 ${navHit}/${navTotal} 只成分 ETF，未覆盖部分未计入。`);
+
+  const th = (key, label, type = "num", extra = "") =>
+    `<th data-sort="${key}" data-type="${type}" class="${type === "num" ? "num " : ""}sortable ${extra}" scope="col">${label}<span class="sarrow"></span></th>`;
 
   body.innerHTML = `
     <div class="drawer-section">
-      <div class="kpis">
-        ${kpi("当前份额（亿份）", n1(cur))}
-        ${kpi(`近一周变化（${win.days ?? 7} 交易日）`, row ? `<span class="${ud(row.delta)}">${s1(row.delta)}</span>` : "—")}
-        ${kpi("近一周变化率", row ? `<span class="${ud(row.pct)}">${p2(row.pct)}</span>` : "—")}
-        ${kpi("86 小类排名", rank ? `<span class="${ud(row?.delta)}">#${rank}</span>` : "—", "")}
-      </div>
-      <p class="drawer-note">
-        ${esc(name)} 属于 <b>${esc(catLabel)}</b>，当前共 ${esc(rec?.etfs?.length ?? etfsOfSub(name).length)} 只 ETF 标的。
-        ${row ? `近 ${win.days ?? 7} 个交易日份额${tidy(row.delta) >= 0 ? "增加" : "减少"} <b class="${ud(row.delta)}">${n1(Math.abs(tidy(row.delta)))}</b> 亿份（${p2(row.pct)}），在 ${total} 个小类中排名第 ${rank}。` : ""}
-      </p>
+      <div class="kpis">${kpis.join("")}</div>
+      <p class="drawer-note">${noteBits.join(" ")}</p>
     </div>
 
     <div class="drawer-section">
@@ -1159,16 +1214,19 @@ function renderSubDrawer(name, rec) {
 
     <div class="drawer-section">
       <div class="drawer-h3-row">
-        <h3 class="drawer-h3">成分 ETF（${esc(rec?.etfs?.length ?? 0)}）</h3>
+        <h3 class="drawer-h3">成分 ETF（${esc(etfs.length)}）</h3>
         <button class="btn btn-sm" type="button" id="btnSubCsv">导出本小类 CSV</button>
       </div>
       <div class="tbl-scroll">
         <table class="tbl tbl-etf" id="tblEtf">
           <thead><tr>
-            <th data-sort="code" data-type="text" class="sortable" scope="col">代码<span class="sarrow"></span></th>
-            <th data-sort="name" data-type="text" class="sortable" scope="col">名称<span class="sarrow"></span></th>
-            <th data-sort="shares" class="num sortable" scope="col">份额(亿份)<span class="sarrow"></span></th>
-            <th data-sort="delta" class="num sortable" scope="col">近一周变化<span class="sarrow"></span></th>
+            ${th("code", "代码", "text")}
+            ${th("name", "名称", "text")}
+            ${th("shares", `份额(${U_SHARES()})`)}
+            ${th("delta", "近一周变化")}
+            ${etfNav ? th("nav", "净值", "num", "col-nav") : ""}
+            ${etfScale ? th("scale", `规模(${U_SCALE()})`) : ""}
+            ${etfFlow ? th("flow", `净流入(${U_FLOW()})`) : ""}
           </tr></thead>
           <tbody></tbody>
         </table>
@@ -1181,24 +1239,28 @@ function renderSubDrawer(name, rec) {
     </div>
   `;
 
-  // 成分 ETF 表（可排序）
-  const etfs = (rec?.etfs || []).map((e) => ({ ...e }));
-  initTable("tblEtf", (r) => `
-    <td class="mono">${esc(r.code)}</td>
-    <td class="ellip" title="${esc(r.name)}">${esc(r.name)}</td>
-    <td class="num">${n1(r.shares)}</td>
-    <td class="num ${ud(r.delta)}">${s1(r.delta)}</td>`);
+  initTable("tblEtf", (r) => {
+    const cells = [
+      `<td class="mono">${esc(r.code)}</td>`,
+      `<td class="ellip" title="${esc(r.name)}">${esc(r.name)}</td>`,
+      `<td class="num">${n1(r.shares)}</td>`,
+      `<td class="num ${ud(r.delta)}">${s1(r.delta)}</td>`,
+    ];
+    if (etfNav) cells.push(`<td class="num col-nav">${r.nav == null ? "—" : tidy(r.nav).toFixed(3)}</td>`);
+    if (etfScale) cells.push(`<td class="num">${n1(r.scale)}</td>`);
+    if (etfFlow) cells.push(`<td class="num ${ud(r.flow)}">${s1(r.flow)}</td>`);
+    return cells.join("");
+  });
   const st = TBL.get("tblEtf");
   st.sortKey = "shares";
   st.sortDir = -1;
   fillTable("tblEtf", etfs);
 
-  // 迷你走势
   renderMini(name, rec, color);
 
   $("#btnOnlyThis")?.addEventListener("click", () => {
     S.highlight = name;
-    if (S.cat !== catKey) activateCat(catKey);
+    if (S.cat !== catKey) activateCat(catKey, { highlight: name });
     else renderCat(catKey);
     renderHighlightBar();
     closeDrawer();
@@ -1282,6 +1344,12 @@ function openRank() {
   title.textContent = "全部小类";
   const all = S.tables?.all || [];
   const win = S.tables?.window || {};
+  const moneyOk = hasMetric("flow") && all.some((r) => tidy(r.flow) != null);
+  const mode = DRAWER.rankMode === "money" && moneyOk ? "money" : "shares";
+  DRAWER.rankMode = mode;
+
+  const th = (key, label, type = "num") =>
+    `<th data-sort="${key}" data-type="${type}" class="${type === "num" ? "num " : ""}sortable" scope="col"><span class="thlab">${label}</span><span class="sarrow"></span></th>`;
 
   body.innerHTML = `
     <div class="drawer-section">
@@ -1295,61 +1363,100 @@ function openRank() {
         </div>
         <button class="btn btn-sm" type="button" id="btnRankCsv">导出全部 CSV</button>
       </div>
-      <p class="drawer-note">统计区间 ${esc(ymd(win.from))} ~ ${esc(ymd(win.to))}（${esc(win.days ?? "?")} 个交易日）；共 ${all.length} 个小类，按区间增减排序。</p>
+      ${
+        moneyOk
+          ? `<div class="modeswitch" role="group" aria-label="口径切换">
+               <button class="mchip${mode === "shares" ? " on" : ""}" data-m="shares" type="button">按份额变化</button>
+               <button class="mchip${mode === "money" ? " on" : ""}" data-m="money" type="button">按金额净流入</button>
+             </div>`
+          : ""
+      }
+      <p class="drawer-note" id="rankNote"></p>
       <div class="tbl-scroll tall">
-        <table class="tbl tbl-rank" id="tblRank">
+        <table class="tbl tbl-rank${mode === "money" ? " money" : ""}" id="tblRank">
           <thead><tr>
             <th class="num" scope="col">#</th>
-            <th data-sort="sub" data-type="text" class="sortable" scope="col">小类<span class="sarrow"></span></th>
-            <th data-sort="catLabel" data-type="text" class="sortable" scope="col">大类<span class="sarrow"></span></th>
-            <th data-sort="now" class="num sortable" scope="col">当前份额<span class="sarrow"></span></th>
-            <th data-sort="delta" class="num sortable" scope="col">变化量<span class="sarrow"></span></th>
-            <th data-sort="pct" class="num sortable" scope="col">变化率<span class="sarrow"></span></th>
+            ${th("sub", "小类", "text")}
+            ${th("catLabel", "大类", "text")}
+            ${th("cur", "当前份额")}
+            ${th("chg", "变化量")}
+            ${th("pctv", "变化率")}
           </tr></thead>
           <tbody></tbody>
         </table>
       </div>
     </div>`;
 
+  // 两种口径共用同一套列，只是喂给列的数据不同（cur/chg/pctv）
   const rows = all.map((r) => ({
     ...r,
     catLabel: catLabelOf(r.cat),
-    now: tidy(r.last) ?? tidy(r.now),
+    cur: mode === "shares" ? tidy(r.last) ?? tidy(r.now) : tidy(r.scale),
+    chg: mode === "shares" ? tidy(r.delta) : tidy(r.flow),
+    pctv: mode === "shares" ? tidy(r.pct) : null,
+    name: r.sub,
   }));
-  initTable("tblRank", (r) => `
-    <td class="num rank-no"></td>
-    <td class="sub-cell"><button class="linkbtn sub-link" type="button" data-sub="${esc(r.sub)}">${esc(r.sub)}</button></td>
-    <td class="muted-cell">${esc(r.catLabel)}</td>
-    <td class="num">${n1(r.now)}</td>
-    <td class="num ${ud(r.delta)}">${s1(r.delta)}</td>
-    <td class="num ${ud(r.pct)}">${p2(r.pct)}</td>`);
+
+  initTable("tblRank", (r) => {
+    const cells = [
+      `<td class="num rank-no"></td>`,
+      `<td class="sub-cell"><button class="linkbtn sub-link" type="button" data-sub="${esc(r.sub)}">${esc(r.sub)}</button></td>`,
+      `<td class="muted-cell">${esc(r.catLabel)}</td>`,
+      `<td class="num">${n1(r.cur)}</td>`,
+      `<td class="num ${ud(r.chg)}">${s1(r.chg)}</td>`,
+      `<td class="num ${ud(r.pctv)}">${p2(r.pctv)}</td>`,
+    ];
+    return cells.join("");
+  });
   const st = TBL.get("tblRank");
-  st.sortKey = "delta";
+  st.sortKey = "chg";
   st.sortDir = -1;
 
   const paintRank = () => {
     const q = DRAWER.rankQ.toLowerCase();
     const f = DRAWER.rankFilter;
     let list = rows;
-    if (f === "up") list = list.filter((r) => tidy(r.delta) > 0);
-    if (f === "down") list = list.filter((r) => tidy(r.delta) < 0);
+    if (f === "up") list = list.filter((r) => tidy(r.chg) > 0);
+    if (f === "down") list = list.filter((r) => tidy(r.chg) < 0);
     if (q) {
       list = list.filter(
-        (r) => r.sub.toLowerCase().includes(q) || pinyinOf(r.sub).includes(q) || String(r.catLabel).toLowerCase().includes(q)
+        (r) =>
+          r.sub.toLowerCase().includes(q) ||
+          pinyinOf(r.sub).includes(q) ||
+          String(r.catLabel).toLowerCase().includes(q)
       );
     }
     fillTable("tblRank", list);
+    // # 列跟随当前排序/筛选后的行序，切口径或改排序时都不会出现跳号
     $$("#tblRank tbody tr").forEach((tr, i) => {
-      const btn = tr.querySelector(".sub-link");
-      const raw = btn?.dataset.sub;
-      const idx = (S.tables?.all || []).findIndex((x) => x.sub === raw);
       const cell = tr.querySelector(".rank-no");
-      if (cell) cell.textContent = idx >= 0 ? idx + 1 : i + 1;
+      if (cell) cell.textContent = i + 1;
     });
-    $("#tblRank tbody")?.querySelectorAll(".sub-link").forEach((b) => {
+    $$("#tblRank tbody .sub-link").forEach((b) => {
       b.addEventListener("click", () => openSub(b.dataset.sub));
     });
   };
+
+  const syncHeaders = () => {
+    const tb = $("#tblRank");
+    if (!tb) return;
+    tb.classList.toggle("money", mode === "money");
+    const set = (key, label) => {
+      const el2 = tb.querySelector(`th[data-sort="${key}"] .thlab`);
+      if (el2) el2.textContent = label;
+    };
+    set("cur", mode === "shares" ? `当前份额(${U_SHARES()})` : `当前规模(${U_SCALE()})`);
+    set("chg", mode === "shares" ? "变化量" : `净流入(${U_FLOW()})`);
+    const note = $("#rankNote");
+    if (note) {
+      note.innerHTML =
+        `统计区间 ${esc(ymd(win.from))} ~ ${esc(ymd(win.to))}（${esc(win.days ?? "?")} 个交易日）；共 ${all.length} 个小类，` +
+        (mode === "shares"
+          ? "按区间份额增减排序。"
+          : "按区间净流入（份额变化 × 净值）排序，缺净值的成分不计入，口径偏保守。");
+    }
+  };
+  syncHeaders();
   paintRank();
 
   $("#rankSearch").addEventListener(
@@ -1364,6 +1471,15 @@ function openRank() {
       DRAWER.rankFilter = b.dataset.f;
       $$("#drawerBody .chipf").forEach((x) => x.classList.toggle("on", x === b));
       paintRank();
+    });
+  });
+  $$("#drawerBody .mchip").forEach((b) => {
+    b.addEventListener("click", () => {
+      if (DRAWER.rankMode === b.dataset.m) return;
+      DRAWER.rankMode = b.dataset.m;
+      openRank();
+      const si = $("#rankSearch");
+      if (si && DRAWER.rankQ) si.value = DRAWER.rankQ;
     });
   });
   $("#btnRankCsv").addEventListener("click", () => exportRank());
@@ -1481,17 +1597,37 @@ function exportRank() {
     return;
   }
   const win = S.tables?.window || {};
-  const rows = [[`# 全部小类区间增减 · ${ymd(win.from)} ~ ${ymd(win.to)}（${win.days} 个交易日）· 份额单位：亿份`]];
-  rows.push(["排名", "小类", "大类", "当前份额", "区间变化量", "区间变化率(%)"]);
-  all.forEach((r, i) =>
-    rows.push([i + 1, r.sub, catLabelOf(r.cat), tidy(r.last ?? r.now)?.toFixed(1) ?? "", tidy(r.delta)?.toFixed(1) ?? "", tidy(r.pct)?.toFixed(2) ?? ""])
-  );
+  const moneyOk = hasMetric("flow") && all.some((r) => tidy(r.flow) != null);
+  const head = [
+    [`# 全部小类区间增减 · ${ymd(win.from)} ~ ${ymd(win.to)}（${win.days} 个交易日）· 份额 ${U_SHARES()} · 规模/净流入 ${U_SCALE()}`],
+  ];
+  head.push([
+    "排名",
+    "小类",
+    "大类",
+    `当前份额(${U_SHARES()})`,
+    "区间变化量",
+    "区间变化率(%)",
+    ...(moneyOk ? [`当前规模(${U_SCALE()})`, `近一周净流入(${U_FLOW()})`] : []),
+  ]);
+  all.forEach((r, i) => {
+    const line = [
+      i + 1,
+      r.sub,
+      catLabelOf(r.cat),
+      tidy(r.last ?? r.now)?.toFixed(1) ?? "",
+      tidy(r.delta)?.toFixed(1) ?? "",
+      tidy(r.pct)?.toFixed(2) ?? "",
+    ];
+    if (moneyOk) line.push(tidy(r.scale)?.toFixed(1) ?? "", tidy(r.flow)?.toFixed(1) ?? "");
+    head.push(line);
+  });
   const name = `etf小类增减_${ymd(win.from)}_${ymd(win.to)}.csv`;
-  download(name, toCSV(rows));
+  download(name, toCSV(head));
   toast(`已导出：${name}`);
 }
 
-/** 单个小类的历史序列 */
+/** 单个小类：份额时间序列 + 成分 ETF 明细（含金额口径） */
 function exportSub(name) {
   const rec = S.subs?.[name];
   if (!rec?.values?.length) {
@@ -1500,11 +1636,53 @@ function exportSub(name) {
   }
   const dates = subDates(rec);
   const start = startIndex(dates, S.range);
-  const rows = [[`# ${name} · 份额（亿份）· ${rangeLabel()}`], ["日期", "份额"]];
+  const scale = tidy(rec.scale);
+  const flow = tidy(rec.flow);
+  const extras = [];
+  if (scale != null) extras.push(`当前规模 ${scale.toFixed(1)} ${U_SCALE()}`);
+  if (flow != null) extras.push(`近一周净流入 ${flow >= 0 ? "+" : ""}${flow.toFixed(1)} ${U_FLOW()}`);
+  if (rec.navCoverage && tidy(rec.navCoverage.hit) < tidy(rec.navCoverage.total)) {
+    extras.push(`金额口径覆盖 ${rec.navCoverage.hit}/${rec.navCoverage.total} 只成分`);
+  }
+
+  const rows = [[`# ${name} · 份额（${U_SHARES()}）· ${rangeLabel()}${extras.length ? " · " + extras.join(" · ") : ""}`]];
+  rows.push(["日期", `份额(${U_SHARES()})`]);
   for (let i = start; i < dates.length; i++) {
     const v = tidy(rec.values[i]);
     rows.push([dates[i], v == null ? "" : v.toFixed(1)]);
   }
+
+  // 第二个区块：成分 ETF 明细
+  const etfs = rec.etfs || [];
+  if (etfs.length) {
+    const hasNav = etfs.some((e) => Object.hasOwn(e, "nav"));
+    const hasScale = etfs.some((e) => Object.hasOwn(e, "scale"));
+    const hasFlow = etfs.some((e) => Object.hasOwn(e, "flow"));
+    rows.push([]);
+    rows.push([`# 成分 ETF（${etfs.length}）`]);
+    rows.push([
+      "代码",
+      "名称",
+      `份额(${U_SHARES()})`,
+      "近一周变化",
+      ...(hasNav ? ["净值"] : []),
+      ...(hasScale ? [`规模(${U_SCALE()})`] : []),
+      ...(hasFlow ? [`净流入(${U_FLOW()})`] : []),
+    ]);
+    for (const e of etfs) {
+      const line = [
+        e.code,
+        e.name,
+        tidy(e.shares)?.toFixed(1) ?? "",
+        tidy(e.delta)?.toFixed(1) ?? "",
+      ];
+      if (hasNav) line.push(tidy(e.nav) == null ? "" : tidy(e.nav).toFixed(3));
+      if (hasScale) line.push(tidy(e.scale)?.toFixed(1) ?? "");
+      if (hasFlow) line.push(tidy(e.flow)?.toFixed(1) ?? "");
+      rows.push(line);
+    }
+  }
+
   const fname = `etf份额_${name}_${S.range}.csv`;
   download(fname, toCSV(rows));
   toast(`已导出：${fname}`);

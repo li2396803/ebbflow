@@ -4,11 +4,12 @@
 // 优先级：交易所（官方披露）> Tushare（深市历史唯一来源 / 高精度参考）。
 import fs from "node:fs";
 import path from "node:path";
-import { openDb, putShares, recordRun, metaSet, metaGet, dbStats } from "../lib/db.mjs";
+import { openDb, putShares, recordRun, metaSet, metaGet, dbStats, tradingDates } from "../lib/db.mjs";
 import { SUB, CATS } from "../lib/taxonomy.mjs";
 import { fetchSseDay, fetchSzseLatest, candidateDates, mapLimit } from "../lib/sources.mjs";
 import { shareOnDate, hasToken } from "../lib/tushare.mjs";
-import { rebuild, refreshFunds, exportSeriesJson } from "../lib/pipeline.mjs";
+import { rebuild, refreshFunds, exportSeriesJson, ingestExchangeRange, ingestTushareRange } from "../lib/pipeline.mjs";
+import { ALL_CODES } from "../lib/taxonomy.mjs";
 import { buildSite } from "../lib/build/site.mjs";
 
 const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname));
@@ -32,10 +33,32 @@ function acquire() {
 }
 const release = () => fs.rmSync(LOCK, { recursive: true, force: true });
 
+/** 历史不够（新库/CI 首次运行）时自动做一次全量回补，避免只留几天的数据 */
+async function ensureHistory(db, warn, quiet) {
+  const have = tradingDates(db).length;
+  if (have >= 200) return null;
+  const to = new Date().toISOString().slice(0, 10);
+  const from = new Date(Date.now() - 5 * 365 * 86400000).toISOString().slice(0, 10);
+  if (!quiet) log(`本地历史只有 ${have} 个交易日，自动全量回补 ${from} ~ ${to}（首次运行会久一些）…`);
+  const sse = await ingestExchangeRange(db, { from, to, onProgress: (n) => { if (!quiet && n % 30000 < 1000) process.stdout.write("."); } });
+  if (!quiet) log(`\n上交所回补：${sse.ok} 个交易日 / 写入 ${sse.written} 行`);
+  if (hasToken()) {
+    const ts = await ingestTushareRange(db, { from, to, codes: ALL_CODES, resume: true });
+    if (!quiet) log(`Tushare 回补：${ts.codes} 只 / 写入 ${ts.written} 行`);
+  }
+  return { sse, have };
+}
+
 async function run({ quiet = false, lookback = 15 } = {}) {
   const t0 = Date.now();
   const db = openDb();
   const warn = [];
+
+  try {
+    await ensureHistory(db, warn, quiet);
+  } catch (e) {
+    warn.push(`历史自动回补失败：${String(e.message || e).slice(0, 80)}`);
+  }
 
   // 1) 深交所：仅最新交易日快照（官方口径）
   let anchor = null;

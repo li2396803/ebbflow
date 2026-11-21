@@ -943,7 +943,7 @@ h2 {
   top: 0;
   right: 0;
   bottom: 0;
-  width: min(580px, 100vw);
+  width: min(620px, 100vw);
   background: var(--panel);
   border-left: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
@@ -1076,6 +1076,13 @@ h2 {
 .tbl-rank {
   font-size: 12.5px;
 }
+/* ETF 名称过长时收窄省略，别把金额列挤出可视区 */
+.tbl-etf td:nth-child(2),
+.tbl-etf th:nth-child(2) {
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .tbl-etf th,
 .tbl-etf td,
 .tbl-rank th,
@@ -1130,6 +1137,56 @@ h2 {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+
+/* 口径切换：按份额变化 / 按金额净流入 */
+.modeswitch {
+  display: inline-flex;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  padding: 2px;
+  gap: 2px;
+}
+.mchip {
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font: 600 12px/1.4 "Microsoft YaHei", "PingFang SC", sans-serif;
+  white-space: nowrap;
+}
+.mchip:hover {
+  color: var(--text);
+}
+.mchip.on {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+/* 金额口径下没有「变化率」，整列收起，避免展示臆造的比率 */
+.tbl-rank.money th:nth-child(6),
+.tbl-rank.money td:nth-child(6) {
+  display: none;
+}
+
+/* KPI 角标：部分成分缺净值等口径说明 */
+.kpi-flag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: help;
+  vertical-align: 1px;
 }
 
 /* 质量摘要 */
@@ -1351,9 +1408,12 @@ h2 {
 }
 
 @media (max-width: 620px) {
-  /* 手机抽屉里列太多，收掉「大类」（小类名本身已能定位） */
+  /* 手机抽屉里列太多，收掉「大类」（小类名本身已能定位）与「净值」 */
   .tbl-rank th:nth-child(3),
   .tbl-rank td:nth-child(3) {
+    display: none;
+  }
+  .tbl-etf .col-nav {
     display: none;
   }
   .tbl-etf th,
