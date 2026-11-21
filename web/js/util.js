@@ -221,6 +221,9 @@ export function sampleSeries(values, maxPoints = 90) {
  * @param {number[]} values 序列（可含 null）
  * @param {object} opt { w,h,color,area,stroke,min,max,baseline }
  */
+/** 对比多选/对比曲线的 8 色循环（与图例、chip 圆点一致） */
+export const COMPARE_COLORS = ["#4B57D6", "#0E9C9C", "#C8322D", "#8B5CF6", "#C36D13", "#34921C", "#C3139B", "#1C8892"];
+
 export function sparkSVG(values, opt = {}) {
   const w = opt.w || 100;
   const h = opt.h || 28;
@@ -263,10 +266,11 @@ export function sparkSVG(values, opt = {}) {
       .join("L")}L${end[0].toFixed(1)} ${h - pad}Z`;
   }
   const strokeW = opt.stroke || 1.5;
-  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+  // vector-effect：横向拉伸时线宽保持固定（不随 viewBox 缩放变粗）
+  return `<svg class="spark${opt.fill ? " spark--fill" : ""}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true" focusable="false">
     ${opt.area ? `<path d="${area}" fill="${color}" class="spark-area" stroke="none"></path>` : ""}
-    <path d="${line}" fill="none" stroke="${color}" stroke-width="${strokeW}" class="spark-line"></path>
-    ${opt.dot !== false && last && last.length ? `<circle cx="${last[last.length - 1][0].toFixed(1)}" cy="${last[last.length - 1][1].toFixed(1)}" r="2" fill="${color}"></circle>` : ""}
+    <path d="${line}" fill="none" stroke="${color}" stroke-width="${strokeW}" vector-effect="non-scaling-stroke" class="spark-line"></path>
+    ${opt.dot !== false && last && last.length ? `<circle cx="${last[last.length - 1][0].toFixed(1)}" cy="${last[last.length - 1][1].toFixed(1)}" r="2" fill="${color}" vector-effect="non-scaling-stroke"></circle>` : ""}
   </svg>`;
 }
 

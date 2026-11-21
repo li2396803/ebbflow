@@ -1377,11 +1377,12 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
   height: 40px;
 }
 #tblCat {
-  table-layout: fixed;
+  table-layout: auto;
 }
 #tblCat thead th:first-child,
 #tblCat tbody td:first-child {
   min-width: 140px;
+  width: 150px;
 }
 #tblCat thead th:nth-child(2),
 #tblCat thead th:nth-child(3),
@@ -1391,16 +1392,29 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
 #tblCat tbody td:nth-child(3),
 #tblCat tbody td:nth-child(4),
 #tblCat tbody td:nth-child(5) {
-  width: 12ch;
+  width: 1%;
+  white-space: nowrap;
 }
 #tblCat thead th:last-child,
 #tblCat tbody td:last-child {
-  width: 120px;
+  min-width: 120px;
   text-align: center;
+  padding-left: 4px;
+  padding-right: 4px;
 }
-#tblCat .cat-spark svg {
-  display: inline-block;
-  vertical-align: middle;
+/* 走势 sparkline 填满单元格：横向拉伸、线宽与端点不随拉伸变粗 */
+#tblCat .cat-spark svg.spark--fill,
+#tblTopIn tbody td:last-child svg.spark--fill,
+#tblTopOut tbody td:last-child svg.spark--fill {
+  display: block;
+  width: 100%;
+  height: 28px;
+  min-width: 96px;
+}
+#tblTopIn tbody td:last-child,
+#tblTopOut tbody td:last-child {
+  padding-left: 4px;
+  padding-right: 4px;
 }
 .dt tbody td[data-align="center"] {
   text-align: center;
@@ -2588,8 +2602,15 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
 .cmp-chip {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   padding-right: 2px;
+}
+.cmp-chip .lc-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lc, currentColor);
+  flex: none;
 }
 .legend-chip.is-off {
   opacity: 0.42;
@@ -2622,8 +2643,17 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
 .cmp-row.is-disabled {
   opacity: 0.45;
 }
-.cmp-row .cmp-cat {
+.cmp-row .cmp-scale {
   margin-left: auto;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-2xs);
+  white-space: nowrap;
+}
+.cmp-row .cmp-cat {
+  margin-left: var(--sp-3);
+  min-width: 56px;
+  text-align: right;
   color: var(--ink-4);
   font-size: var(--fs-2xs);
 }

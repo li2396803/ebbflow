@@ -44,6 +44,7 @@ import { cnum, debounce, download, esc, fmtPct, fmtSigned, isDesktop, skeletonRo
 import * as detail from "./detail.js";
 import { initDetail, openDetail, initAllSubs, openAllSubs, initQuality } from "./detail.js";
 import { toast } from "./ui.js";
+import { COMPARE_COLORS } from "./util.js";
 
 const app = {
   meta: null,
@@ -70,7 +71,6 @@ let palette = null;
 let marketReady = false;
 let mainReady = false;
 let freshChartToken = 0;
-const COMPARE_COLORS = ["#4B57D6", "#0E9C9C", "#C8322D", "#8B5CF6", "#C36D13", "#34921C", "#C3139B", "#1C8892"];
 const FOCUS_COLORS = { shares: "#4B57D6", scale: "#0E9C9C", pct: "#8B5CF6" };
 const OVERLAY_COLORS = { scale: "#0e9c9c", pct: "#8b5cf6", flow: "#8b93a7" };
 const METRIC_LABEL = { shares: "份额", scale: "规模", flow: "份额净申购", pct: "变化率" };
@@ -464,6 +464,11 @@ function buildCatalog() {
       if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
       return (order.get(a.key) || 0) - (order.get(b.key) || 0);
     });
+  }
+  // 大类色统一以 meta.categories 为准（旧索引/首位小类色可能是错的）
+  if (metaCats.length) {
+    const mc = new Map(metaCats.map((m) => [m.key, m.color]));
+    for (const c of cats) if (mc.get(c.key)) c.color = mc.get(c.key);
   }
   app.cats = cats;
   app.catMap = new Map(cats.map((c) => [c.key, c]));
@@ -1704,7 +1709,22 @@ async function openCompareModal() {
       return;
     }
   }
-  cmpSelected = new Set(state.compare);
+  // 预选：URL 已带 compare 时以 URL 为准；否则聚焦预选当前小类，大类视图预选规模最大的小类
+  if (state.compare.length) {
+    cmpSelected = new Set(state.compare);
+  } else {
+    let pre = null;
+    if (state.sub && app.subs?.[state.sub]) {
+      pre = state.sub;
+    } else if (state.cat) {
+      const stats = (app.subsByCat?.get(state.cat) || [])
+        .map((n) => app.stats?.byName?.get(n))
+        .filter((x) => x && Number.isFinite(x.scale))
+        .sort((a, b) => b.scale - a.scale);
+      pre = stats[0]?.name || null;
+    }
+    cmpSelected = new Set(pre ? [pre] : []);
+  }
   const limit = compareLimit();
   const sub = document.getElementById("cmpSub");
   if (sub) sub.textContent = `勾选 2–${limit} 个细分行业，归一化到区间起点对比${isDesktop() ? "" : "（移动端最多 4 个）"}`;
@@ -1728,9 +1748,12 @@ async function openCompareModal() {
       .map((it) => {
         const checked = cmpSelected.has(it.name);
         const full = !checked && cmpSelected.size >= limit;
+        const st = app.stats?.byName?.get(it.name);
+        const scaleTxt = st && Number.isFinite(st.scale) ? `${cnum(st.scale, 0)} 亿` : "";
         return `<label class="cmp-row${full ? " is-disabled" : ""}">
           <input type="checkbox" data-cmp-name="${esc(it.name)}" ${checked ? "checked" : ""} ${full ? "disabled" : ""}>
           <span>${esc(it.name)}</span>
+          <span class="cmp-scale">${scaleTxt}</span>
           <span class="cmp-cat">${esc(app.catMap?.get(it.cat)?.label || it.cat || "")}</span>
         </label>`;
       })

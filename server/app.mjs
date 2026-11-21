@@ -53,13 +53,20 @@ async function sendFile(req, res, file, { cacheControl = "public, max-age=600", 
       const raw = await fs.promises.readFile(file);
       const compressible = /\.(json|js|css|svg|html|txt)$/i.test(file);
       const gz = compressible ? zlib.gzipSync(raw, { level: 6 }) : null;
-      hit = { mtimeMs: st.mtimeMs, raw, gz };
+      const br = compressible ? zlib.brotliCompressSync(raw, {
+        params: {
+          [zlib.constants.BROTLI_PARAM_QUALITY]: 5,
+          [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length,
+        },
+      }) : null;
+      hit = { mtimeMs: st.mtimeMs, raw, gz, br };
       gzCache.set(file, hit);
       if (gzCache.size > 64) gzCache.delete(gzCache.keys().next().value);
     }
     const accept = String(req.headers["accept-encoding"] || "");
-    const useGz = hit.gz && /gzip/.test(accept);
-    const body = useGz ? hit.gz : hit.raw;
+    const useBr = hit.br && /br\b/.test(accept);
+    const useGz = !useBr && hit.gz && /gzip/.test(accept);
+    const body = useBr ? hit.br : useGz ? hit.gz : hit.raw;
     const headers = {
       "Content-Type": MIME[path.extname(file).toLowerCase()] || "application/octet-stream",
       "Content-Length": body.length,
@@ -69,7 +76,8 @@ async function sendFile(req, res, file, { cacheControl = "public, max-age=600", 
       Vary: "Accept-Encoding",
       ...extra,
     };
-    if (useGz) headers["Content-Encoding"] = "gzip";
+    if (useBr) headers["Content-Encoding"] = "br";
+    else if (useGz) headers["Content-Encoding"] = "gzip";
     res.writeHead(200, headers);
     res.end(body);
   } catch {

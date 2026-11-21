@@ -5,7 +5,7 @@
    因此图表缩放/框选、预设区间、表格筛选看到的是同一份口径。
    ========================================================================== */
 
-import { big, cnum, dirCn, esc, fmtPct, fmtSigned, skeletonRows, sparkSVG, toneColor, isDark } from "./util.js";
+import { big, cnum, dirCn, esc, fmtPct, fmtSigned, skeletonRows, sparkSVG, toneColor, isDark, COMPARE_COLORS } from "./util.js";
 import { PRESETS, METRICS, rankOf, state, otherWatch } from "./state.js";
 import { marketRangeStats } from "./state.js";
 
@@ -78,6 +78,9 @@ export function renderCatNav(app) {
   const cats = app.cats || [];
   const stats = app.stats;
   if (!cats.length) return;
+  // 大类色以 meta.categories 为准（app.cats 可能来自旧索引/图表，颜色可能是 null 或首位小类色）
+  const metaColor = new Map((app.meta?.categories || []).map((c) => [c.key, c.color]));
+  const colorOf = (c) => metaColor.get(c.key) || c.color || "#8b949e"; // meta 优先：大类色以元数据为准
   const activeCat = state.view === "cat" ? state.cat : null;
   const activeSub = state.sub;
 
@@ -90,7 +93,7 @@ export function renderCatNav(app) {
       const subs = (app.subsByCat?.get(c.key) || []).slice();
       return `<div class="cat-nav ${isActive ? "is-active" : ""}" data-open="${open}" data-catgroup="${esc(c.key)}">
         <button class="cat-btn" type="button" data-cat-toggle="${esc(c.key)}" aria-expanded="${open === "1"}" aria-controls="cat-sub-${esc(c.key)}">
-          <span class="cat-dot" style="--cat-color:${esc(c.color)}"></span>
+          <span class="cat-dot" style="--cat-color:${esc(colorOf(c))}"></span>
           <span class="cat-name">${esc(c.label)}</span>
           <span class="cat-pct ${pct > 0 ? "up" : pct < 0 ? "down" : "flat"}">${pct == null ? "—" : fmtPct(pct, 1)}</span>
           <span class="cat-caret" aria-hidden="true"><svg><use href="#i-chevron-right"/></svg></span>
@@ -435,12 +438,15 @@ function renderCatGrid(app) {
   const host = document.getElementById("catGrid");
   if (!host) return;
   const stats = app.stats;
+  // 大类色以 meta.categories 为准（app.cats 的颜色可能来自旧索引或首位小类色）
+  const metaColor = new Map((app.meta?.categories || []).map((c) => [c.key, c.color]));
+  const colorOf = (c) => metaColor.get(c.key) || c.color || "#8b949e";
   if (!app.subsReady) {
     host.innerHTML = (app.cats || [])
       .map(
-        (c) => `<div class="catcard" aria-hidden="true" style="--cat-color:${esc(c.color || "#888")}">
+        (c) => `<div class="catcard" aria-hidden="true" style="--cat-color:${esc(colorOf(c))}">
           <span class="catcard-top">
-            <span class="cat-dot" style="background:${esc(c.color || "#888")}"></span>
+            <span class="cat-dot" style="background:${esc(colorOf(c))}"></span>
             <span class="catcard-name">${esc(c.label)}</span>
             <span class="catcard-count">${c.subs ?? "—"} 小类</span>
           </span>
@@ -465,7 +471,7 @@ function renderCatGrid(app) {
       const pct = s?.pct;
       const unit = bond ? "亿元" : "亿份";
       const color = toneColor(c.color, isDark());
-      return `<button class="catcard" type="button" data-cat="${esc(c.key)}" style="--cat-color:${esc(c.color)}" aria-label="${esc(
+      return `<button class="catcard" type="button" data-cat="${esc(c.key)}" style="--cat-color:${esc(colorOf(c))}" aria-label="${esc(
         c.label
       )}：区间变化 ${fmtPct(pct, 2)}">
         <span class="catcard-top">
@@ -536,7 +542,7 @@ function renderTopTables(app) {
         <td><span class="cell-name"><span class="cat-dot" style="background:${esc(c)}"></span>${esc(s.name)}</span></td>
         <td class="num ${s.delta > 0 ? "up" : s.delta < 0 ? "down" : "flat"}">${esc(fmtSigned(s.delta, 1))}</td>
         <td class="num ${s.pct > 0 ? "up" : s.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s.pct, 2))}</td>
-        <td class="num" aria-hidden="true">${sparkSVG(s.series, { w: 76, h: 22, color: s.delta >= 0 ? "var(--up)" : "var(--down)", stroke: 1.3 })}</td>
+        <td class="num" aria-hidden="true">${sparkSVG(s.series, { w: 104, h: 32, color: s.delta >= 0 ? "var(--up)" : "var(--down)", stroke: 1.3, fill: true })}</td>
       </tr>`;
       })
       .join("");
@@ -719,7 +725,10 @@ export function syncCatHeading(app) {
       ? `<span class="cmp-chips"><span class="dim">对比 ${state.compare.length} 个</span>${state.compare
           .map(
             (n) =>
-              `<span class="chip chip--accent cmp-chip">${esc(n)}<button class="rc-x" type="button" data-uncompare="${esc(
+              `<span class="chip chip--accent cmp-chip" style="--lc:${toneColor(
+                COMPARE_COLORS[state.compare.indexOf(n) % COMPARE_COLORS.length],
+                isDark()
+              )}"><span class="lc-dot"></span>${esc(n)}<button class="rc-x" type="button" data-uncompare="${esc(
                 n
               )}" aria-label="移出对比 ${esc(n)}" title="移出对比"><svg width="9" height="9"><use href="#i-close"/></svg></button></span>`
           )
@@ -784,7 +793,7 @@ function renderCatTable(app, key) {
       <td class="num ${s.delta > 0 ? "up" : s.delta < 0 ? "down" : "flat"}">${esc(fmtSigned(s.delta, 1))}</td>
       <td class="num ${s.pct > 0 ? "up" : s.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s.pct, 2))}</td>
       <td class="num cat-scale">${s.scale != null ? esc(cnum(s.scale, 1)) : "—"}</td>
-      <td class="num cat-spark">${sparkSVG(s.series, { w: 76, h: 22, color, stroke: 1.3 })}</td>
+      <td class="num cat-spark">${sparkSVG(s.series, { w: 104, h: 32, color, stroke: 1.3, fill: true })}</td>
     </tr>`;
     })
     .join("");
