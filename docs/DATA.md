@@ -31,7 +31,7 @@
 不折算的话债券小类的「亿份」和其他小类不在一个量级，跨大类的规模对比与排行会失真。
 ×100 后各列数量级对齐 —— 这是原看板的口径，本项目保持一致。
 
-判断口径统一走 `isBondCat()`：**legacy 认 `9_债券`，v2 认 `bond`**（v3.4.0 修复，此前 v2 漏乘）。
+判断口径统一走 `isBondCat()`：**legacy 认 `9_债券`，v2 认 `bond`**（v3.8.0 修复，此前 v2 漏乘）。
 
 > 注意：×100 **只作用于份额口径**。金额口径（`scale` / `flow`）本身已按净值折算，不再乘；
 > 全市场总览（`market`）用自然口径，也不乘。
@@ -113,7 +113,7 @@ market_type.*   = 同上，按 fund.type 分组
 **请勿改成高频轮询** —— 这是对公共接口的基本礼貌，也是本项目能长期免费运行的前提。
 
 > 每日增量现在会顺带维护 `quote`（行情，按当日）+ `event`（折算事件，全量重算），
-> 见 `scripts/update.mjs` 第 2.6 步；行情的历史回补仍可用 `node scripts/backfill-quotes.mjs`。
+> 见 `scripts/update.mjs` 第 2.6 步；行情的历史回补用 `npm run quotes`（`scripts/backfill-quotes.mjs`）。
 
 ---
 
@@ -228,6 +228,10 @@ legacy/                            # 同构的 legacy 口径子树（含自己�
 - `charts-<catKey>.json` 的 key 随口径变化：v2 为 `broad/industry/…`，legacy 为 `1_宽基市场/9_债券`。
 - `legacy/` 是**完整的一套**（meta/tables/subs/index/market/quality/signature/lastrun/charts/archive），
   供页面切换口径与 `/api/legacy/*` 使用。
+- `subs.json` 的交易日轴只存一份：顶层 `__dates`，各小类不再重复 72 份日期数组；前端加载时剥离该键。
+- 构站时把 `web/js` 下的模块写进 `<link rel="modulepreload">`，浏览器并行拉取，避免 ESM 串行发现。
+- 本地服务对 JSON/JS/CSS 预压缩：优先 brotli，客户端不支持时回退 gzip，响应带 `ETag` 与 `Vary`。
+
 - 字段级说明见 [`API.md`](API.md) §2–§4。
 
 ---
@@ -256,7 +260,7 @@ legacy/                            # 同构的 legacy 口径子树（含自己�
 9. **旧库里的 `src='szse'` 行**：v3 之前抓的深交所快照，新流程不再写入。不影响展示数值；
    如需清理：`DELETE FROM share WHERE src='szse'; UPDATE dayinfo SET has_szse=0;`。
 10. **行情（`quote`）历史仍在回补**：每日增量只补「当日」，更早的日期靠
-    `node scripts/backfill-quotes.mjs`。未回补日期的 `price/premium/pctChg/amount/turnover` 为 `null`，
+    `npm run quotes`（`scripts/backfill-quotes.mjs`）。未回补日期的 `price/premium/pctChg/amount/turnover` 为 `null`，
     其余口径不受影响。
 11. **深市已参与看板**：legacy（88 小类 / 1614 只）与 v2（72 小类 / 1903 只）都包含深市成分；
     只有原看板基线 773 只仍全部是沪市代码（用于 `verify:origin` 回归校验）。
@@ -304,7 +308,7 @@ npm test                   # 只读本地：10 个数据校验用例
 1. **先写测试**：口径在 `tests/cases/caliber.mjs`，规则在 `tests/cases/rules.mjs`；新增行为先补用例。
 2. 口径只允许在 `lib/pipeline.mjs`（`recomputeAll`）里改 —— 不要在 `payloads.mjs` 或前端做二次计算，
    否则「库里的值」和「页面上的值」会各说各话。
-3. 改分类：v2 走 `scripts/classify.mjs` + `scripts/tag-v2.mjs` 生成 `data/classification-v2.json` / `tags-v2.json`；
+3. 改分类：v2 用 `npm run classify` + `npm run tag` 生成 `data/classification-v2.json` / `tags-v2.json`；
    legacy 走 `data/universe.json`（`lib/universe.mjs` 合并）。两套都要过 `npm test` 与 `verify:origin`。
 4. 加数据源要同时处理：来源优先级（`putShares`）、`dayinfo` 标记、`reconcile` 的对侧口径、`validate` 规则。
 5. 任何口径变更都会改变已发布数值，必须在 `CHANGELOG.md` 记录并说明影响范围。
@@ -314,7 +318,7 @@ npm test                   # 只读本地：10 个数据校验用例
 ## 本文的核对状态
 
 - 公式（份额/规模/净申购、事件折算、上市首日剔除）：对照 `lib/pipeline.mjs::recomputeAll`、
-  `detectShareEvents`、`lib/payloads.mjs` 源码核对（含 v3.4.0 的 `isBondCat` 修复）。
+  `detectShareEvents`、`lib/payloads.mjs` 源码核对（含 v3.8.0 的 `isBondCat` 修复）。
 - 表结构：以 `docs/DICTIONARY.md` 为准（该文由 `PRAGMA table_info` 实测生成），本文只列摘要。
 - 两套口径规模（7/72/1903、10/88/1614）：`node -e` 读 `lib/universe.mjs` 的 `loadUniverse()` 实测。
 - 净值覆盖率（98% / 91% / 85%）：对最近 120 个净值日按各口径代码集合逐日统计的均值。

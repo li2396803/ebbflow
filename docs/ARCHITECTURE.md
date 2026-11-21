@@ -89,7 +89,7 @@ HTTP/JSON 契约见 [`API.md`](API.md)，本地开发指引见 [`DEVELOPING.md`]
 | `lib/build/site.mjs` | 构站：写 `site/data/`（含 legacy 子树与 archive）、拷贝 `web/`、注入签名 | 不联网 |
 | `scripts/update.mjs` | 增量更新入口（`update({lookback})`）：份额/净值/行情/事件 → 重算 → 构站，带互斥锁 | 不处理历史全量 |
 | `scripts/backfill.mjs` | 份额全量回补（`--source ts\|sse\|both`，断点续跑） | 不构站 |
-| `scripts/backfill-quotes.mjs` | 行情历史回补（按日 `fund_daily`，跳过已有日期） | 不改份额 |
+| `scripts/backfill-quotes.mjs` | 行情历史回补（`npm run quotes`；按日 `fund_daily`，跳过已有日期） | 不改份额 |
 | `scripts/build.mjs` | 离线重建 `site/`；无 DB 时用 `data/series.json` 冷启动 | 不联网 |
 | `scripts/reconcile.mjs` | 两口径交叉校验 → `data/quality.json` + `reconcile` 表，退出码 0/1/2 | 不改原始数据 |
 | `scripts/verify-origin.mjs` | 用自建数据复算，与原站已发布序列逐点对比 | 不改原站副本 |
@@ -168,7 +168,7 @@ HTTP/JSON 契约见 [`API.md`](API.md)，本地开发指引见 [`DEVELOPING.md`]
 - 交易所给整数万份、Tushare 给 4 位小数；库内统一 4 位，避免「先舍入再跨小类相加」放大误差。
 - 展示层统一 1 位（`round1`），图表与表格读数一致。
 - **债券小类 ×100**：债券 ETF 面值 100 元/份，不折算会和其他小类差两个量级。
-  legacy 判 `9_债券`、v2 判 `bond`，统一走 `isBondCat()`（v3.4.0 修复了 v2 漏乘）。
+  legacy 判 `9_债券`、v2 判 `bond`，统一走 `isBondCat()`（v3.8.0 修复了 v2 漏乘）。
 
 ### 4.5 净申购为什么要修正（`event` + 上市首日）
 
@@ -202,6 +202,9 @@ HTTP/JSON 契约见 [`API.md`](API.md)，本地开发指引见 [`DEVELOPING.md`]
 - 站点要能「双击 `site/index.html` 就看」→ 取数必须走同目录相对路径的静态 JSON。
 - 本地服务要能「刷新后立刻看到」→ 需要 `/api/*`。
 - 两者共存：前端先试静态文件，失败再打 API。同一份代码，两种部署（GitHub Pages 直接可用）。
+- 首屏：构站把 `web/js` 下所有模块写成 `<link rel="modulepreload">`，消除 ESM 串行发现的请求瀑布。
+- 传输：本地服务对 JSON/JS/CSS 预压缩，优先 brotli，回退 gzip；静态文件自带 `ETag`，命中返回 304。
+- `subs.json` 的日期轴提到顶层 `__dates`，前端加载时剥离，避免被当作小类混入列表与搜索。
 
 ### 4.9 `site/data/` 是产物，不入库
 
@@ -285,7 +288,7 @@ HTTP/JSON 契约见 [`API.md`](API.md)，本地开发指引见 [`DEVELOPING.md`]
 
 - 模块职责、表结构、载荷与产物：对照 `lib/*.mjs`、`lib/build/site.mjs`、`server/app.mjs` 源码逐条核对（2026-11-21）。
 - 数据源两源、深市由 Tushare、缺密钥即失败：对照 `scripts/update.mjs`、`.github/workflows/daily.yml`。
-- v3.4.0 的三处修复（`isBondCat` 统一、`fund.list_date` 迁移、`update` 接行情/事件）已在源码确认（提交 `d23203a`）。
+- v3.8.0 的三处修复（`isBondCat` 统一、`fund.list_date` 迁移、`update` 接行情/事件）已在源码确认（提交 `d23203a`）。
 - 两套口径规模（7/72/1903、10/88/1614）：`loadUniverse()` 实测。
 - 自动化行为：对照三个 workflow 与 `bin/*.sh`；**未实际触发** GitHub Actions。
 - **未复跑**：`npm run update` / `backfill` / `reconcile` / `build` / `verify:origin`（会联网并改写 `data/`、`site/`）。

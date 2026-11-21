@@ -2,10 +2,19 @@
 
 本文说明 `scripts/classify.mjs` 的两套口径，以及为什么这样归、哪些地方需要人工拍板。
 
+## 当前状态
+
+| 口径 | 大类 | 小类 | ETF | 产物 | 角色 |
+| --- | --- | --- | --- | --- | --- |
+| v2 | 7 | 72 | 1903 | `data/classification-v2.json` | 默认展示口径，写 `series_v2` |
+| legacy | 10 | 88 | 1614 | `data/universe.json` | 原看板 86 小类 + 深市归属，写 `series` |
+
+两套互不覆盖，页面上可切换。第 1–9 章讲归类方法与规则，第 10–12 章讲 v2、配色与份额折算检测，均为当前实现。
+
 | 口径 | 层级 | 覆盖 | 产物 | 状态 |
 | --- | --- | --- | --- | --- |
 | **v1**（原看板口径） | 9 大类 → 86 细分行业 | 深市 864 只新增归属，沪市 773 只不动 | `data/universe.json` + `data/universe-report.json` | 保留，前端仍在用 |
-| **v2**（两层结构） | 7 大类（宽基/行业/主题/策略风格/债券/跨境/商品）→ 70 小类 | 沪深全部 **1955 只** ETF | `data/classification-v2.json` + `data/classification-v2-report.json` | 新增，见第 10 章 |
+| **v2**（两层结构） | 7 大类（宽基/行业/主题/策略风格/债券/跨境/商品）→ 72 小类 | 沪深 **1903 只** ETF | `data/classification-v2.json` + `data/classification-v2-report.json` | 默认口径，见第 10 章 |
 
 v1 合并消费方：`lib/universe.mjs`（只读 `assign / names / sources / newSubs`）。
 v2 为独立产物，不改动 `lib/taxonomy.mjs`、也不覆盖 v1 的任何文件。
@@ -227,7 +236,7 @@ node scripts/classify.mjs --force    # 忽略缓存，重新拉 Tushare
 
 ## 10. V2 两层分类（7 大类 × 小类）
 
-> 命令：`node scripts/classify.mjs --v2 [--report] [--review] [--force] [--dry-run]`
+> 命令：`node scripts/classify.mjs --v2 [--report] [--review] [--force] [--dry-run]`；等价入口 `npm run classify`
 > 产物：`data/classification-v2.json`、`data/classification-v2-report.json`
 > `--dry-run` 只打印、不写文件；`--v2` 与 v1 互斥（v2 不会覆盖 `data/universe.json`）。
 

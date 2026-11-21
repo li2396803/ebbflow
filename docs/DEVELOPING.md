@@ -43,7 +43,7 @@ npm run backfill     # 全量回补（--from/--to/--source/--limit/--dry-run/--c
 npm run reconcile    # 两口径交叉校验（交易所 vs Tushare）→ data/quality.json
 npm run verify:origin# 与原站已发布序列逐点对比
 npm test             # 10 个数据校验用例
-npm run lint         # 仓库自检（脚本为 node scripts/lint.mjs；入口若尚未加入 package.json，直接跑后者）
+npm run lint         # 仓库自检（node scripts/lint.mjs）
 ```
 
 ---
@@ -52,16 +52,16 @@ npm run lint         # 仓库自检（脚本为 node scripts/lint.mjs；入口�
 
 | 你想改 | 去这里 | 注意 |
 | --- | --- | --- |
-| 分类体系（大类/小类/成分 ETF/配色） | `lib/taxonomy.mjs` | **自动生成**，见 §4 |
+| 分类体系（大类/小类/成分 ETF/配色） | `lib/taxonomy.mjs`（基线）、`data/universe.json`、`data/classification-v2.json` | 三处各管一层，见 §4 |
 | 份额口径、派生序列 | `lib/pipeline.mjs` 的 `recompute()` | 口径的唯一实现处 |
 | 债券 ×100、四舍五入 | `lib/pipeline.mjs`、`lib/aggregate.mjs` | 改了两边都要同步 |
 | 数据校验规则/阈值 | `lib/validate.mjs` 的 `DEFAULTS` | 改阈值要同步改测试 |
-| 交易所接口 | `lib/sources.mjs` | 只有上交所（v3 起不再直连深交所）；UA/Referer/翻页/重试都在这 |
+| 交易所接口 | `lib/sources.mjs` | 只有上交所（不再直连深交所）；UA/Referer/翻页/重试都在这 |
 | Tushare 接口、限流与预算 | `lib/tushare.mjs` | 别把令牌桶拆掉 |
 | 来源优先级 | `lib/db.mjs` 的 `putShares()` | 改优先级会改变已发布数值，需记录 |
 | 前端契约（`meta/charts/tables/subs/market/index/quality`） | `lib/payloads.mjs` | 改字段属于破坏性变更 |
 | 站点构建（写 `site/`） | `lib/build/site.mjs` | 产物目录，勿手改 |
-| 页面/交互/样式 | `web/`（`index.html` / `app.js` / `styles.css`） | 改完要 `npm run build` 才进 `site/` |
+| 页面/交互/样式 | `web/`（`index.html`、`css/`、`js/`） | 改完要 `npm run build` 才进 `site/` |
 | API | `server/app.mjs` | 只绑 `127.0.0.1`，无鉴权 |
 | 定时与 CI | `.github/workflows/*.yml`、`launchd/`、`bin/*.sh` | 改 workflow 先过 `actionlint` |
 | 测试 | `tests/cases/*.mjs` | 框架在 `tests/framework.mjs`（零依赖） |
@@ -70,48 +70,54 @@ npm run lint         # 仓库自检（脚本为 node scripts/lint.mjs；入口�
 
 ---
 
-## 4. 改一处 taxonomy 会怎样
+## 4. 分类体系的三层结构
 
-`lib/taxonomy.mjs` 是**由 `tools/gen-taxonomy.mjs` 自动生成**的（文件头已注明「请勿手改」）。
-它导出四个东西：
+改分类前先确认改哪一层：
 
-| 导出 | 内容 | 被谁依赖 |
-| --- | --- | --- |
-| `CATS` | 10 项大类（9 个编号大类；7 号拆成消费/医药） | 图表分组、页签、`buildCharts`、`buildTables` |
-| `SUB` | 86 个小类 → `{ cat, color, etfs: [{code, name}] }` | 口径计算、明细抽屉、索引、校验 |
-| `ALL_CODES` | 773 个去重后的 ETF 代码 | 回补、校验宇宙、Tushare 逐只抓取 |
-| `BOND_CAT` | `"9_债券"` | ×100 折算的判定 |
+| 层 | 文件 | 规模 | 写入哪张表 |
+| --- | --- | --- | --- |
+| 原看板基线 | `lib/taxonomy.mjs` | 10 大类 / 86 小类 / 773 只沪市 | 不直接写表，供 legacy 与回归校验引用 |
+| legacy 宇宙 | `data/universe.json` + `lib/universe.mjs` | 10 / 88 / 1614 | `series` |
+| v2 分类 | `data/classification-v2.json` + `lib/universe.mjs` | 7 / 72 / 1903 | `series_v2` |
+
+生成方式（输入都是 Tushare 的 `fund_basic` 与 `index_basic`）：
+
+```bash
+npm run classify                     # v2：生成 data/classification-v2.json
+node scripts/classify.mjs --report   # legacy：生成 data/universe.json 与报告
+npm run tag                          # 多维标签：生成 data/tags-v2.json
+npm run palette                      # v2 配色
+npm run quotes                       # 回补行情（脚本内可传 --days）
+```
 
 改动的影响面（按传播顺序）：
 
 ```
-taxonomy
-  ├─► series 的键（sub 名）──► data/series.json 的 subs 键 ──► 前端图表/表格
-  ├─► ALL_CODES 数量 ──► 回补范围、validate 的宇宙、测试断言（86/773）
-  ├─► 配色 ──► 图表颜色与页签色（纯展示）
-  └─► cat 归属 ──► 大类聚合、页签分组、BOND_CAT 判定
+分类
+  ├─► 小类名（sub）──► series / series_v2 的键 ──► 前端图表、表格、搜索
+  ├─► 成分代码 ──► 回补范围、校验宇宙、测试断言（72/1903 与 88/1614）
+  ├─► 大类归属 ──► 大类聚合、页签分组、债券 ×100 判定
+  └─► 配色 ──► 图表与页签颜色（纯展示）
 ```
 
-**最小改动流程**：
+检查顺序：
 
-1. 改 `tools/gen-taxonomy.mjs`（或其数据来源），重新生成 `lib/taxonomy.mjs`；
-2. `npm test` —— `tests/cases/taxonomy.mjs` 会校验小类数、代码唯一性、结构完整性；
-3. `npm run build` 看页面是否正常（新增小类若没有历史数据，曲线会是空的）；
-4. 需要历史就 `npm run backfill -- --source ts`（或 `both`）把新成分补进来；
-5. `npm run verify:origin` 确认没把既有小类改坏；
-6. 在 `CHANGELOG.md` 记录「分类体系变更」及其对已发布数值的影响。
+1. `npm test`：`tests/cases/taxonomy.mjs` 校验数量、代码唯一性与结构；
+2. `npm run build`：看页签、抽屉、曲线是否正常（新小类没有历史时曲线为空）；
+3. 需要历史就 `npm run backfill -- --source ts` 补份额；
+4. `npm run verify:origin`：确认没有把原看板小类改坏；
+5. 在 `CHANGELOG.md` 记录变更与对已发布数值的影响。
 
-> ⚠️ 重命名 / 删除某个 `sub` 是**破坏性变更**：旧 `series` 行会变成孤儿，`data/series.json` 的键也会变。
-> 如果确实要改，最好同时提供一次性迁移（或接受历史曲线断裂并在文档里注明）。
-
----
+> 重命名或删除 `sub` 属于破坏性变更：旧 `series` / `series_v2` 行会变成孤儿，`data/series.json` 的键也会变。
+> 这时要么提供一次性迁移，要么接受历史曲线断裂并在文档里写明。
 
 ## 5. 如何加一个细分行业
 
 1. 在生成器里给目标大类加一项：`{ 名称, cat, color, etfs: [{ code, name }, ...] }`。
    - `code` 必须是 6 位、且在该 ETF 真实上市的市场；`name` 用简称（前端会截断）。
    - 同一只 ETF 可以出现在多个小类里（`ALL_CODES` 会自动去重）。
-2. 重新生成 `lib/taxonomy.mjs`，确认 `Object.keys(SUB).length` 增加、`ALL_CODES` 没有重复。
+2. legacy 改 `data/universe.json`（`node scripts/classify.mjs`），v2 改 `data/classification-v2.json`（`node scripts/classify.mjs --v2`）；
+   确认 `Object.keys(SUB).length` 增加、`ALL_CODES` 没有重复。
 3. 联网补齐数据：
    ```bash
    npm run update                      # 增量（近 15 天）

@@ -35,7 +35,7 @@
 - 适用字段：`charts-*.json` 的 `series[].shares`、`tables.*.{now,start,delta,first,last}`、
   `subs[].values/current`、`subs[].etfs[].shares/delta`。
 - 不适用：`market.json`（全市场自然口径，不折算）、所有 `scale` / `flow`。
-- ✅ **已修复（v3.4.0）**：此前 v2 口径的债券小类级数值漏乘 100（`recomputeAll()` 只认 `9_债券`），
+- ✅ **已修复（v3.8.0）**：此前 v2 口径的债券小类级数值漏乘 100（`recomputeAll()` 只认 `9_债券`），
   导致小类值只有成分明细合计的 1/100。现在统一走 `isBondCat()`（legacy `9_债券` / v2 `bond`），
   两套口径一致：`subs["科创债"].current` 与其 `etfs[].shares` 合计比值实测为 1.00。
 
@@ -198,7 +198,7 @@ site/data/
 | `all[].flow` | number | 亿元 | 是 | 窗口内 `flow` 求和；整窗无值则 `null` |
 | `top` / `bottom` | array | — | 否 | `all` 的前 5 / 后 5（`bottom` 已反转，最差在前） |
 
-> 份额类字段（`now/start/first/last/delta`）在债券小类已 ×100 —— legacy（`9_债券`）与 v2（`bond`）都适用（v3.4.0 起一致）。
+> 份额类字段（`now/start/first/last/delta`）在债券小类已 ×100 —— legacy（`9_债券`）与 v2（`bond`）都适用（v3.8.0 起一致）。
 
 ### 4.3 `GET /api/charts/:catKey`
 
@@ -233,9 +233,9 @@ site/data/
 
 ```json
 {
+  "__dates": ["2021-11-22", "..."],
   "大盘宽基": {
     "cat": "broad", "color": "#1C2392",
-    "dates": ["2021-11-22", "..."],
     "values": [419.8, "..."],
     "current": 493.6,
     "scale": 1133.9, "flow": 227.11,
@@ -249,12 +249,15 @@ site/data/
 }
 ```
 
+顶层键 `__dates` 是**交易日轴**（只存一份，各小类不再重复）。它不是小类名：
+前端加载时先取出并剥离，再当作「小类字典」使用，避免混入列表、搜索与对比面板。
+
 小类级字段：
 
 | 字段 | 类型 | 单位 | 可空 | 说明 |
 | --- | --- | --- | --- | --- |
 | `cat` / `color` | string | — | 否 | 所属大类 key / 线色 |
-| `dates` | string[] | 日期 | 否 | 交易日轴（与 `meta.range` 一致） |
+| `__dates`（顶层） | string[] | 日期 | 否 | 交易日轴，与 `meta.range` 一致；平铺在对象顶层，键名不是小类 |
 | `values` | (number\|null)[] | 亿份 | 是 | 该小类份额序列（债券类已 ×100），1 位小数 |
 | `current` | number | 亿份 | 是 | 末日值（= `values.at(-1)`） |
 | `scale` | number | 亿元 | 是 | 末日规模：Σ 有净值成分的 `份额×净值` |
@@ -283,7 +286,7 @@ site/data/
 | `flow` | number | 亿元/日 | 是 | 末日净申购（已剔除拆分/合并与上市首日） |
 
 > 行情相关字段（`price/premium/pctChg/amount/turnover`）依赖 `quote` 表：**每日增量会更新当日行情**
-> （`update` 第 2.6 步），更早的历史用 `node scripts/backfill-quotes.mjs` 回补。未回补的日期这些字段为 `null`。
+> （`update` 第 2.6 步），更早的历史用 `npm run quotes`（`scripts/backfill-quotes.mjs`）回补。未回补的日期这些字段为 `null`。
 
 ### 4.5 `GET /api/sub/:name`
 
@@ -530,7 +533,7 @@ node -e 'const m=require("./site/data/meta.json");console.log(m.taxonomy,m.lastT
 
 ## 7. 已知问题与已修复项
 
-### 7.1 已修复（v3.4.0 · 提交 `d23203a`）
+### 7.1 已修复（v3.8.0 · 提交 `d23203a`）
 
 | 问题 | 修复方式 | 现在怎么验证 |
 | --- | --- | --- |
@@ -558,6 +561,6 @@ node -e 'const m=require("./site/data/meta.json");console.log(m.taxonomy,m.lastT
 - 端点、状态码、响应头、错误文案：逐行对照 `server/app.mjs`（2026-11-21 20:4x），未起服务实跑全部请求。
 - 字段名与形状：对照 `lib/payloads.mjs`、`lib/build/site.mjs`，并用 `site/data/*.json` 的真实样例核对
   （示例值取自 2026-11-20 构建产物）。
-- 债券 ×100：v3.4.0 修复后用 `site/data/subs.json` 复测，bond 与非 bond 的「小类值 / 成分合计」比值均为 1.00。
+- 债券 ×100：v3.8.0 修复后用 `site/data/subs.json` 复测，bond 与非 bond 的「小类值 / 成分合计」比值均为 1.00。
 - `quote` 字段单位：用 `close × vol / 10 ≈ amount`（误差 0.4%）确认 `vol` 为「手」、`amount` 为「千元」。
 - 未实跑：`/api/refresh`（会触发联网更新）、`/api/status` 的运行时字段（示例为结构说明）。

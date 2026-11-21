@@ -130,7 +130,7 @@ SELECT date, wan FROM share WHERE code = '510050' ORDER BY date DESC LIMIT 5;
 - 主键 `(code, date)`，`WITHOUT ROWID`。
 - **来源**：Tushare `fund_daily`（按 `trade_date` 一次取全市场）。
 - **更新频率**：每交易日增量 —— `scripts/update.mjs` 第 2.6 步调用 `ingestQuotes()` 补当日行情；
-  更早的历史用 `node scripts/backfill-quotes.mjs [--days 250] [--from --to]` 回补（已有 `date` 跳过），进度记 `meta.quotesAt`。
+  更早的历史用 `npm run quotes`（`scripts/backfill-quotes.mjs`，可传 `--days` / `--from` / `--to`）回补，进度记 `meta.quotesAt`。
 - **用途**：`subs[].etfs[]` 的 `price / premium（折溢价）/ pctChg / amount / turnover`。
   未回补的日期这些字段为 `null`（其余口径不受影响）。
 - 单位校验：`amount ≈ close × vol / 10`（千元 = 元 × 手 × 100 / 1000）。
@@ -157,7 +157,7 @@ SELECT date, wan FROM share WHERE code = '510050' ORDER BY date DESC LIMIT 5;
 | --- | --- | --- | --- |
 | `sub` | TEXT | 否 | 小类名（v2，72 个；如 `大盘宽基`、`科创债`） |
 | `date` | TEXT | 否 | 交易日 |
-| `val` | REAL | 是 | 份额（亿份，4 位小数）；债券小类 ×100（v3.4.0 起与 legacy 一致） |
+| `val` | REAL | 是 | 份额（亿份，4 位小数）；债券小类 ×100（v3.8.0 起与 legacy 一致） |
 | `scale` | REAL | 是 | 规模（亿元） |
 | `flow` | REAL | 是 | 净申购（亿元/日） |
 
@@ -330,7 +330,7 @@ SELECT id, at, kind, ok FROM run ORDER BY id DESC LIMIT 10;
 
 ## 17. 维护注意与已修复问题
 
-### 17.1 已修复（v3.4.0 · 提交 `d23203a`）
+### 17.1 已修复（v3.8.0 · 提交 `d23203a`）
 
 | 问题 | 现象 | 修复方式 |
 | --- | --- | --- |
@@ -372,7 +372,7 @@ v3 起不再写深交所快照，但旧库可能残留 `src='szse'`（及其 `da
   并在 `event` 表实测（`split` 166 / `merge` 88）。
 - `quote` 单位：用 `close × vol / 10 ≈ amount`（误差 0.4%）实测确认。
 - 行数：本文刻意不写死（并发重建期间会瞬时变化），只给自查命令。
-- **v3.4.0 修复已在源码与产物中复核**（`isBondCat` 统一、`fund.list_date` 迁移、`update` 接行情/事件、
+- **v3.8.0 修复已在源码与产物中复核**（`isBondCat` 统一、`fund.list_date` 迁移、`update` 接行情/事件、
   `payloadsFallback()`）；债券比值用 `site/data/subs.json` 复测为 1.00。
 - **未实跑**：`npm run update` / `backfill` / `reconcile`（会联网并改写 `data/`）；相关行为按源码与既有
   `run` 表记录描述。

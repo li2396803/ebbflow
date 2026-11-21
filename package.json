@@ -15,7 +15,11 @@
     "reconcile": "node scripts/reconcile.mjs",
     "test": "node tests/runner.mjs",
     "verify:origin": "node scripts/verify-origin.mjs",
-    "lint": "node scripts/lint.mjs"
+    "lint": "node scripts/lint.mjs",
+    "classify": "node scripts/classify.mjs --v2",
+    "tag": "node scripts/tag-v2.mjs",
+    "palette": "node scripts/palette-v2.mjs",
+    "quotes": "node scripts/backfill-quotes.mjs"
   },
   "dependencies": {},
   "devDependencies": {},
