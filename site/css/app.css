@@ -1825,6 +1825,70 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
 #drawerBody .dt .cell-name {
   gap: 4px;
 }
+#drawerBody .dt .etf-name-cell {
+  min-width: 132px;
+  max-width: 210px;
+  white-space: normal;
+}
+.tagrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 3px;
+}
+.tagchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--surface-3);
+  color: var(--ink-3);
+  font-size: var(--fs-3xs);
+  line-height: 1;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tagchip i {
+  font-style: normal;
+  color: var(--ink-4);
+}
+.tagchip i::after {
+  content: ":";
+}
+.tagchip--more {
+  background: var(--surface-sunken);
+  color: var(--ink-4);
+  cursor: help;
+}
+#drawerBody .dt tbody td.etf-name-cell {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.th-info {
+  display: inline-grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  margin-left: 4px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-4);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: 1px;
+  cursor: help;
+}
+.th-info:hover,
+.th-info:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
 
 /* ============================ 10. 弹层 ============================ */
 .modal-mask {

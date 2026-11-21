@@ -12,6 +12,42 @@ import { load, loadAllCharts, catKeys } from "./api.js";
 /* ==========================================================================
    小类明细
    ========================================================================== */
+
+/** 标签前缀 → 中文维度简称（优先用 meta.tagDims，去掉「一级/类别/细分」后缀） */
+const TAG_FALLBACK = { index: "指数", sw: "申万", csi: "中证", theme: "主题", region: "地区", factor: "因子", bond: "债券", commodity: "商品" };
+function tagDim(prefix, dims) {
+  const full = dims?.[prefix];
+  if (full) return full.replace(/(一级|二级|类别|细分)$/, "");
+  return TAG_FALLBACK[prefix] || prefix;
+}
+
+/** 把 ["sw:电子","csi:信息技术"] 渲染成 chip（最多 4 个，其余收进 +N） */
+function renderTags(tags, dims, max = 4) {
+  const list = (tags || []).filter(Boolean);
+  if (!list.length) return "";
+  const chips = list.slice(0, max).map((t) => {
+    const i = String(t).indexOf(":");
+    const prefix = i >= 0 ? t.slice(0, i) : "";
+    const value = i >= 0 ? t.slice(i + 1) : t;
+    const dim = prefix ? tagDim(prefix, dims) : "";
+    return `<span class="tagchip" title="${esc(dim ? dim + "：" + value : value)}">${
+      dim ? `<i>${esc(dim)}</i>` : ""
+    }${esc(value)}</span>`;
+  });
+  const rest = list.slice(max);
+  if (rest.length) {
+    const all = rest
+      .map((t) => {
+        const i = String(t).indexOf(":");
+        const prefix = i >= 0 ? t.slice(0, i) : "";
+        const value = i >= 0 ? t.slice(i + 1) : t;
+        return (prefix ? tagDim(prefix, dims) + "：" : "") + value;
+      })
+      .join("；");
+    chips.push(`<span class="tagchip tagchip--more" title="${esc(all)}">+${rest.length}</span>`);
+  }
+  return `<span class="tagrow">${chips.join("")}</span>`;
+}
 let mini = null;
 let current = null;
 let etfSort = { key: "scale", dir: -1 };
@@ -175,14 +211,14 @@ function renderDetail(app, name, s, entry) {
               <th scope="col" data-esort="delta" class="num" aria-sort="none"><button type="button">近期变化<span class="sort-ico"></span></button></th>
               <th scope="col" data-esort="nav" class="num etf-nav" aria-sort="none"><button type="button">净值<span class="sort-ico"></span></button></th>
               <th scope="col" data-esort="scale" class="num" aria-sort="descending"><button type="button">规模<span class="sort-ico"></span></button></th>
-              <th scope="col" data-esort="flow" class="num etf-flow" aria-sort="none"><button type="button">净流入<span class="sort-ico"></span></button></th>
+              <th scope="col" data-esort="flow" class="num etf-flow" aria-sort="none"><button type="button">净流入<span class="sort-ico"></span></button><span class="th-info" tabindex="0" role="note" title="份额拆分/合并已从净流入中剔除" aria-label="份额拆分/合并已从净流入中剔除">i</span></th>
               <th scope="col" class="num">占本类</th>
             </tr>
           </thead>
           <tbody></tbody>
         </table>
       </div>
-      <p class="t-2xs faint">「近期变化 / 净流入」沿用数据管线的近一周窗口口径；「份额 / 规模 / 净值」为最新交易日快照。净流入按当日净值折算，部分已退市成分无净值时不计入（见上方净值覆盖）。</p>
+      <p class="t-2xs faint">「近期变化 / 净流入」沿用数据管线的近一周窗口口径；「份额 / 规模 / 净值」为最新交易日快照。净流入按当日净值折算，部分已退市成分无净值时不计入（见上方净值覆盖）；份额拆分/合并已从净流入中剔除。</p>
     </section>`;
 
   renderEtfTable(rows, totalScale);
@@ -243,13 +279,17 @@ function renderEtfTable(rows, totalScale) {
     tbody.innerHTML = `<tr><td colspan="8"><div class="state state--sm"><p class="state-desc">该小类暂无成分 ETF 明细</p></div></td></tr>`;
     return;
   }
+  const app = drawerHooks.app;
   tbody.innerHTML = sorted
     .map((r) => {
       const share = totalScale && r.scale != null ? (r.scale / totalScale) * 100 : null;
       return `<tr>
         <td class="mono t-2xs">${esc(r.code)}</td>
-        <td><span class="truncate" style="max-width:15ch;display:inline-block" title="${esc(r.name)}">${esc(r.name)}</span>
-          <span class="chip chip--sm chip--line" style="margin-left:4px">${esc(r.market || "—")}</span></td>
+        <td class="etf-name-cell">
+          <span class="truncate" style="max-width:15ch;display:inline-block" title="${esc(r.name)}">${esc(r.name)}</span>
+          <span class="chip chip--sm chip--line" style="margin-left:4px">${esc(r.market || "—")}</span>
+          ${renderTags(r.tags, app?.meta?.tagDims)}
+        </td>
         <td class="num">${esc(cnum(r.shares, 1))}</td>
         <td class="num ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "flat"}">${esc(fmtSigned(r.delta, 1))}</td>
         <td class="num etf-nav">${r.nav != null ? esc(cnum(r.nav, 3)) : "—"}</td>
