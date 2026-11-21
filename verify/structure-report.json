@@ -1,0 +1,450 @@
+{
+  "original": "tools/original-index.html",
+  "replica": "site/index.html",
+  "cssByteSame": true,
+  "subSame": true,
+  "originalSub": "数据区间 2021-11-22 ~ 2026-11-20（1212 个交易日，最多展示 5 年） ｜ 近期区间 2026-11-13 ~ 2026-11-20（6 个交易日）",
+  "replicaSub": "数据区间 2021-11-22 ~ 2026-11-20（1212 个交易日，最多展示 5 年） ｜ 近期区间 2026-11-13 ~ 2026-11-20（6 个交易日）",
+  "structuralDiffs": [],
+  "tables": [
+    {
+      "index": 0,
+      "title": "各大类规模与近期区间变动（亿份）",
+      "cols": [
+        "大类",
+        "当前总规模",
+        "区间首日规模",
+        "变动比例"
+      ],
+      "rows": 9,
+      "cellDiffs": 13,
+      "sampleDiffs": [
+        {
+          "r": 0,
+          "c": 2,
+          "original": "16325.5[]",
+          "replica": "16325.4[]"
+        },
+        {
+          "r": 1,
+          "c": 2,
+          "original": "5197.8[]",
+          "replica": "5198.0[]"
+        },
+        {
+          "r": 3,
+          "c": 2,
+          "original": "2371.3[]",
+          "replica": "2370.9[]"
+        },
+        {
+          "r": 3,
+          "c": 3,
+          "original": "-0.46%[down]",
+          "replica": "-0.45%[down]"
+        },
+        {
+          "r": 4,
+          "c": 2,
+          "original": "2126.3[]",
+          "replica": "2126.2[]"
+        },
+        {
+          "r": 5,
+          "c": 2,
+          "original": "1309.5[]",
+          "replica": "1309.4[]"
+        },
+        {
+          "r": 5,
+          "c": 3,
+          "original": "-0.58%[down]",
+          "replica": "-0.57%[down]"
+        },
+        {
+          "r": 6,
+          "c": 2,
+          "original": "650.8[]",
+          "replica": "650.7[]"
+        }
+      ],
+      "status": "cell-diff(data)"
+    },
+    {
+      "index": 1,
+      "title": "细分行业近一周份额增加量 TOP 5",
+      "cols": [
+        "细分行业",
+        "增加量(亿份)",
+        "变动百分比"
+      ],
+      "rows": 5,
+      "cellDiffs": 2,
+      "sampleDiffs": [
+        {
+          "r": 1,
+          "c": 1,
+          "original": "+145.9[up]",
+          "replica": "+145.8[up]"
+        },
+        {
+          "r": 3,
+          "c": 2,
+          "original": "+19.23%[up]",
+          "replica": "+19.21%[up]"
+        }
+      ],
+      "status": "cell-diff(data)"
+    },
+    {
+      "index": 2,
+      "title": "细分行业近一周份额减少量 TOP 5",
+      "cols": [
+        "细分行业",
+        "减少量(亿份)",
+        "变动百分比"
+      ],
+      "rows": 5,
+      "cellDiffs": 4,
+      "sampleDiffs": [
+        {
+          "r": 1,
+          "c": 2,
+          "original": "-5.72%[down]",
+          "replica": "-5.73%[down]"
+        },
+        {
+          "r": 2,
+          "c": 1,
+          "original": "-34.1[down]",
+          "replica": "-34.2[down]"
+        },
+        {
+          "r": 3,
+          "c": 2,
+          "original": "-2.06%[down]",
+          "replica": "-2.05%[down]"
+        },
+        {
+          "r": 4,
+          "c": 1,
+          "original": "-30.6[down]",
+          "replica": "-30.7[down]"
+        }
+      ],
+      "status": "cell-diff(data)"
+    }
+  ],
+  "tabs": {
+    "count": 10,
+    "targets": [
+      "1_宽基市场",
+      "2_风格策略",
+      "3_科技",
+      "4_制造",
+      "5_能源",
+      "6_资源",
+      "7_消费",
+      "7_医药",
+      "8_金融地产",
+      "9_债券"
+    ],
+    "texts": [
+      "1.宽基市场",
+      "2.风格策略",
+      "3.科技",
+      "4.制造",
+      "5.能源",
+      "6.资源",
+      "7.消费",
+      "7.医药",
+      "8.金融地产",
+      "9.债券"
+    ]
+  },
+  "ranges": [
+    {
+      "years": "1",
+      "text": "1年",
+      "active": false
+    },
+    {
+      "years": "3",
+      "text": "3年",
+      "active": true
+    },
+    {
+      "years": "5",
+      "text": "5年",
+      "active": false
+    }
+  ],
+  "cats": [
+    {
+      "id": "1_宽基市场",
+      "active": true,
+      "h2": "1.宽基市场",
+      "h2Style": "border-left-color:#D16F3F",
+      "cards": [
+        {
+          "h3": "ETF份额变化全景分析",
+          "wm": "B站生炸瓜",
+          "chartId": "1_宽基市场_c1",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "长期份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "1_宽基市场_c2",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "近 7 个自然日内交易日份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "1_宽基市场_c3",
+          "chartClass": "chart chart short"
+        }
+      ]
+    },
+    {
+      "id": "2_风格策略",
+      "active": false,
+      "h2": "2.风格策略",
+      "h2Style": "border-left-color:#D13F70",
+      "cards": [
+        {
+          "h3": "ETF份额变化全景分析",
+          "wm": "B站生炸瓜",
+          "chartId": "2_风格策略_c1",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "长期份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "2_风格策略_c2",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "近 7 个自然日内交易日份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "2_风格策略_c3",
+          "chartClass": "chart chart short"
+        }
+      ]
+    },
+    {
+      "id": "3_科技",
+      "active": false,
+      "h2": "3.科技",
+      "h2Style": "border-left-color:#3F70D1",
+      "cards": [
+        {
+          "h3": "ETF份额变化全景分析",
+          "wm": "B站生炸瓜",
+          "chartId": "3_科技_c1",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "长期份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "3_科技_c2",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "近 7 个自然日内交易日份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "3_科技_c3",
+          "chartClass": "chart chart short"
+        }
+      ]
+    },
+    {
+      "id": "4_制造",
+      "active": false,
+      "h2": "4.制造",
+      "h2Style": "border-left-color:#D1D03F",
+      "cards": [
+        {
+          "h3": "ETF份额变化全景分析",
+          "wm": "B站生炸瓜",
+          "chartId": "4_制造_c1",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "长期份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "4_制造_c2",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "近 7 个自然日内交易日份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "4_制造_c3",
+          "chartClass": "chart chart short"
+        }
+      ]
+    },
+    {
+      "id": "5_能源",
+      "active": false,
+      "h2": "5.能源",
+      "h2Style": "border-left-color:#D03FD1",
+      "cards": [
+        {
+          "h3": "ETF份额变化全景分析",
+          "wm": "B站生炸瓜",
+          "chartId": "5_能源_c1",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "长期份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "5_能源_c2",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "近 7 个自然日内交易日份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "5_能源_c3",
+          "chartClass": "chart chart short"
+        }
+      ]
+    },
+    {
+      "id": "6_资源",
+      "active": false,
+      "h2": "6.资源",
+      "h2Style": "border-left-color:#6F3FD1",
+      "cards": [
+        {
+          "h3": "ETF份额变化全景分析",
+          "wm": "B站生炸瓜",
+          "chartId": "6_资源_c1",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "长期份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "6_资源_c2",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "近 7 个自然日内交易日份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "6_资源_c3",
+          "chartClass": "chart chart short"
+        }
+      ]
+    },
+    {
+      "id": "7_消费",
+      "active": false,
+      "h2": "7.消费",
+      "h2Style": "border-left-color:#70D13F",
+      "cards": [
+        {
+          "h3": "ETF份额变化全景分析",
+          "wm": "B站生炸瓜",
+          "chartId": "7_消费_c1",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "长期份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "7_消费_c2",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "近 7 个自然日内交易日份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "7_消费_c3",
+          "chartClass": "chart chart short"
+        }
+      ]
+    },
+    {
+      "id": "7_医药",
+      "active": false,
+      "h2": "7.医药",
+      "h2Style": "border-left-color:#70D13F",
+      "cards": [
+        {
+          "h3": "ETF份额变化全景分析",
+          "wm": "B站生炸瓜",
+          "chartId": "7_医药_c1",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "长期份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "7_医药_c2",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "近 7 个自然日内交易日份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "7_医药_c3",
+          "chartClass": "chart chart short"
+        }
+      ]
+    },
+    {
+      "id": "8_金融地产",
+      "active": false,
+      "h2": "8.金融地产",
+      "h2Style": "border-left-color:#3FD16F",
+      "cards": [
+        {
+          "h3": "ETF份额变化全景分析",
+          "wm": "B站生炸瓜",
+          "chartId": "8_金融地产_c1",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "长期份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "8_金融地产_c2",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "近 7 个自然日内交易日份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "8_金融地产_c3",
+          "chartClass": "chart chart short"
+        }
+      ]
+    },
+    {
+      "id": "9_债券",
+      "active": false,
+      "h2": "9.债券",
+      "h2Style": "border-left-color:#3FD1D0",
+      "cards": [
+        {
+          "h3": "ETF份额变化全景分析",
+          "wm": "B站生炸瓜",
+          "chartId": "9_债券_c1",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "长期份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "9_债券_c2",
+          "chartClass": "chart"
+        },
+        {
+          "h3": "近 7 个自然日内交易日份额变化率（各小类首个有效日=100%）",
+          "wm": "B站生炸瓜",
+          "chartId": "9_债券_c3",
+          "chartClass": "chart chart short"
+        }
+      ]
+    }
+  ],
+  "css": {
+    "rules": 46,
+    "selectorsSame": true,
+    "bodyDiffs": []
+  },
+  "verdict": "结构一致（仅表内数值/区间文案随数据变化）"
+}

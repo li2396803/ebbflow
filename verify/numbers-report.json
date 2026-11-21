@@ -1,0 +1,322 @@
+{
+  "files": [
+    "1_宽基市场.js",
+    "2_风格策略.js",
+    "3_科技.js",
+    "4_制造.js",
+    "5_能源.js",
+    "6_资源.js",
+    "7_医药.js",
+    "7_消费.js",
+    "8_金融地产.js",
+    "9_债券.js"
+  ],
+  "total": {
+    "c1": {
+      "points": 104232,
+      "bothNull": 0,
+      "same": 104232,
+      "le01": 0,
+      "le05": 0,
+      "gt05": 0,
+      "nullMismatch": 0,
+      "maxDiff": 0,
+      "examples": []
+    },
+    "c2": {
+      "points": 104232,
+      "bothNull": 0,
+      "same": 104232,
+      "le01": 0,
+      "le05": 0,
+      "gt05": 0,
+      "nullMismatch": 0,
+      "maxDiff": 0,
+      "examples": []
+    },
+    "c3": {
+      "points": 516,
+      "bothNull": 0,
+      "same": 516,
+      "le01": 0,
+      "le05": 0,
+      "gt05": 0,
+      "nullMismatch": 0,
+      "maxDiff": 0,
+      "examples": []
+    }
+  },
+  "perCat": [
+    {
+      "key": "1_宽基市场",
+      "series": 7,
+      "dates": 1212,
+      "c1": {
+        "points": 8484,
+        "bothNull": 0,
+        "same": 8484,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      },
+      "c3": {
+        "points": 42,
+        "bothNull": 0,
+        "same": 42,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      }
+    },
+    {
+      "key": "2_风格策略",
+      "series": 10,
+      "dates": 1212,
+      "c1": {
+        "points": 12120,
+        "bothNull": 0,
+        "same": 12120,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      },
+      "c3": {
+        "points": 60,
+        "bothNull": 0,
+        "same": 60,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      }
+    },
+    {
+      "key": "3_科技",
+      "series": 10,
+      "dates": 1212,
+      "c1": {
+        "points": 12120,
+        "bothNull": 0,
+        "same": 12120,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      },
+      "c3": {
+        "points": 60,
+        "bothNull": 0,
+        "same": 60,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      }
+    },
+    {
+      "key": "4_制造",
+      "series": 7,
+      "dates": 1212,
+      "c1": {
+        "points": 8484,
+        "bothNull": 0,
+        "same": 8484,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      },
+      "c3": {
+        "points": 42,
+        "bothNull": 0,
+        "same": 42,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      }
+    },
+    {
+      "key": "5_能源",
+      "series": 8,
+      "dates": 1212,
+      "c1": {
+        "points": 9696,
+        "bothNull": 0,
+        "same": 9696,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      },
+      "c3": {
+        "points": 48,
+        "bothNull": 0,
+        "same": 48,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      }
+    },
+    {
+      "key": "6_资源",
+      "series": 10,
+      "dates": 1212,
+      "c1": {
+        "points": 12120,
+        "bothNull": 0,
+        "same": 12120,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      },
+      "c3": {
+        "points": 60,
+        "bothNull": 0,
+        "same": 60,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      }
+    },
+    {
+      "key": "7_医药",
+      "series": 7,
+      "dates": 1212,
+      "c1": {
+        "points": 8484,
+        "bothNull": 0,
+        "same": 8484,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      },
+      "c3": {
+        "points": 42,
+        "bothNull": 0,
+        "same": 42,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      }
+    },
+    {
+      "key": "7_消费",
+      "series": 11,
+      "dates": 1212,
+      "c1": {
+        "points": 13332,
+        "bothNull": 0,
+        "same": 13332,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      },
+      "c3": {
+        "points": 66,
+        "bothNull": 0,
+        "same": 66,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      }
+    },
+    {
+      "key": "8_金融地产",
+      "series": 7,
+      "dates": 1212,
+      "c1": {
+        "points": 8484,
+        "bothNull": 0,
+        "same": 8484,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      },
+      "c3": {
+        "points": 42,
+        "bothNull": 0,
+        "same": 42,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      }
+    },
+    {
+      "key": "9_债券",
+      "series": 9,
+      "dates": 1212,
+      "c1": {
+        "points": 10908,
+        "bothNull": 0,
+        "same": 10908,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      },
+      "c3": {
+        "points": 54,
+        "bothNull": 0,
+        "same": 54,
+        "le01": 0,
+        "le05": 0,
+        "gt05": 0,
+        "nullMismatch": 0,
+        "maxDiff": 0,
+        "examples": []
+      }
+    }
+  ],
+  "internalIssues": []
+}

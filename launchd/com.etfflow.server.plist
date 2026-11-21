@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.etfflow.server —— 登录即启动 + 挂了自动拉起（KeepAlive）
+  模板占位符（由 bin/install-autostart.sh 替换）：
+    __PATH__  项目根目录绝对路径（可含空格）
+    __NODE__  node 可执行文件绝对路径（launchd 默认 PATH 找不到 ~/.local/bin、nvm 等路径）
+    __NODEDIR__ node 所在目录，写在 PATH 最前面（bin/*.sh 靠它找到 node）
+  不要手动改 ~/Library/LaunchAgents 里的副本；改这里后重跑 bin/install-autostart.sh。
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.etfflow.server</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE__</string>
+    <string>__PATH__/server.mjs</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__PATH__</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__NODEDIR__:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PORT</key>
+    <string>5188</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>__PATH__/.run/server.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>__PATH__/.run/server.log</string>
+</dict>
+</plist>

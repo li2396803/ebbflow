@@ -1,0 +1,26 @@
+# 运行时产物（pid / 日志 / 锁）
+.run/
+
+# 每日原始份额快照（体积大、可重新抓取）
+data/shares/
+
+# 上次运行标记（每台机器各自生成）
+data/last-run.json
+
+# 更新互斥锁（update.mjs 运行时临时创建）
+data/.update.lock/
+
+# 依赖（本项目零依赖，保留以防将来）
+node_modules/
+
+# macOS
+.DS_Store
+
+# 校验截图
+verify/shots/
+
+# playwright-cli 临时目录
+.playwright-cli/
+
+# 本地密钥
+.env

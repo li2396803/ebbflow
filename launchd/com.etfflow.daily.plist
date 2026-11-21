@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.etfflow.daily —— 每个工作日 16:10 跑一次增量更新（收盘后交易所快照已更新）
+  模板占位符（由 bin/install-autostart.sh 替换）：
+    __PATH__  项目根目录绝对路径（可含空格）
+    __NODEDIR__ node 所在目录，写在 PATH 最前面（bin/update.sh 靠它找到 node）
+  注意：节假日不自动跳过；更新是幂等的，重复运行只是覆盖同一交易日数据。
+  不要手动改 ~/Library/LaunchAgents 里的副本；改这里后重跑 bin/install-autostart.sh。
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.etfflow.daily</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__PATH__/bin/update.sh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__PATH__</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__NODEDIR__:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict>
+      <key>Weekday</key>
+      <integer>1</integer>
+      <key>Hour</key>
+      <integer>16</integer>
+      <key>Minute</key>
+      <integer>10</integer>
+    </dict>
+    <dict>
+      <key>Weekday</key>
+      <integer>2</integer>
+      <key>Hour</key>
+      <integer>16</integer>
+      <key>Minute</key>
+      <integer>10</integer>
+    </dict>
+    <dict>
+      <key>Weekday</key>
+      <integer>3</integer>
+      <key>Hour</key>
+      <integer>16</integer>
+      <key>Minute</key>
+      <integer>10</integer>
+    </dict>
+    <dict>
+      <key>Weekday</key>
+      <integer>4</integer>
+      <key>Hour</key>
+      <integer>16</integer>
+      <key>Minute</key>
+      <integer>10</integer>
+    </dict>
+    <dict>
+      <key>Weekday</key>
+      <integer>5</integer>
+      <key>Hour</key>
+      <integer>16</integer>
+      <key>Minute</key>
+      <integer>10</integer>
+    </dict>
+  </array>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__PATH__/.run/update.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>__PATH__/.run/update.log</string>
+</dict>
+</plist>
