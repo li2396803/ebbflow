@@ -5,7 +5,7 @@
    因此图表缩放/框选、预设区间、表格筛选看到的是同一份口径。
    ========================================================================== */
 
-import { big, cnum, dirCn, esc, fmtPct, fmtSigned, sparkSVG, toneColor, isDark } from "./util.js";
+import { big, cnum, dirCn, esc, fmtPct, fmtSigned, skeletonRows, sparkSVG, toneColor, isDark } from "./util.js";
 import { PRESETS, METRICS, rankOf, state } from "./state.js";
 import { marketRangeStats } from "./state.js";
 
@@ -183,6 +183,7 @@ function totalSeries(app) {
 function renderOverviewKpis(app) {
   const host = document.getElementById("ovKpis");
   if (!host) return;
+  const ready = !!app.subsReady;
   const r = state.rangeInfo;
   const stats = app.stats;
   const t = totalSeries(app);
@@ -203,6 +204,7 @@ function renderOverviewKpis(app) {
   const up = getComputedStyle(document.documentElement).getPropertyValue("--up").trim();
   const down = getComputedStyle(document.documentElement).getPropertyValue("--down").trim();
 
+  const pending = `<span class="dim">数据加载中…</span>`;
   const card = (label, num, unit, foot, spark, color) => `<div class="kpi">
       <div class="kpi-top"><span class="kpi-label"><span class="kpi-dot" style="background:${color}"></span>${esc(label)}</span></div>
       <div class="kpi-val num">${esc(num)}<span class="unit">${esc(unit)}</span></div>
@@ -243,17 +245,19 @@ function renderOverviewKpis(app) {
     ),
     card(
       "区间份额变化",
-      sh.delta != null ? fmtSigned(Math.abs(sh.delta) >= 10000 ? sh.delta / 10000 : sh.delta, Math.abs(sh.delta) >= 10000 ? 2 : 1) : "—",
-      sh.delta != null && Math.abs(sh.delta) >= 10000 ? "万亿份" : "亿份",
-      sh.pct != null ? `<span class="delta ${sh.delta > 0 ? "delta--up" : sh.delta < 0 ? "delta--down" : "delta--flat"}">${fmtPct(sh.pct, 2)}</span><span class="dim">相对区间起点 · ${r.days} 个交易日</span>` : `<span class="dim">—</span>`,
+      !ready ? "—" : sh.delta != null ? fmtSigned(Math.abs(sh.delta) >= 10000 ? sh.delta / 10000 : sh.delta, Math.abs(sh.delta) >= 10000 ? 2 : 1) : "—",
+      !ready ? "" : sh.delta != null && Math.abs(sh.delta) >= 10000 ? "万亿份" : "亿份",
+      !ready ? pending : sh.pct != null ? `<span class="delta ${sh.delta > 0 ? "delta--up" : sh.delta < 0 ? "delta--down" : "delta--flat"}">${fmtPct(sh.pct, 2)}</span><span class="dim">相对区间起点 · ${r.days} 个交易日</span>` : `<span class="dim">—</span>`,
       cumulative.length ? sparkSVG(cumulative, { w: 160, h: 44, color: sh.delta >= 0 ? up : down, area: true }) : "",
       sh.delta >= 0 ? "var(--up)" : "var(--down)"
     ),
     card(
-      app.flowComplete ? "区间净流入" : "区间净流入（估算）",
-      fmtSigned(flowEst, 1),
+      !ready ? "区间净流入" : app.flowComplete ? "区间净流入" : "区间净流入（估算）",
+      ready ? fmtSigned(flowEst, 1) : "—",
       "亿元",
-      app.flowComplete
+      !ready
+        ? pending
+        : app.flowComplete
         ? `<span class="dim">逐日净流入累加</span><span class="chip chip--line chip--sm" title="口径：按当日单位净值折算的每日净流入逐日累加；部分已退市成分无净值，覆盖情况见各小类明细">口径</span>`
         : `<span class="dim">Δ份额 × 最新净值近似</span><span class="chip chip--line chip--sm" title="口径：区间份额变化量 × 最新单位净值（近似）；全量图表加载完成后会自动切换为每日净流入求和">估算</span>`,
       "",
@@ -354,6 +358,23 @@ function renderCatGrid(app) {
   const host = document.getElementById("catGrid");
   if (!host) return;
   const stats = app.stats;
+  if (!app.subsReady) {
+    host.innerHTML = (app.cats || [])
+      .map(
+        (c) => `<div class="catcard" aria-hidden="true" style="--cat-color:${esc(c.color || "#888")}">
+          <span class="catcard-top">
+            <span class="cat-dot" style="background:${esc(c.color || "#888")}"></span>
+            <span class="catcard-name">${esc(c.label)}</span>
+            <span class="catcard-count">${c.subs ?? "—"} 小类</span>
+          </span>
+          <span class="catcard-mid"><span class="sk" style="width:72px;height:20px"></span><span class="sk" style="width:64px;height:18px"></span></span>
+          <span class="sk" style="height:26px;margin-top:2px"></span>
+          <span class="catcard-foot"><span class="sk sk-line" style="width:60px"></span><span class="sk sk-line" style="width:28px"></span></span>
+        </div>`
+      )
+      .join("");
+    return;
+  }
   host.innerHTML = (app.cats || [])
     .map((c) => {
       const s = stats?.byCat?.get(c.key);
@@ -403,6 +424,10 @@ function renderTopTables(app) {
     const tbl = document.getElementById(id);
     if (!tbl) continue;
     const tbody = tbl.querySelector("tbody");
+    if (!app.subsReady) {
+      tbody.innerHTML = skeletonRows(5, 8);
+      continue;
+    }
     const rows = topRows(app, dir, 8);
     if (!rows.length) {
       tbody.innerHTML = `<tr><td colspan="5"><div class="state state--sm"><p class="state-desc">当前区间没有可比较的数据</p></div></td></tr>`;
@@ -441,6 +466,19 @@ export function renderOverviewWatch(app) {
     return;
   }
   card.hidden = false;
+  if (!app.subsReady) {
+    grid.innerHTML = state.watch
+      .slice(0, 3)
+      .map(
+        () => `<div class="watchcard" aria-hidden="true">
+        <div class="watchcard-head"><div class="watchcard-title"><span class="sk sk-line" style="width:80px"></span></div></div>
+        <div class="sk" style="height:22px;width:110px"></div>
+        <div class="sk" style="height:40px"></div>
+      </div>`
+      )
+      .join("");
+    return;
+  }
   grid.innerHTML = state.watch.slice(0, 3).map((n) => watchCardHTML(app, n)).join("");
 }
 
@@ -481,6 +519,15 @@ export function renderWatch(app) {
   const sub = document.getElementById("watchSub");
   if (!body) return;
   if (sub) sub.textContent = `${state.watch.length} 个小类 · ${rangeText(app)} · 保存在本地浏览器`;
+  if (state.watch.length && !app.subsReady) {
+    if (kpis) kpis.innerHTML = Array.from({ length: 4 }).map(() => `<div class="kpi" aria-hidden="true"><div class="sk sk-line" style="width:70px"></div><div class="sk" style="height:26px;width:110px;margin:8px 0"></div><div class="sk sk-line" style="width:120px"></div></div>`).join("");
+    body.innerHTML = `<div class="watchgrid">${state.watch
+      .map(
+        () => `<div class="watchcard" aria-hidden="true"><div class="watchcard-head"><div class="watchcard-title"><span class="sk sk-line" style="width:90px"></span></div></div><div class="sk" style="height:22px;width:110px"></div><div class="sk" style="height:40px"></div><div class="sk sk-line" style="width:70%"></div></div>`
+      )
+      .join("")}</div>`;
+    return;
+  }
   if (!state.watch.length) {
     if (kpis) kpis.innerHTML = "";
     body.innerHTML = `<div class="card"><div class="card-body">
@@ -553,7 +600,7 @@ export function renderCategory(app, opts = {}) {
     const flow = app.catFlowOf ? app.catFlowOf(key) : (app.subsByCat?.get(key) || []).reduce((s, n) => s + flowEstimate(app.stats?.byName?.get(n)), 0);
     sub.innerHTML = [
       `<span class="chip chip--line">${esc(rangeText(app))}</span>`,
-      `<span>${summary?.count ?? "—"} 个细分行业</span>`,
+      `<span>${app.subsReady ? (summary?.count ?? "—") : (c.subs ?? "—")} 个细分行业</span>`,
       `<span class="delta ${summary?.pct > 0 ? "delta--up" : summary?.pct < 0 ? "delta--down" : "delta--flat"}">${fmtPct(
         summary?.pct,
         2
@@ -571,6 +618,17 @@ export function renderCategory(app, opts = {}) {
 
   renderCatTable(app, key);
   renderCatSide(app, key);
+  if (!app.subsReady) {
+    const t = document.getElementById("tblCat")?.querySelector("tbody");
+    if (t) t.innerHTML = skeletonRows(6, 8);
+    const k = document.getElementById("catKpis");
+    if (k)
+      k.innerHTML = Array.from({ length: 4 })
+        .map(() => `<div><dt><span class="sk sk-line" style="width:64px"></span></dt><dd><span class="sk" style="display:block;height:22px;width:80px;margin-top:4px"></span></dd></div>`)
+        .join("");
+    document.getElementById("catTopIn").innerHTML = "";
+    document.getElementById("catTopOut").innerHTML = "";
+  }
   if (opts.chart !== false) app.onCategoryRender?.(key);
 }
 

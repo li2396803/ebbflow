@@ -16,21 +16,24 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDb, allDates, shareRows, clearReconcile, putReconcile, recordRun } from "../lib/db.mjs";
-import { SUB, ALL_CODES, BOND_CAT } from "../lib/taxonomy.mjs";
 import { shareOnDate } from "../lib/tushare.mjs";
 import * as dbApi from "../lib/db.mjs";
+import { loadUniverse } from "../lib/universe.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export const QUALITY_FILE = path.join(ROOT, "data", "quality.json");
-const UNIVERSE = ALL_CODES;
-const UNIVERSE_SET = new Set(ALL_CODES);
+const U = loadUniverse();
+const SUB_SCOPE = U.SUB;
+const BOND_CAT = "9_债券";
+const UNIVERSE = U.ALL_CODES;
+const UNIVERSE_SET = new Set(U.ALL_CODES);
 const round4 = (v) => (v == null || !Number.isFinite(v) ? null : Math.round(v * 10000) / 10000);
 const pct = (v) => (v == null || !Number.isFinite(v) ? null : round4(v * 100));
 const log = (...a) => console.log(...a);
 
 /** code → 首个所属小类（明细用） */
 const CODE_SUB = new Map();
-for (const [sub, meta] of Object.entries(SUB)) for (const e of meta.etfs) if (!CODE_SUB.has(e.code)) CODE_SUB.set(e.code, sub);
+for (const [sub, meta] of Object.entries(SUB_SCOPE)) for (const e of meta.etfs) if (!CODE_SUB.has(e.code)) CODE_SUB.set(e.code, sub);
 
 /**
  * 相对差：以 ref（交易所官方口径）为基准，看 val（Tushare）偏离多少。
@@ -56,7 +59,7 @@ export function classifyPair(exchange, ts) {
 
 /** 只用「两侧都有值」的公共成分算小类值，保证是同一篮子的对比 */
 export function subCommon(sub, mapA, mapB) {
-  const meta = SUB[sub];
+  const meta = SUB_SCOPE[sub];
   if (!meta) return null;
   const factor = meta.cat === BOND_CAT ? 100 : 1;
   let sa = 0;
@@ -155,7 +158,7 @@ export function compareCodes(exchange, exchangeSrc, ts) {
  */
 export function compareSubs(exchange, ts, prevExchange, prevTs) {
   const rows = [];
-  for (const sub of Object.keys(SUB)) {
+  for (const sub of Object.keys(SUB_SCOPE)) {
     const cur = subCommon(sub, exchange, ts);
     if (!cur) {
       const reason =
@@ -181,7 +184,7 @@ export function compareSubs(exchange, ts, prevExchange, prevTs) {
       const basket = cur.codes.filter((c) => prevExchange.has(c) && prevTs.has(c));
       basketN = basket.length;
       if (basketN >= Math.max(3, Math.ceil(cur.codes.length * 0.5))) {
-        const factor = SUB[sub].cat === BOND_CAT ? 100 : 1;
+        const factor = SUB_SCOPE[sub]?.cat === BOND_CAT ? 100 : 1;
         const sumOf = (map) => {
           let s = 0;
           let n = 0;

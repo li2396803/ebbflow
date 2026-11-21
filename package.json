@@ -1,8 +1,8 @@
 {
-  "name": "etf-flow",
-  "version": "3.0.0",
+  "name": "ebbflow",
+  "version": "3.1.0",
   "private": true,
-  "description": "ETF 细分行业资金流向：上交所/深交所/Tushare 三源数据管道 + 静态站点 + 本地服务，自动更新与交叉校验",
+  "description": "Ebbflow · ETF 细分行业资金流向：沪深全市场 ETF 份额/规模/净流入看板，两源数据管道 + 静态站点 + 本地服务，自动更新与交叉校验",
   "type": "module",
   "engines": {
     "node": ">=22.5"
@@ -18,5 +18,11 @@
     "lint": "node scripts/lint.mjs"
   },
   "dependencies": {},
-  "devDependencies": {}
+  "devDependencies": {},
+  "author": "dreemetoo <https://github.com/li2396803>",
+  "homepage": "https://li2396803.github.io/ebbflow/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/li2396803/ebbflow.git"
+  }
 }

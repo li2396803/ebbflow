@@ -15,5 +15,5 @@ import "./cases/reconcile.mjs";
 
 export * from "./framework.mjs";
 
-const code = await runAll({ title: "etf-flow 数据质量与校验层 · 测试" });
+const code = await runAll({ title: "Ebbflow 数据质量与校验层 · 测试" });
 process.exit(code);

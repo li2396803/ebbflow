@@ -4,10 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="description" content="ETF 细分行业资金流向：10 大类 / 86 个细分行业的 ETF 份额、规模与净流入长期序列，含区间对比、自选、全市场总览与数据质量校验。">
+<meta name="description" content="Ebbflow · ETF 细分行业资金流向：10 大类 / 86 个细分行业的 ETF 份额、规模与净流入长期序列，含区间对比、自选、全市场总览与数据质量校验。">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0a0b0e" media="(prefers-color-scheme: dark)">
-<title>ETF 细分行业资金流向</title>
+<title>Ebbflow · ETF 细分行业资金流向</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="assets/favicon-180.png">
 <!--__SIGNATURE__-->
 <script>
 /* 首屏前置：主题 / 涨跌配色 / 动效 / 导航折叠，避免闪白与布局跳动（每项都有兜底） */
@@ -29,7 +32,8 @@
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/app.css">
 <link rel="stylesheet" href="css/charts.css">
-<script src="echarts.min.js" defer></script>
+<link rel="preload" as="script" href="echarts.min.js">
+<!-- echarts 由 js/chart.js 在真正需要画图时注入：不阻塞首屏文本与 KPI -->
 </head>
 <body>
 
@@ -75,13 +79,11 @@
     <button class="icon-btn" id="railToggle" type="button" aria-label="收起侧边导航" aria-expanded="true" title="收起 / 展开导航 (Ctrl+B)">
       <svg aria-hidden="true"><use href="#i-menu"/></svg>
     </button>
-    <a class="brand" href="./" id="brandLink" aria-label="返回总览">
-      <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18V9m5 9V5m5 13v-6m5 6V8"/></svg>
-      </span>
+    <a class="brand" href="./" id="brandLink" aria-label="Ebbflow · 返回总览">
+      <img class="brand-mark" src="assets/logo.svg" width="24" height="24" alt="">
       <span class="brand-text">
-        <b>ETF 资金流向</b>
-        <small id="brandSub">细分行业 · 86</small>
+        <b>Ebbflow</b>
+        <small id="brandSub">ETF 细分行业资金流向</small>
       </span>
     </a>
     <span class="datasrc desk-only" id="dataBadge" data-mode="loading" role="status" aria-live="polite">
@@ -390,8 +392,8 @@
             <div class="brush-hint" id="brushHint" hidden>按住拖出区间 · <kbd>Esc</kbd> 退出框选</div>
           </div>
           <div class="chart-note">
-            <span class="note-desktop">滚轮缩放 · 拖拽平移 · 双击复位</span>
-            <span class="note-mobile">双指缩放 · 拖拽平移 · 双击复位</span>
+            <span class="note-desktop">拖动底部滑块或框选调整区间 · 双击复位</span>
+            <span class="note-mobile">双指缩放 · 双击复位 · 底部滑块调整区间</span>
             <span id="chartNoteRange"></span>
           </div>
         </div>
@@ -481,12 +483,12 @@
     <footer class="foot" id="foot">
       <div class="foot-cards">
         <section class="foot-card foot-origin">
-          <h3><span class="foot-tag">鸣谢</span>复刻自 B 站 UP 主「生炸瓜」</h3>
-          <p>
-            分类体系（<b>9 大类 · 86 个细分行业</b>）、看板形态与「份额 = 成分 ETF 之和、债券 ×100」的口径，均源自
-            <b>哔哩哔哩（B站）UP 主「生炸瓜」</b>公开的《ETF 细分行业资金流向》看板。原看板的设计与制作成果归原作者所有，这里郑重致谢 —— 没有原作就没有这个项目。
-          </p>
-          <p class="foot-muted">本站是独立重写的数据管道 + 前端（自建抓取、校验、开源代码），与原作者无隶属关系，也不代表原作者的观点。</p>
+          <h3><span class="foot-tag">鸣谢</span>鸣谢 · 本项目复刻自 B 站 UP 主「生炸瓜」的看板</h3>
+          <p>原看板：<a href="https://space.bilibili.com/3546681834473583" target="_blank" rel="noopener">B 站主页</a>
+            ｜ <a href="https://github.com/ysz-xiao" target="_blank" rel="noopener">GitHub</a></p>
+          <p>9 大类 / 86 个细分行业的分类体系、「份额＝成分 ETF 之和、债券 ×100」的口径、以及看板的整体形态，都源自
+            <b>哔哩哔哩（B站）UP 主「生炸瓜」</b> 的公开作品。原看板的设计与制作成果归原作者所有，郑重致谢。</p>
+          <p class="foot-muted">本站是独立重写的数据管道 + 前端，与原作者无隶属关系。</p>
         </section>
 
         <section class="foot-card foot-disclaimer">

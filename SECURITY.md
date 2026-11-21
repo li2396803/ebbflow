@@ -21,7 +21,7 @@
 
 优先使用 GitHub 的私密通道：
 
-1. 打开 <https://github.com/li2396803/etf-flow/security>；
+1. 打开 <https://github.com/li2396803/ebbflow/security>；
 2. 点 **Report a vulnerability**（GitHub Security Advisory）；
 3. 写清：影响版本/提交、复现步骤、影响面、你建议的修复方向（可选）。
 

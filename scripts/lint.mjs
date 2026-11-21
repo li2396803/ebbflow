@@ -367,7 +367,7 @@ const passed = results.filter((r) => r.ok === true);
 const icon = (s) => (s === true ? "✓" : s === false ? "✗" : "⊘");
 
 if (!QUIET) {
-  console.log(`\netf-flow 仓库自检  ·  ${ROOT}`);
+  console.log(`\nEbbflow 仓库自检  ·  ${ROOT}`);
   console.log(`node ${process.version}  ·  ${results.length} 项检查\n`);
 }
 for (const r of results) {

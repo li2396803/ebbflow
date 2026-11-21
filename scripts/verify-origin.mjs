@@ -6,7 +6,8 @@
 //   node scripts/verify-origin.mjs [--json out.json]
 import fs from "node:fs";
 import path from "node:path";
-import { openDb } from "../lib/db.mjs";
+import { openDb, tradingDates, shareRows, daySources } from "../lib/db.mjs";
+import { SUB as BASE_SUB, BOND_CAT } from "../lib/taxonomy.mjs";
 import { parseChunk } from "../tools/parse-chunks.mjs";
 
 const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname));
@@ -20,10 +21,35 @@ if (!fs.existsSync(DIR)) {
 }
 
 const db = openDb();
+// 说明：v3.1 起看板纳入深市成分，series 表是「沪深合并」口径，不能直接与原看板（仅沪市）比对。
+// 因此这里用 share 表**只取沪市代码**重新算一遍，得到与原看板可比的口径。
+const dates = tradingDates(db);
+const shByDate = new Map();
+for (const d of dates) {
+  const m = new Map();
+  const src = daySources(db, d);
+  for (const r of shareRows(db, d)) {
+    if (!/^[569]/.test(r.code)) continue;
+    // 与看板口径一致：该日若有交易所快照，则只认交易所行，Tushare 补充行不计入
+    if (src.sse && r.src !== "sse") continue;
+    m.set(r.code, r.wan);
+  }
+  shByDate.set(d, m);
+}
 const series = new Map();
-for (const r of db.prepare("SELECT sub, date, val FROM series").all()) {
-  if (!series.has(r.sub)) series.set(r.sub, new Map());
-  series.get(r.sub).set(r.date, r.val);
+for (const [name, meta] of Object.entries(BASE_SUB)) {
+  const factor = meta.cat === BOND_CAT ? 100 : 1;
+  const m = new Map();
+  for (const d of dates) {
+    const day = shByDate.get(d);
+    let sum = 0, hit = 0;
+    for (const e of meta.etfs) {
+      const v = day.get(e.code);
+      if (v != null) { sum += v; hit++; }
+    }
+    m.set(d, hit ? Math.round((sum / 1e4) * factor * 1e4) / 1e4 : null);
+  }
+  series.set(name, m);
 }
 
 let total = 0, same = 0, d01 = 0, d05 = 0, big = 0;

@@ -34,7 +34,7 @@ node scripts/lint.mjs   # 仓库自检（或 npm run lint）
 ### 2. Discussions —— 使用问答与想法交流
 
 设计上，**「怎么用 / 为什么这样设计 / 有没有更好的做法」** 这类开放讨论放
-[Discussions](https://github.com/li2396803/etf-flow/discussions) 更合适。
+[Discussions](https://github.com/li2396803/ebbflow/discussions) 更合适。
 
 > ⚠️ 当前状态：仓库**尚未开启** Discussions（GitHub 的 `has_discussions = false`）。
 > 未开启时该链接会 404 —— 请先用 Issues，或在 Issue 里说明「希望开 Discussions」。

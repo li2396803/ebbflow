@@ -3,7 +3,7 @@
 # 日常发布不需要这个工作流：daily.yml 每天构建完会直接部署（needs: update → deploy）。
 # 这里用于「改了前端 / 想立刻重发一次」的场景：Actions → Deploy site to GitHub Pages → Run workflow。
 #
-# 站点地址：https://li2396803.github.io/etf-flow/
+# 站点地址：https://li2396803.github.io/ebbflow/
 # 前提：Settings → Pages → Source = GitHub Actions（仓库已配置）
 name: Deploy site to GitHub Pages
 

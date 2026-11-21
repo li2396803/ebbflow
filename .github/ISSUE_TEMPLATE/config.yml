@@ -4,17 +4,17 @@ blank_issues_enabled: false
 
 contact_links:
   - name: 💬 使用问答与想法交流（Discussions）
-    url: https://github.com/li2396803/etf-flow/discussions
+    url: https://github.com/li2396803/ebbflow/discussions
     about: 怎么用、为什么这样设计、有没有更好的做法。注意：需维护者在 Settings → General → Features 开启 Discussions；未开启时该链接会 404，请改用 Issues。
 
   - name: 📖 Fork 与自建部署指南
-    url: https://github.com/li2396803/etf-flow/blob/master/docs/FORK.md
+    url: https://github.com/li2396803/ebbflow/blob/master/docs/FORK.md
     about: Fork 后没有数据、Actions 不跑、Pages 404、TUSHARE_TOKEN 怎么配 —— 先看这份清单。
 
   - name: 🔐 报告安全问题
-    url: https://github.com/li2396803/etf-flow/security/advisories/new
+    url: https://github.com/li2396803/ebbflow/security/advisories/new
     about: 漏洞或 token 泄露请不要开公开 Issue，走 GitHub 的私密报告通道（详见 SECURITY.md）。
 
   - name: 📊 数据口径与已知偏差
-    url: https://github.com/li2396803/etf-flow/blob/master/docs/DATA.md
+    url: https://github.com/li2396803/ebbflow/blob/master/docs/DATA.md
     about: 单位、公式、精度、原站冻结日、净值覆盖率 —— 数值问题请先来这里对一遍。

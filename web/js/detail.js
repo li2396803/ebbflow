@@ -2,7 +2,7 @@
    detail：小类明细抽屉 / 全部小类表 / 数据质量弹层
    ========================================================================== */
 
-import { cnum, download, esc, fmtPct, fmtSigned, toCSV, toneColor, isDark, emptyState } from "./util.js";
+import { cnum, download, esc, fmtPct, fmtSigned, skeletonRows, toCSV, toneColor, isDark, emptyState } from "./util.js";
 import { flowEstimate, catLabelOf } from "./views.js";
 import { rankOf, state } from "./state.js";
 import { closeOverlay, openOverlay, toast } from "./ui.js";
@@ -33,21 +33,58 @@ export function initDetail(app, hooks = {}) {
   });
 }
 
-export function openDetail(name) {
+export async function openDetail(name) {
   const app = drawerHooks.app;
   if (!app || !name) return;
+  current = name;
+  const drawer = document.getElementById("drawer");
+  const mask = document.getElementById("drawerMask");
+  if (drawer?.dataset.open !== "1") {
+    openOverlay(mask, drawer, {
+      onClose: () => {
+        current = null;
+        mini?.dispose();
+        mini = null;
+      },
+    });
+  }
+  const title = document.getElementById("drawerTitle");
+  if (title) title.textContent = name;
+  const eyebrow = document.getElementById("drawerEyebrow");
+  if (eyebrow) {
+    const cat = app.subs?.[name]?.cat || app.stats?.byName?.get(name)?.cat;
+    eyebrow.innerHTML = `<span class="cat-dot" style="background:${esc(
+      toneColor(app.subs?.[name]?.color || app.stats?.byName?.get(name)?.color || "#888", isDark())
+    )}"></span><span>${esc(cat ? catLabelOf(app, cat) : "")}</span>
+      <span class="chip chip--line">${esc(state.rangeInfo.from)} → ${esc(state.rangeInfo.to)}</span>`;
+  }
+  syncStar();
+
+  // subs.json 是懒加载的：先给轻量占位，拿到数据后再渲染明细
+  if (!app.subs) {
+    const body = document.getElementById("drawerBody");
+    if (body)
+      body.innerHTML = `<div class="drawer-sec">
+        <div class="sk" style="height:120px;border-radius:var(--r-md)"></div>
+        <div class="sk" style="height:180px;border-radius:var(--r-md);margin-top:12px"></div>
+      </div>
+      <div class="state state--sm"><span class="spinner" aria-hidden="true"></span><p class="state-desc">正在加载成分数据（subs.json，约 1.9MB）…</p></div>`;
+    try {
+      await drawerHooks.ensureSubs?.();
+    } catch (e) {
+      if (body) body.innerHTML = emptyState("成分数据加载失败", "data/subs.json 未能加载，图表与总览不受影响。");
+      return;
+    }
+  }
+  if (current !== name) return;
   const stats = app.stats?.byName?.get(name);
   const entry = app.subs?.[name];
   if (!stats && !entry) {
     toast("没有找到该小类", "error");
+    closeOverlay(document.getElementById("drawer"));
     return;
   }
-  current = name;
-  const drawer = document.getElementById("drawer");
-  const mask = document.getElementById("drawerMask");
   renderDetail(app, name, stats, entry);
-  if (drawer?.dataset.open !== "1") openOverlay(mask, drawer, { onClose: () => { current = null; mini?.dispose(); mini = null; } });
-  syncStar();
 }
 
 export function closeDetail() {
@@ -285,6 +322,18 @@ export async function openAllSubs(opts = {}) {
     document.querySelectorAll("#allSign [data-sign]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.sign === opts.sign)));
   }
   openOverlay(mask, mask.querySelector(".modal"), { initialFocus: "#allSearch" });
+  if (!allHooks.app?.subsReady) {
+    const tbody = document.querySelector("#tblAll tbody");
+    if (tbody) tbody.innerHTML = skeletonRows(8, 10);
+    const count = document.getElementById("allCount");
+    if (count) count.textContent = "正在加载 86 个小类的区间数据…";
+    try {
+      await allHooks.ensureSubs?.();
+    } catch (e) {
+      if (tbody) tbody.innerHTML = `<tr><td colspan="8">${emptyState("数据加载失败", "data/subs.json 未能加载，请稍后重试。")}</td></tr>`;
+      return;
+    }
+  }
   renderAllTable();
   if (state.allMetric === "scale" && !allCache) await prepareScaleData();
 }

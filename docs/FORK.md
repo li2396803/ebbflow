@@ -24,7 +24,7 @@
 
 ## 1. Fork 仓库
 
-1. 打开 <https://github.com/li2396803/etf-flow>。
+1. 打开 <https://github.com/li2396803/ebbflow>。
 2. 右上角 **Fork** → 选择自己的账号 → **Create fork**。
 3. 建议同时把 fork 的 **default branch** 保持为 `master`（`daily.yml` 的部署条件写的是 `refs/heads/master`）。
 
@@ -206,7 +206,7 @@ bin/status.sh                        # 一屏看进程 / 自启 / 库规模 / �
 
 ## 本文的核对状态
 
-- 仓库状态：`gh api` 实测为 public、MIT、`homepage = https://li2396803.github.io/etf-flow/`，
+- 仓库状态：`gh api` 实测为 public、MIT、`homepage = https://li2396803.github.io/ebbflow/`，
   站点返回 HTTP 200（2026-11-21）。
 - 工作流行为：逐行对照 `.github/workflows/daily.yml`、`ci.yml`、`pages.yml`；
   secret 名、`::error::` 缺密钥即失败的逻辑、超时、`refs/heads/master` 条件均来自源码。

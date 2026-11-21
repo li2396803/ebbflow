@@ -12,17 +12,46 @@
 import { axisNum, cnum, esc, fmtPct, isDesktop, prefersReducedMotion, toneColor, throttleRAF } from "./util.js";
 
 let echartsReady = null;
-export function ensureEcharts(timeout = 12000) {
+/**
+ * 按需加载 echarts（约 1MB）：
+ * · 页面 <head> 只用 preload 预热，不阻塞首屏解析与 KPI 文本
+ * · 第一次真正要画图时才注入 <script>，加载完成后 resolve window.echarts
+ */
+export function ensureEcharts(timeout = 20000) {
   if (window.echarts) return Promise.resolve(window.echarts);
   if (echartsReady) return echartsReady;
   echartsReady = new Promise((resolve, reject) => {
-    const t0 = performance.now();
-    const tick = () => {
-      if (window.echarts) return resolve(window.echarts);
-      if (performance.now() - t0 > timeout) return reject(new Error("图表库加载超时"));
-      setTimeout(tick, 80);
+    let settled = false;
+    const ok = () => {
+      if (settled) return;
+      if (window.echarts) {
+        settled = true;
+        performance.mark("ebbflow:echarts-ready");
+        resolve(window.echarts);
+      } else reject(new Error("图表库不可用"));
     };
-    tick();
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+      echartsReady = null;
+      reject(new Error("图表库加载失败（echarts.min.js）"));
+    };
+    const existing = Array.from(document.scripts).find((s) => /echarts\.min\.js/.test(s.src));
+    if (existing) {
+      existing.addEventListener("load", ok);
+      existing.addEventListener("error", fail);
+      if (window.echarts) ok();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = new URL("echarts.min.js", document.baseURI).href;
+    script.async = true;
+    script.onload = ok;
+    script.onerror = fail;
+    document.head.append(script);
+    setTimeout(() => {
+      if (!settled && !window.echarts) fail();
+    }, timeout);
   });
   return echartsReady;
 }
@@ -96,6 +125,7 @@ export async function initMain(el, hooks = {}) {
     if (!from || !to || a === b) return;
     main.hooks.onRangeChange?.(from, to, "zoom");
     scheduleLabels();
+    setTimeout(scheduleLabels, 120);
   });
 
   main.ec.on("brushEnd", (params) => {
@@ -124,6 +154,16 @@ export async function initMain(el, hooks = {}) {
     scheduleLabels();
   }));
   ro.observe(el);
+
+  // 滚轮交给页面滚动：在捕获阶段截住 wheel，不让 zrender 的漫游控制器看到它
+  // （inside dataZoom 只保留双指缩放；鼠标滚轮/拖拽一律不修改区间）
+  main.shell.addEventListener(
+    "wheel",
+    (e) => {
+      e.stopPropagation();
+    },
+    { capture: true, passive: true }
+  );
 
   return main.ec;
 }
@@ -163,7 +203,14 @@ function scheduleLabels() {
   });
 }
 
-/** 端点标签：在窗口末端对齐每个系列最新值，自动避让，不重叠 */
+/**
+ * 端点标签：画在 grid 右侧的 gutter 里（绘图区之外），按 y 值排布并保证 ≥8px 间距。
+ * · 竖直放不下时按 |值| 保留 6 条，其余收进「+N 查看全部」入口（点击 → 明细抽屉）
+ * · 移动端（<768px）不画，交给 tooltip
+ */
+const ELAB_GAP = 8;
+const ELAB_H = 16;
+
 function paintEndLabels() {
   const layer = main.labelsLayer;
   const p = main.lastPayload;
@@ -174,16 +221,14 @@ function paintEndLabels() {
   }
   const chart = main.ec;
   if (!chart || chart.isDisposed()) return;
-  const [a, b] = readZoom();
-  if (a == null) {
-    layer.innerHTML = "";
-    return;
-  }
   const rect = chart.getModel()?.getComponent("grid")?.coordinateSystem?.getRect?.();
   if (!rect) return;
+
+  const seen = new Set();
   const items = [];
   for (const s of p.endLabels) {
-    if (s.value == null || !Number.isFinite(s.value)) continue;
+    if (s.value == null || !Number.isFinite(s.value) || seen.has(s.name)) continue;
+    seen.add(s.name);
     const y = chart.convertToPixel({ yAxisIndex: 0 }, s.value);
     if (!Number.isFinite(y)) continue;
     items.push({ name: s.name, value: s.value, color: s.color, y });
@@ -192,34 +237,99 @@ function paintEndLabels() {
     layer.innerHTML = "";
     return;
   }
-  items.sort((m, n) => m.y - n.y);
-  const GAP = 15;
-  const top = rect.y + 6;
+
+  // 竖直可用高度 → 能放几条
+  const top = rect.y + 2;
   const bottom = rect.y + rect.height - 2;
-  for (let i = 0; i < items.length; i++) {
-    if (i === 0) items[i].y = Math.max(top, items[i].y);
-    else items[i].y = Math.max(items[i].y, items[i - 1].y + GAP);
+  const capacity = Math.max(1, Math.floor((bottom - top) / (ELAB_H + ELAB_GAP)) + 1);
+  let shown = items;
+  let hidden = 0;
+  if (items.length > capacity) {
+    const keep = Math.min(6, capacity);
+    shown = items.slice().sort((a, b) => Math.abs(b.value) - Math.abs(a.value)).slice(0, keep);
+    hidden = items.length - shown.length;
   }
-  const overflow = items[items.length - 1].y - bottom;
-  if (overflow > 0) {
-    for (let i = items.length - 1; i >= 0; i--) {
-      items[i].y -= overflow;
-      if (i > 0 && items[i].y - items[i - 1].y < GAP) items[i - 1].y = items[i].y - GAP;
-    }
+
+  // 按 y 排布：经典「向下撑开 + 越界后自底向上收敛」，保证相邻 ≥ ELAB_H+8、且全部落在绘图区内
+  shown.sort((a, b) => a.y - b.y);
+  const step = ELAB_H + ELAB_GAP;
+  const maxY = bottom - ELAB_H;
+  const clampY = (v) => Math.min(Math.max(v, top), maxY);
+  const desired = shown.map((it) => clampY(it.y - ELAB_H / 2));
+  const placed = desired.slice();
+  for (let i = 1; i < placed.length; i++) placed[i] = Math.max(placed[i], placed[i - 1] + step);
+  if (placed.length && placed[placed.length - 1] > maxY) {
+    placed[placed.length - 1] = maxY;
+    for (let i = placed.length - 2; i >= 0; i--) placed[i] = Math.min(desired[i], placed[i + 1] - step);
   }
-  const right = rect.x + rect.width - 2;
-  layer.innerHTML = items
+  shown.forEach((it, i) => {
+    it.y = placed[i];
+  });
+
+  const left = Math.round(rect.x + rect.width + 8);
+  const maxW = Math.max(56, Math.round((layer.clientWidth || left + 100) - left - 6));
+  const html = shown
     .map(
-      (it) => `<span class="elab" style="top:${(it.y - 8).toFixed(1)}px;right:${Math.max(
-        0,
-        (layer.clientWidth || rect.x + rect.width) - right
-      ).toFixed(1)}px;--c:${it.color}">
+      (it) => `<span class="elab" style="left:${left}px;top:${Math.round(it.y)}px;max-width:${maxW}px;--c:${it.color}">
         <i class="elab-dot"></i><span class="elab-name">${esc(it.name)}</span><span class="elab-val">${esc(
         p.endLabelDigits === 1 ? cnum(it.value, 1) : cnum(it.value, Math.abs(it.value) >= 100 ? 0 : 1)
       )}</span>
       </span>`
     )
     .join("");
+  const more =
+    hidden > 0
+      ? `<button class="elab-more" type="button" data-more-labels="1" style="left:${left}px;top:${Math.round(
+          Math.min(bottom - 2, rect.y + rect.height - 18)
+        )}px;max-width:${maxW}px" title="还有 ${hidden} 条未显示，点击查看全部端点数值">+${hidden} 查看全部</button>`
+      : "";
+  layer.innerHTML = html + more;
+
+  const btn = layer.querySelector("[data-more-labels]");
+  if (btn) {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      showEndLabelList(items, left, rect);
+    });
+  }
+}
+
+/** 「查看全部」：列出所有系列的端点值与区间变化，点任意一行打开该小类明细抽屉 */
+function showEndLabelList(items, left, rect) {
+  const layer = main.labelsLayer;
+  if (!layer) return;
+  layer.querySelector(".elab-list")?.remove();
+  const p = main.lastPayload || {};
+  const rows = items
+    .slice()
+    .sort((a, b) => b.y - a.y)
+    .map(
+      (it) => `<button class="elab-li" type="button" data-pick-series="${esc(it.name)}">
+        <i class="elab-dot" style="--c:${it.color}"></i>
+        <span class="elab-li-name">${esc(it.name)}</span>
+        <span class="elab-li-val">${esc(p.endLabelDigits === 1 ? cnum(it.value, 1) : cnum(it.value, Math.abs(it.value) >= 100 ? 0 : 1))}</span>
+      </button>`
+    )
+    .join("");
+  const box = document.createElement("div");
+  box.className = "elab-list";
+  box.style.left = `${Math.max(8, Math.round(left - 176))}px`;
+  box.style.top = `${Math.round(rect.y + 4)}px`;
+  box.style.maxHeight = `${Math.round(rect.height - 8)}px`;
+  box.innerHTML = `<div class="elab-list-head">端点数值 · 点一行看明细</div><div class="elab-list-body">${rows}</div>`;
+  layer.append(box);
+  box.addEventListener("click", (e) => {
+    const row = e.target.closest("[data-pick-series]");
+    if (!row) return;
+    box.remove();
+    document.dispatchEvent(new CustomEvent("etf:pick-series", { detail: { name: row.dataset.pickSeries } }));
+  });
+  const closeOnce = (ev) => {
+    if (box.contains(ev.target)) return;
+    box.remove();
+    document.removeEventListener("pointerdown", closeOnce, true);
+  };
+  setTimeout(() => document.addEventListener("pointerdown", closeOnce, true), 0);
 }
 
 /* ---------------------------- option 构造 ---------------------------- */
@@ -298,9 +408,13 @@ function baseOption(p) {
       filterMode: "filter",
       startValue: dates[a] ?? dates[0],
       endValue: dates[endIdx] ?? dates[dates.length - 1],
-      zoomOnMouseWheel: true,
-      moveOnMouseMove: true,
+      // 鼠标漫游全部关闭：滚轮用于页面滚动、拖拽用于选中文本/滚动，
+      // 区间只能通过「预设 / 底部滑块 / 框选 / 双击复位」修改；触摸端保留双指缩放。
+      zoomOnMouseWheel: false,
+      moveOnMouseMove: false,
       moveOnMouseWheel: false,
+      moveOnMouseDrag: false,
+      zoomOnPinch: true,
       throttle: 60,
     },
   ];
@@ -342,7 +456,8 @@ function baseOption(p) {
     textStyle: { fontFamily: getComputedStyle(document.body).fontFamily, color: t.ink2 },
     grid: {
       left: 4,
-      right: 26,
+      // 右侧留出端点标签专用 gutter：标签画在绘图区之外，绝不压线
+      right: p.gutterRight ?? 108,
       top: 14,
       bottom: showSlider ? 44 : 22,
       containLabel: true,

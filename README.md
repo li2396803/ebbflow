@@ -1,11 +1,17 @@
-# ETF 细分行业资金流向 · 开源版
+<p align="center"><img src="docs/logo-512.png" width="120" alt="Ebbflow logo"></p>
+
+<h1 align="center">Ebbflow</h1>
+<p align="center"><b>ETF 细分行业资金流向</b> · 沪深全市场 ETF 的份额、规模与净流入</p>
+
+> **Ebbflow** = *ebb & flow*（潮起潮落）。资金在 ETF 里流入流出，正如潮水涨落 —— 这就是项目名的由来。
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522.5-brightgreen.svg)](package.json)
-[![Daily Data](https://github.com/li2396803/etf-flow/actions/workflows/daily.yml/badge.svg)](https://github.com/li2396803/etf-flow/actions/workflows/daily.yml)
-[![站点](https://img.shields.io/badge/online-li2396803.github.io%2Fetf--flow-1f6feb.svg)](https://li2396803.github.io/etf-flow/)
+[![Daily Data](https://github.com/li2396803/ebbflow/actions/workflows/daily.yml/badge.svg)](https://github.com/li2396803/ebbflow/actions/workflows/daily.yml)
+[![站点](https://img.shields.io/badge/online-li2396803.github.io%2Febbflow-4b57d6.svg)](https://li2396803.github.io/ebbflow/)
 
 > **鸣谢｜本项目复刻自 B 站 UP 主「生炸瓜」的《ETF 细分行业资金流向》看板。**
+> 原看板：B 站 [space.bilibili.com/3546681834473583](https://space.bilibili.com/3546681834473583) ｜ GitHub [github.com/ysz-xiao](https://github.com/ysz-xiao)
 > 9 大类 / 86 个细分行业的分类体系、「份额＝成分 ETF 之和、债券 ×100」的口径、以及看板的整体形态，都源自
 > **哔哩哔哩（B站）UP 主「生炸瓜」** 的公开作品 —— 原看板的设计与制作成果归原作者所有，**没有原作就没有这个项目**。
 > 这里的代码（抓取 / 存储 / 校验 / API / 前端 / CI）是独立重写的；本站与原作者无隶属、无背书关系。
@@ -14,9 +20,9 @@
 > **免责声明｜不构成任何投资建议。** 数据来自上交所公开接口与 Tushare Pro（深市经 Tushare），可能延迟、缺失或出错；
 > 「规模」「净流入」是按单位净值折算的估算值。仅供研究与技术学习，任何人据此决策风险自负。
 >
-> **在线站点** <https://li2396803.github.io/etf-flow/> ｜ 协议 **MIT** ｜ 仓库 <https://github.com/li2396803/etf-flow> ｜ 署名与溯源详见 [`NOTICE.md`](NOTICE.md)
+> **在线站点** <https://li2396803.github.io/ebbflow/> ｜ 协议 **MIT** ｜ 作者 **dreemetoo** ｜ 仓库 <https://github.com/li2396803/ebbflow> ｜ 署名与溯源详见 [`NOTICE.md`](NOTICE.md)
 
-一句话：把「ETF 份额（资金流向）看板」搬到自己机器上 —— 每天从**上交所 + Tushare** 两处取沪深 ETF 每日份额与净值，落进本地 SQLite，重算 **86 个细分行业 / 10 个大类**的份额序列，生成本地静态站点，并提供本地 HTTP 服务随时打开看。
+一句话：把「ETF 份额（资金流向）看板」搬到自己机器上 —— 每天从**上交所 + Tushare** 两处取沪深 ETF 每日份额与净值，落进本地 SQLite，重算 **88 个细分行业 / 10 个大类**（沪深合并 1614 只 ETF）的份额序列，生成本地静态站点，并提供本地 HTTP 服务随时打开看。
 
 - 零第三方依赖（`dependencies` 为空），只要 Node.js（需要内置 `node:sqlite`）
 - 数据、库、站点、服务全在本机，不上传、不外传
@@ -65,7 +71,7 @@
 ### 其它
 - 深色 / 浅色 / 跟随系统三态主题，手动切换会记住。
 - 色盲友好配色（蓝涨橙跌）、减少动效开关。
-- 「全部 86 个小类」总表：搜索、只看净流入/净流出、按份额或金额口径、排序、CSV。
+- 「全部 88 个小类」总表：搜索、只看净流入/净流出、按份额或金额口径、排序、CSV。
 - 数据质量面板：三源交叉校验的一致率、差异天数、逐日差异样例，可下载原始 JSON。
 - 移动端：底部 tab + 全屏抽屉，图表支持双指缩放，提示文案自动切换。
 
@@ -77,8 +83,8 @@
 
 ```bash
 # ① 克隆
-git clone https://github.com/li2396803/etf-flow.git
-cd etf-flow
+git clone https://github.com/li2396803/ebbflow.git
+cd ebbflow
 
 # ② 填 token（.env 已在 .gitignore 里，不会被提交）
 cp .env.example .env
@@ -108,7 +114,7 @@ npm start        # → http://localhost:5188
 
 | 来源 | 接口 | 给的是什么 | 能回溯历史吗 | 本项目怎么用 |
 | --- | --- | --- | --- | --- |
-| **上交所** | `GET query.sse.com.cn/commonQuery.do`，`sqlId=COMMON_SSE_ZQPZ_ETFZL_XXPL_ETFGM_SEARCH_L`，参数 `STAT_DATE=YYYY-MM-DD`（字段 `TOT_VOL`，**万份**） | 该交易日**沪市全部 ETF** 的基金份额 | **能**，按日期回溯任意历史交易日；非交易日返回空（代码里当 `null` 跳过） | 主数据源：看板 773 只成分 ETF **全部是沪市代码**，日常近 15 日增量 + 可选全量回补都靠它 |
+| **上交所** | `GET query.sse.com.cn/commonQuery.do`，`sqlId=COMMON_SSE_ZQPZ_ETFZL_XXPL_ETFGM_SEARCH_L`，参数 `STAT_DATE=YYYY-MM-DD`（字段 `TOT_VOL`，**万份**） | 该交易日**沪市全部 ETF** 的基金份额 | **能**，按日期回溯任意历史交易日；非交易日返回空（代码里当 `null` 跳过） | 沪市官方口径：沪市成分 ETF（773 只）的权威来源，日常近 15 日增量 + 可选全量回补 |
 | ~~深交所~~ | 已弃用 | 官方 ShowReport 只有"最新交易日"快照、无历史 | 不能 | v3 起深市数据**统一由 Tushare 提供**（`fund_share` 可按 `ts_code` 回溯），代码中已无调用点 |
 | **Tushare Pro** | `fund_share`：`ts_code` 单只（配 `start_date`/`end_date`）或全市场（配 `trade_date`），字段 `fd_share`，**万份、4 位小数** | **沪深两市**每日份额 | **能**，可回溯（`fund_share` 一般能查到 5 年以上，具体受账号积分影响） | ① 深市历史的**唯一**可回溯来源 ② 沪市补缺 ③ 交叉校验的高精度参照 |
 
@@ -125,7 +131,9 @@ npm start        # → http://localhost:5188
 ```
 
 - 单位是**份（亿份）**，不是金额。份额变化 ≠ 资金净流入：严格说「份额变化 × 净值」才近似资金流，本项目只做份额这一层（与看板的原始口径一致）。
-- 成分股名单固定在 `lib/taxonomy.mjs`：**10 个大类 / 86 个细分行业 / 773 只 ETF**（数量由 `Object.keys(SUB).length` 等算出，不是抄来的）。
+- 成分股名单分两层：
+  - `lib/taxonomy.mjs`（`BASE_*`）：**原看板的 10 大类 / 86 细分行业 / 773 只沪市 ETF**，保持冻结，用于与原看板做回归校验。
+  - `data/universe.json` + `lib/universe.mjs`：深市 ETF 的归属（391 只按「同跟踪指数」、450 只按关键词规则、2 个新增小类），合并后是 **10 大类 / 88 细分行业 / 1614 只 ETF**（沪 773 + 深 841）。归类方法见 [`docs/CLASSIFICATION.md`](docs/CLASSIFICATION.md)。
 - **为什么债券要 ×100**：债券 ETF 面值是 100 元/份，而股票 ETF 通常 1 元/份。不折算的话债券大类的"亿份"和其他大类不可比，×100 后各列的数量级才对齐（原站就是这么做的）。
 
 ### 2.3 来源优先级
@@ -310,7 +318,7 @@ npm run reconcile -- --no-write        # 只看结果，不写库/不写文件
 ## 7. 目录结构
 
 ```
-etf-flow/
+ebbflow/
 ├── package.json            命令入口（start/update/build/backfill/reconcile/test/verify:origin），dependencies 为空
 ├── server.mjs              服务入口（默认 5188，绑定 127.0.0.1）
 ├── .env.example            TUSHARE_TOKEN 模板（真 token 放 .env，已 gitignore）
@@ -331,7 +339,8 @@ etf-flow/
 │   ├── pipeline.mjs        合并落库 → 重算 series（口径在这里）
 │   ├── payloads.mjs        派生站点载荷（meta/charts/tables/subs/index/quality）
 │   ├── build/site.mjs      构站：拷贝 web/ → site/，写 site/data/*.json
-│   ├── taxonomy.mjs        10 大类 / 86 细分行业 / 773 只 ETF 的成分与配色
+│   ├── taxonomy.mjs        原看板口径：10 大类 / 86 细分行业 / 773 只沪市 ETF（冻结）
+│   ├── universe.mjs        合并深市归属后的全市场宇宙：88 细分行业 / 1614 只 ETF
 │   ├── validate.mjs        数据校验规则（份额合法性、序列连续性、覆盖率），被测试与回补复用
 │   └── aggregate.mjs       v1 遗留聚合函数，主流程已不再使用
 ├── scripts/
@@ -361,12 +370,12 @@ etf-flow/
 
 ## 8. 已知限制（务必读）
 
-1. **深市数据来自 Tushare。** 深交所官方接口只有"最新交易日"快照、无历史，v3 起已不再调用；深市全部由 Tushare `fund_share`/`fund_nav` 提供。**注意**：86 个细分行业的 773 只成分目前全是沪市代码（`5xxxxx`），所以深市数据只体现在「全市场总览」与 ETF 明细里，不参与细分行业数值 —— 要把它纳入分类，需要扩 `lib/taxonomy.mjs` 的成分表。
+1. **深市数据来自 Tushare。** 深交所官方接口只有"最新交易日"快照、无历史，v3 起已不再调用；深市全部由 Tushare `fund_share`/`fund_nav` 提供。v3.1 起**深市 841 只 ETF 已按跟踪指数/关键词规则归入 88 个细分行业**（新增「创业板宽基」「海外宽基」两类），因此看板数值是**沪深合并口径**，会比原看板（仅沪市）明显更大。原看板口径仍冻结在 `lib/taxonomy.mjs`，`npm run verify:origin` 用沪市子集做回归校验（95,389 点 99.83% 一致）。
 2. **Tushare 需要 token 和积分权限。** `fund_share` 对积分有要求，积分不够会返回权限类错误（代码会按频率限制退避重试 4 次后放弃）。没有 token 时 `npm run update` 仍能跑，但深市历史、交叉校验和 4 位小数精度都用不上。
 3. **SQLite 库不进 git，但新克隆能直接出图。** `data/etf.db` 是本地缓存（可重建）。新克隆没有它时，`npm run build` 会**自动用仓库自带的 `data/series.json` 引导**出一个可看的站点（份额曲线齐全；成分 ETF 明细、规模/净流入需要真实数据库，此时为空）。要补齐就联网跑 `npm run update`（增量）或 `npm run backfill`（全量回补，约 20 分钟）。CI 没有 DB 缓存时同理走引导路径。
 4. **`site/data/` 不入库。** `.gitignore` 里有 `site/data/` 与 `site/charts/`，仓库自带的前端产物**没有数据文件**：直接拿去静态托管是打不开图表的，必须先跑一次 `npm run build`（或用 `daily.yml` 的缓存构建）。同理 `daily.yml` 的自动提交只在 `site/index.html` 等前端文件变化时才产生提交，见 §5.1。
 5. **主口径是"份"，金额口径是估算。** 图表与表格的 `亿份` 是 ETF 份额；份额变化 ≠ 资金净流入。小类抽屉里的 **规模(亿元)** 与 **近一周净流入(亿元)** 是用 Tushare 单位净值折算的估算值（`规模 = 份额 × 净值`，`净流入 = Δ份额 × 当日净值`），净值覆盖 96%（31 只已退市/无净值披露的成分缺失，会在抽屉里标注 `navCoverage`）。债券大类 ×100 是折算口径，跨大类比规模时注意。
-6. **深市与 Tushare 的关系**：本项目 773 只成分最终全部落在沪市（`5xxxxx`），深市快照目前不参与任何小类；Tushare 的价值在于**独立第二源 + 4 位小数精度 + 净值**，而不是补深市历史。
+6. **分类的边界**：深市 864 只里 850 只可归类（98.94%），9 只主动管理 ETF 因只披露「业绩比较基准」而非跟踪指数，暂不归属（不影响其余统计）；货币/黄金现货/商品期货/REITs 共 14 只被显式排除。争议归类（双创50→科创板宽基、港股科技→科技综合、创业板低波价值→价值策略等）记录在 [`docs/CLASSIFICATION.md`](docs/CLASSIFICATION.md)。
 7. **原站有 2 个交易日的数据是"冻结"的**：2026-08-25 与 2026-10-28，原站当日所有小类数值都与前一日完全相同（疑似抓取失败后沿用旧值）。本项目从交易所重抓，得到的是真实值，所以这两天的曲线会与原站不同 —— 这是**我们更准**，不是回归。核对方式见 `npm run verify:origin`。
 8. **`501307` 是永久空成分**：Tushare 只有 18 个季末披露、交易所交易日无数据，对「港红利股息」贡献恒为 0，保留它不影响数值。
 9. **单实例、单端口、无鉴权。** 服务只监听 `127.0.0.1`，设计给本机自用；**不要**绑到 `0.0.0.0` 或做公网映射，没有登录、没有限流。
@@ -375,7 +384,7 @@ etf-flow/
 12. **GitHub Pages 需要付费套餐。** 私有仓库开 Pages 要 Pro/Team/Enterprise；`pages.yml` 只挂了手动触发，默认不会自己跑（见 §9 的说明，或直接看工作流文件头部注释）。
 13. **前端已知妥协（v2）**：
     - 长期变化率图（c2）按**当前区间首日=100%** 展示（与原站一致：原站也是切窗口后再归一）；切到 1 年时曲线起点仍是 100%，不是"绝对涨跌"。
-    - `data/subs.json` 约 1.9MB（86 个小类各自带一份日期数组），抽屉按需懒加载，本地无明显延迟；后续可把 `dates` 提到顶层复用。
+    - `data/subs.json` 约 2MB（88 个小类各自带一份日期数组），已改为抽屉/搜索按需懒加载；后续可把 `dates` 提到顶层复用。
     - 620px 宽的抽屉里 7 列 ETF 表需要横向滚动约 50px（`border-collapse: collapse` 下 sticky 首列在 Chrome 失效）。
     - 手机窄屏 10 条线的端标可能轻微重叠（已用 `labelLayout.shiftY` 缓解）。
     - 点图例 = 打开该小类详情（不再切换显隐），只看一条线请用抽屉里的「只看这条线」。
@@ -388,11 +397,11 @@ etf-flow/
 私有仓库的 GitHub Pages 需要账号升级到 Pro/Team/Enterprise。当前状态的核对方式：
 
 ```bash
-gh api repos/li2396803/etf-flow/pages   # 404 = 还没开（也可能账号没有权限）
+gh api repos/li2396803/ebbflow/pages   # 404 = 还没开（也可能账号没有权限）
 gh api user                             # 看 plan 字段（本机实测返回 null，无法据此判断）
 ```
 
-**核对结论（本机实测）**：仓库是 `private`，`GET /repos/li2396803/etf-flow/pages` 返回 **404 Not Found**，`gh api user` 的 `plan` 为 `null`，所以**无法确认账号套餐是否支持 Pages**。因此：
+**核对结论（本机实测）**：仓库是 `private`，`GET /repos/li2396803/ebbflow/pages` 返回 **404 Not Found**，`gh api user` 的 `plan` 为 `null`，所以**无法确认账号套餐是否支持 Pages**。因此：
 
 - 没有盲目开启 Pages；
 - `pages.yml` 只写了 `workflow_dispatch`（手动），**不会**自动跑；
@@ -427,10 +436,10 @@ gh api user                             # 看 plan 字段（本机实测返回 n
 
 | 位置 | 形式 |
 | --- | --- |
-| `<head>` | `<meta name="author">` / `generator` / `etf-flow:signature` / `etf-flow:origin` |
-| HTML 注释 | `<!-- etf-flow · ... · built by li2396803 -->` |
+| `<head>` | `<meta name="author">` / `generator` / `ebbflow:signature` / `ebbflow:origin` |
+| HTML 注释 | `<!-- ebbflow · ... · built by dreemetoo -->` |
 | 结构化数据 | `application/ld+json`（`SoftwareApplication` + `isBasedOn`） |
-| DOM / 运行时 | `<html data-signature="28e8c8d6199160a1">`、`window.__ETFFLOW__`、控制台 banner |
+| DOM / 运行时 | `<html data-signature="01965be232d20323">`、`window.__ETFFLOW__`、控制台 banner |
 | 数据 / 接口 | `data/meta.json` 的 `signature` 字段；HTTP 头 `X-Project-Signature` |
 
 署名常量集中在 [`lib/signature.mjs`](lib/signature.mjs)，改一处全局生效。
@@ -495,7 +504,7 @@ gh api user                             # 看 plan 字段（本机实测返回 n
 | 测试 | `npm test`：10 个数据校验用例；`node scripts/lint.mjs`：7 项仓库自检（语法 / 密钥 / 占位符 / 产物边界 / 数据底座） |
 | 数据规模 | **1212 个交易日**（2021-11-22 ~ 2026-11-20）/ **86 个细分行业** / **773 只 ETF 成分**（9 个编号大类） |
 | 全市场总览 | 另统计沪深**全部场内 ETF（约 1953 只）** 的份额与规模，与上面的 773 只分类成分是两套口径 |
-| 公网站点 | <https://li2396803.github.io/etf-flow/>（每个工作日约 16:30 自动更新并发布） |
+| 公网站点 | <https://li2396803.github.io/ebbflow/>（每个工作日约 16:30 自动更新并发布） |
 | 数据最后更新 | 见站点页脚「数据截至 / 交易日」，或 `data/quality.json` 的 `generatedAt` |
 | 运行时 | Node.js **≥ 22.5**（内置 `node:sqlite`），零运行时依赖 |
 | 许可 | **MIT**（见 [`LICENSE`](LICENSE)；溯源与署名见 [`NOTICE.md`](NOTICE.md)） |

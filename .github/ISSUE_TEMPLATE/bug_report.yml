@@ -76,7 +76,7 @@ body:
         - 本地 npm start
         - 本地 npm run build 后静态打开
         - GitHub Actions（Fork 后）
-        - 线上站点 li2396803.github.io/etf-flow
+        - 线上站点 li2396803.github.io/ebbflow
         - 其他
     validations:
       required: true

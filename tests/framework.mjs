@@ -89,7 +89,7 @@ export function assertIncludes(arr, value, msg = "未包含期望元素") {
 
 const ms = (t) => `${t}ms`;
 
-export async function runAll({ title = "etf-flow 数据质量测试" } = {}) {
+export async function runAll({ title = "Ebbflow 数据质量测试" } = {}) {
   const t0 = Date.now();
   let passed = 0;
   let failed = 0;

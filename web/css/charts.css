@@ -377,23 +377,23 @@
   r: 2.2;
 }
 
-/* 端点标签（HTML 覆盖层，自动避让不重叠） */
+/* 端点标签：画在绘图区右侧的 gutter 里，绝不压曲线 */
 .endlabel-layer .elab {
   position: absolute;
   display: inline-flex;
   align-items: center;
   gap: 3px;
   height: 16px;
-  padding: 0 4px 0 3px;
-  border-radius: var(--r-xs);
-  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  padding: 0 3px;
+  border-radius: 3px;
+  background: transparent;
   color: var(--ink-2);
   font-size: var(--fs-3xs);
   font-variant-numeric: tabular-nums;
   line-height: 1;
   white-space: nowrap;
-  backdrop-filter: blur(2px);
-  transform: translateZ(0);
+  overflow: hidden;
+  pointer-events: none;
 }
 .endlabel-layer .elab-dot {
   width: 5px;
@@ -404,13 +404,91 @@
 }
 .endlabel-layer .elab-name {
   color: var(--ink-3);
-  max-width: 9ch;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 7.6em;
+  flex: 0 1 auto;
 }
 .endlabel-layer .elab-val {
   color: var(--ink);
   font-weight: 600;
+  flex: none;
+  margin-left: auto;
+}
+.endlabel-layer .elab-more {
+  position: absolute;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-size: var(--fs-3xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: auto;
+  z-index: 3;
+}
+.endlabel-layer .elab-more:hover {
+  background: var(--surface-hover);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+.endlabel-layer .elab-list {
+  position: absolute;
+  z-index: 6;
+  width: 188px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-3);
+  pointer-events: auto;
+  overflow: hidden;
+}
+.endlabel-layer .elab-list-head {
+  padding: 6px var(--sp-3);
+  border-bottom: 1px solid var(--line-inset);
+  background: var(--surface-2);
+  font-size: var(--fs-3xs);
+  color: var(--ink-3);
+  font-weight: 600;
+  flex: none;
+}
+.endlabel-layer .elab-list-body {
+  overflow-y: auto;
+  padding: var(--sp-1);
+}
+.endlabel-layer .elab-li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 4px var(--sp-2);
+  border-radius: var(--r-xs);
+  font-size: var(--fs-2xs);
+  color: var(--ink-2);
+  text-align: left;
+}
+.endlabel-layer .elab-li:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+.endlabel-layer .elab-li-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.endlabel-layer .elab-li-val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ink);
+  flex: none;
 }
 
 /* 图表脚注：桌面/移动提示文案切换（放在 charts.css，确保覆盖顺序正确） */

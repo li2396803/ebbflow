@@ -13,6 +13,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
 import { SIGNATURE, FINGERPRINT } from "../lib/signature.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -31,6 +32,37 @@ const MIME = {
   ".csv": "text/csv; charset=utf-8",
 };
 const CACHE_TTL = 45_000;
+const DATA_DIR = path.join(SITE, "data");
+
+/** 数据文件缓存（按 mtime 失效）：/api/* 直接复用构站产物，避免每次请求都跑同步 SQLite */
+const fileCache = new Map();
+
+async function readData(name) {
+  const f = path.join(DATA_DIR, name + ".json");
+  try {
+    const st = await fs.promises.stat(f);
+    const hit = fileCache.get(name);
+    if (hit && hit.mtimeMs === st.mtimeMs) return hit.buf;
+    const buf = await fs.promises.readFile(f);
+    fileCache.set(name, { mtimeMs: st.mtimeMs, buf });
+    return buf;
+  } catch {
+    return null;
+  }
+}
+
+async function readJson(name) {
+  const buf = await readData(name);
+  if (!buf) return null;
+  if (buf.parsed !== undefined) return buf.parsed;
+  try {
+    const obj = JSON.parse(buf.toString("utf8"));
+    buf.parsed = obj;
+    return obj;
+  } catch {
+    return null;
+  }
+}
 
 export function createApp({ port = 5188, host = "127.0.0.1", autoRefresh = true, log = console.log } = {}) {
   let db = null;
@@ -46,7 +78,8 @@ export function createApp({ port = 5188, host = "127.0.0.1", autoRefresh = true,
   async function invalidate() {
     cache = null;
   }
-  async function payloads() {
+  /** 兜底：数据文件缺失时（比如刚 clone 还没构站）才回落到动态构建 */
+  async function payloadsFallback() {
     if (cache && Date.now() - cache.at < CACHE_TTL) return cache.p;
     const { buildAllPayloads } = await import("../lib/payloads.mjs");
     const p = buildAllPayloads(await getDb(), { updatedAt: lastRefresh?.at });
@@ -59,13 +92,29 @@ export function createApp({ port = 5188, host = "127.0.0.1", autoRefresh = true,
     refreshing = true;
     const t0 = Date.now();
     try {
-      const { update } = await import("../scripts/update.mjs");
-      const r = await update({ quiet: true });
-      lastRefresh = { at: new Date().toISOString(), ms: Date.now() - t0, result: r };
+      // 用子进程跑更新：重算是最长 20s 的同步 SQLite 工作，放在主进程会卡住所有请求
+      const r = await new Promise((resolve) => {
+        const child = spawn(process.execPath, [path.join(ROOT, "scripts", "update.mjs")], {
+          cwd: ROOT,
+          env: process.env,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        let out = "";
+        child.stdout.on("data", (d) => { out += d.toString(); });
+        child.stderr.on("data", (d) => { out += d.toString(); });
+        child.on("close", (code) => {
+          const last = out.trim().split("\n").filter(Boolean).slice(-1)[0] || "";
+          resolve({ code, last, out });
+        });
+        child.on("error", (e) => resolve({ code: -1, last: String(e.message), out }));
+      });
+      if (r.code !== 0) throw new Error(r.last || `update 退出码 ${r.code}`);
+      const mark = JSON.parse(fs.readFileSync(path.join(ROOT, "data", "lastrun.json"), "utf8"));
+      lastRefresh = { at: new Date().toISOString(), ms: Date.now() - t0, result: { last: mark.lastTradeDate } };
       lastError = null;
       await invalidate();
-      log(`[refresh] ${reason} → 最新交易日 ${r.last}, ${(Date.now() - t0) / 1000}s`);
-      return r;
+      log(`[refresh] ${reason} → 最新交易日 ${mark.lastTradeDate}, ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+      return { last: mark.lastTradeDate };
     } catch (e) {
       lastError = String(e?.message || e);
       log(`[refresh] 失败：${lastError}`);
@@ -98,6 +147,11 @@ export function createApp({ port = 5188, host = "127.0.0.1", autoRefresh = true,
     "X-Project-Author": SIGNATURE.author,
     "X-Project-Signature": FINGERPRINT,
   };
+  const sendRaw = (res, code, buf) => {
+    res.writeHead(code, { ...baseHeaders, "Content-Type": MIME[".json"], "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
+    res.end(buf);
+  };
+
   const json = (res, code, obj) => {
     res.writeHead(code, { ...baseHeaders, "Content-Type": MIME[".json"], "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
     res.end(JSON.stringify(obj));
@@ -114,19 +168,48 @@ export function createApp({ port = 5188, host = "127.0.0.1", autoRefresh = true,
         const r = await refresh(req.method === "POST" ? "手动" : "page");
         return json(res, 200, r);
       }
-      if (p === "/api/meta") return json(res, 200, (await payloads()).meta);
-      if (p === "/api/tables") return json(res, 200, (await payloads()).tables);
-      if (p === "/api/subs") return json(res, 200, (await payloads()).subs);
-      if (p === "/api/index") return json(res, 200, (await payloads()).index);
-      if (p === "/api/quality") return json(res, 200, (await payloads()).quality);
+      // 数据端点：优先直接读构站产物（零计算、按 mtime 缓存），缺失时才回落到动态构建
+      if (p === "/api/meta") {
+        const b = await readData("meta");
+        if (b) return sendRaw(res, 200, b);
+        return json(res, 200, (await payloadsFallback()).meta);
+      }
+      if (p === "/api/tables") {
+        const b = await readData("tables");
+        if (b) return sendRaw(res, 200, b);
+        return json(res, 200, (await payloadsFallback()).tables);
+      }
+      if (p === "/api/market") {
+        const b = await readData("market");
+        if (b) return sendRaw(res, 200, b);
+        const m = (await payloadsFallback()).market;
+        return m ? json(res, 200, m) : json(res, 404, { error: "market not ready" });
+      }
+      if (p === "/api/subs") {
+        const b = await readData("subs");
+        if (b) return sendRaw(res, 200, b);
+        return json(res, 200, (await payloadsFallback()).subs);
+      }
+      if (p === "/api/index") {
+        const b = await readData("index");
+        if (b) return sendRaw(res, 200, b);
+        return json(res, 200, (await payloadsFallback()).index);
+      }
+      if (p === "/api/quality") {
+        const b = await readData("quality");
+        if (b) return sendRaw(res, 200, b);
+        return json(res, 200, (await payloadsFallback()).quality);
+      }
       if (p.startsWith("/api/sub/")) {
         const name = decodeURIComponent(p.slice("/api/sub/".length));
-        const subs = (await payloads()).subs;
-        return subs[name] ? json(res, 200, { name, ...subs[name] }) : json(res, 404, { error: "no such sub", name });
+        const subs = (await readJson("subs")) ?? (await payloadsFallback()).subs;
+        return subs && subs[name] ? json(res, 200, { name, ...subs[name] }) : json(res, 404, { error: "no such sub", name });
       }
       if (p.startsWith("/api/charts/")) {
         const key = decodeURIComponent(p.slice("/api/charts/".length));
-        const charts = (await payloads()).charts;
+        const b = await readData(`charts-${key}`);
+        if (b) return sendRaw(res, 200, b);
+        const charts = (await payloadsFallback()).charts;
         if (!charts[key]) return json(res, 404, { error: "no such category", key, available: Object.keys(charts) });
         return json(res, 200, charts[key]);
       }

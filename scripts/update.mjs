@@ -5,12 +5,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import { openDb, putShares, recordRun, metaSet, metaGet, dbStats, tradingDates } from "../lib/db.mjs";
-import { SUB, CATS } from "../lib/taxonomy.mjs";
 import { fetchSseDay, candidateDates, mapLimit } from "../lib/sources.mjs";
 import { shareOnDate, navOnDate, hasToken, bindBudget, callStats } from "../lib/tushare.mjs";
 import { rebuild, refreshFunds, exportSeriesJson, ingestExchangeRange, ingestTushareRange, ingestTushareNav, etfCodes } from "../lib/pipeline.mjs";
 import { putNav } from "../lib/db.mjs";
 import { buildSite } from "../lib/build/site.mjs";
+import { loadUniverse } from "../lib/universe.mjs";
+
+const UNIVERSE = loadUniverse();
+const SUB = UNIVERSE.SUB;
+const CATS = UNIVERSE.CATS;
 
 const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname));
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);

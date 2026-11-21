@@ -5,7 +5,7 @@ import path from "node:path";
 import { openDb } from "../lib/db.mjs";
 import { ALL_CODES, SUB } from "../lib/taxonomy.mjs";
 
-const TMP_BASE = path.join(os.tmpdir(), "etf-flow-tests");
+const TMP_BASE = path.join(os.tmpdir(), "ebbflow-tests");
 
 /** 建一个临时 DB（不碰 data/etf.db），返回 {db, file, cleanup} */
 export function tmpDb(tag = "t") {

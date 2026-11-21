@@ -48,6 +48,8 @@ const app = {
   subsByCat: new Map(),
   pinyin: new Map(),
   stats: null,
+  subsReady: false,
+  indexReady: false,
   chartData: new Map(),
   pinyinOf: (name) => app.pinyin.get(name) || "",
   onMarketRender: (p) => chart.renderMarket(p),
@@ -65,23 +67,32 @@ const FALLBACK_CAT_COLORS = ["#D16F3F", "#D13F70", "#3F70D1", "#D1D03F", "#D03FD
    身份标识（隐性署名）：读 <meta> 注入的签名，挂到 window 并打控制台 banner
    ========================================================================== */
 function stampIdentity() {
-  const q = (n) => document.querySelector(`meta[name="${n}"]`)?.getAttribute("content") || "";
+  const q = (...names) => {
+    for (const n of names) {
+      const v = document.querySelector(`meta[name="${n}"]`)?.getAttribute("content");
+      if (v) return v;
+    }
+    return "";
+  };
   const id = {
-    project: "etf-flow",
+    project: "ebbflow",
     author: q("author"),
     generator: q("generator"),
-    fingerprint: q("etf-flow:signature"),
-    license: q("etf-flow:license"),
-    origin: q("etf-flow:origin"),
-    repo: "https://github.com/li2396803/etf-flow",
+    // 新键名 ebbflow:*，旧数据包回退到 etf-flow:*
+    fingerprint: q("ebbflow:signature", "etf-flow:signature"),
+    license: q("ebbflow:license", "etf-flow:license"),
+    origin: q("ebbflow:origin", "etf-flow:origin"),
+    originBilibili: q("ebbflow:origin-bilibili"),
+    originGithub: q("ebbflow:origin-github"),
+    repo: "https://github.com/li2396803/ebbflow",
   };
   window.__ETFFLOW__ = id;
-  document.documentElement.setAttribute("data-signature", id.fingerprint || "etf-flow");
+  document.documentElement.setAttribute("data-signature", id.fingerprint || "ebbflow");
   if (id.fingerprint) {
     try {
-      const ver = (id.generator.match(/etf-flow\/([\d.]+)/) || [])[1] || "";
+      const ver = (id.generator.match(/(?:ebbflow|etf-flow)\/([\d.]+)/) || [])[1] || "";
       console.log(
-        `%c${id.project}%c v${ver} · by ${id.author} · ${id.license}`,
+        `%cEbbflow%c v${ver} · by ${id.author} · ${id.license}`,
         "background:#4b57d6;color:#fff;padding:2px 6px;border-radius:4px;font-weight:700",
         "color:#8b949e"
       );
@@ -244,9 +255,7 @@ function setDataBadge(mode, text) {
 
 function applyMeta() {
   const m = app.meta || {};
-  document.title = m.title || "ETF 细分行业资金流向";
-  const bs = document.getElementById("brandSub");
-  if (bs && m.counts) bs.textContent = `${m.counts.subs} 小类 · ${m.counts.etfs} ETF`;
+  document.title = `Ebbflow · ${m.title || "ETF 细分行业资金流向"}`;
   fillFoot();
   const rf = document.getElementById("railFoot");
   if (rf) {
@@ -362,6 +371,78 @@ function recomputeStats() {
 }
 
 /* ==========================================================================
+   懒加载：subs.json（~1.9MB）/ index.json（~86KB）
+   --------------------------------------------------------------------------
+   首屏只拉 meta + market + 当前大类 charts；这两份数据在需要时才加载：
+   · 抽屉（成分 ETF）/ 搜索（索引）/ 全部小类（区间统计）/ 大类明细表
+   · 首屏渲染完成后，空闲时再补一份，让总览的卡片与排行自然补齐
+   加载期间各视图给轻量占位（骨架），不阻塞任何交互。
+   ========================================================================== */
+let subsPromise = null;
+let indexPromise = null;
+
+/** @returns {Promise<object|null>} subs.json 内容 */
+export function ensureSubs() {
+  if (app.subs) return Promise.resolve(app.subs);
+  if (subsPromise) return subsPromise;
+  subsPromise = api
+    .load("subs")
+    .then((data) => {
+      app.subs = data;
+      app.subsReady = true;
+      buildCatalog();
+      recomputeStats();
+      app.flowOf = flowOf;
+      app.catFlowOf = catFlowOf;
+      afterSubsReady();
+      return data;
+    })
+    .catch((e) => {
+      subsPromise = null;
+      toast("成分数据加载失败，请检查 data/subs.json", "error", 3600);
+      throw e;
+    });
+  return subsPromise;
+}
+
+/** @returns {Promise<object|null>} index.json 内容（搜索索引） */
+export function ensureIndex() {
+  if (app.index) return Promise.resolve(app.index);
+  if (indexPromise) return indexPromise;
+  indexPromise = api
+    .load("index")
+    .then((data) => {
+      app.index = data;
+      app.indexReady = true;
+      // 索引里带 pinyin + 大类标签，顺手补一份小类→大类映射
+      app.pinyin = new Map();
+      for (const s of data?.subs || []) if (s.name && s.pinyin) app.pinyin.set(s.name, String(s.pinyin).toLowerCase());
+      if (!app.cats.length && Array.isArray(data?.subs)) {
+        const seen = new Map();
+        for (const s of data.subs) if (!seen.has(s.cat)) seen.set(s.cat, { key: s.cat, label: s.label || s.cat, color: null });
+        app.cats = Array.from(seen.values());
+        app.catMap = new Map(app.cats.map((c) => [c.key, c]));
+      }
+      return data;
+    })
+    .catch((e) => {
+      indexPromise = null;
+      throw e;
+    });
+  return indexPromise;
+}
+
+/** subs 到位后：补齐所有依赖区间统计的区块（并触发图表预取） */
+function afterSubsReady() {
+  if (state.view === "cat" && state.cat) {
+    renderCatChart(state.cat, { silent: true });
+  }
+  if (!marketReady) ensureMarketChart().then(() => chart.repaintAll());
+  renderView({ chart: state.view === "cat" });
+  scheduleChartPrefetch();
+}
+
+/* ==========================================================================
    日历（交易日轴）
    ========================================================================== */
 async function ensureCalendar() {
@@ -422,8 +503,10 @@ function renderView({ chart: withChart = true } = {}) {
   } else if (state.view === "cat") {
     if (!state.cat && app.cats.length) state.cat = app.cats[0].key;
     views.renderCategory(app, { chart: withChart });
+    ensureSubs().catch(() => {});
   } else {
     views.renderWatch(app);
+    ensureSubs().catch(() => {});
   }
   views.renderCatNav(app);
   views.syncNavActive(app);
@@ -489,6 +572,7 @@ async function ensureMarketChart() {
     return;
   }
   await chart.initMarket(el);
+  performance.mark("ebbflow:market-init");
   marketReady = true;
   document.getElementById("mktLoading")?.remove();
 }
@@ -653,7 +737,8 @@ function buildChartPayload(payload, catKey) {
     })
     .filter(Boolean)
     .sort((m, n) => Math.abs(n.value) - Math.abs(m.value))
-    .slice(0, state.log && !compare.length ? 10 : 6);
+    // 全部交给 chart.js：竖直放得下就全画，放不下再按 |值| 保留 6 条 + 「查看全部」
+    .slice(0, 12);
 
   return {
     dates,
@@ -668,6 +753,7 @@ function buildChartPayload(payload, catKey) {
     footNote,
     endLabels,
     endLabelDigits: metric === "pct" || compare.length ? 1 : 0,
+    gutterRight: isDesktop() ? 124 : 10,
     zoom: [a, b],
     metric,
     catKey,
@@ -950,6 +1036,13 @@ function searchProvider(q, mode) {
 }
 
 function openSearch(mode = "search") {
+  if (!app.indexReady) {
+    toast("正在加载搜索索引…", "info", 1200);
+    ensureIndex()
+      .then(() => openSearch(mode))
+      .catch(() => toast("搜索索引加载失败，请检查 data/index.json", "error", 3200));
+    return;
+  }
   if (!palette) {
     palette = ui.createPalette({});
   }
@@ -1184,30 +1277,50 @@ function chartsAllLoaded() {
 }
 
 function scheduleChartPrefetch() {
-  if (prefetchStarted) return;
+  if (prefetchStarted || !app.subsReady) return;
   prefetchStarted = true;
   const conn = navigator.connection;
   if (conn?.saveData || /(^|-)2g$/.test(conn?.effectiveType || "")) return;
   const run = async () => {
-    const keys = api.catKeys().filter((k) => !app.chartData.has(k));
+    const queue = api.catKeys().filter((k) => !app.chartData.has(k));
     let done = 0;
-    for (const k of keys) {
-      try {
-        app.chartData.set(k, await api.load(`charts:${k}`));
-      } catch (e) {
-        /* 单个失败不影响其它 */
+    const worker = async () => {
+      while (queue.length) {
+        const k = queue.shift();
+        try {
+          app.chartData.set(k, await api.load(`charts:${k}`));
+        } catch (e) {
+          /* 单个失败不影响其它 */
+        }
+        done += 1;
+        if (done % 2 === 0 && state.view === "overview") views.renderOverviewWatch(app);
       }
-      done += 1;
-      if (done % 3 === 0 && state.view === "overview" && app.stats) views.renderOverviewWatch(app);
-    }
+    };
+    // 限并发 2：不抢首屏与交互的带宽
+    await Promise.all([worker(), worker()]);
     if (chartsAllLoaded()) {
       app.flowComplete = true;
       if (state.view === "overview") views.renderOverview(app);
       else if (state.view === "cat") views.renderCategory(app, { chart: true });
     }
   };
-  if ("requestIdleCallback" in window) window.requestIdleCallback(run, { timeout: 3000 });
-  else setTimeout(run, 1200);
+  if ("requestIdleCallback" in window) window.requestIdleCallback(run, { timeout: 4000 });
+  else setTimeout(run, 1500);
+}
+
+/** 首屏图表画完之后，再补 subs/index（不占首屏带宽） */
+function scheduleDeferredData() {
+  const run = async () => {
+    performance.mark("ebbflow:deferred-start");
+    try {
+      await ensureIndex();
+    } catch (e) {}
+    try {
+      await ensureSubs();
+    } catch (e) {}
+  };
+  const idle = () => ("requestIdleCallback" in window ? window.requestIdleCallback(run, { timeout: 2500 }) : setTimeout(run, 800));
+  idle();
 }
 
 /* ==========================================================================
@@ -1445,6 +1558,12 @@ function wireEvents() {
     }
   });
 
+  // 端点标签「查看全部」→ 打开该小类明细抽屉
+  document.addEventListener("etf:pick-series", (e) => {
+    const name = e.detail?.name;
+    if (name) openDetail(name);
+  });
+
   // 键盘
   document.addEventListener("keydown", (e) => {
     const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "");
@@ -1540,49 +1659,41 @@ async function boot() {
   wireEvents();
 
   try {
-    const meta = await api.load("meta");
-    app.meta = meta;
+    app.meta = await api.load("meta");
   } catch (e) {
     fatal(e);
     return;
   }
 
-  try {
-    app.tables = await api.load("tables").catch(() => null);
-    // 大类清单以 index 为准（10 个）；tables.cats 会合并 7_消费 / 7_医药
-    const idx = await api.load("index").catch(() => null);
-    app.index = idx;
-    const metaCats = Array.isArray(app.meta?.categories) ? app.meta.categories : [];
-    const keys = metaCats.length
-      ? metaCats.map((c) => c.key)
-      : idx?.subs?.length
-        ? Array.from(new Set(idx.subs.map((x) => x.cat)))
-        : (app.tables?.cats || []).map((c) => c.key).filter((k) => !k.includes("&"));
-    api.rememberCatKeys(keys);
+  // 大类清单只依赖 meta.categories（10 项，与 charts 文件名一一对应）
+  const metaCats = Array.isArray(app.meta.categories) ? app.meta.categories : [];
+  if (metaCats.length) {
+    app.cats = metaCats.map((c) => ({ key: c.key, label: c.label || c.key, color: c.color || null, subs: c.subs }));
+    app.catMap = new Map(app.cats.map((c) => [c.key, c]));
+  }
+  api.rememberCatKeys(metaCats.map((c) => c.key));
+  applyMeta();
 
-    await ensureCalendar();
+  try {
+    // 首屏关键路径：market（KPI + 走势 + 交易日轴）＋ 当前大类的 charts（若直接进入大类视图）
+    const wantCat = state.view === "cat" && state.cat;
+    const [market, firstChart] = await Promise.all([
+      api.load("market").catch(() => null),
+      wantCat ? api.load(`charts:${state.cat}`).catch(() => null) : Promise.resolve(null),
+    ]);
+    app.market = market;
+    if (firstChart && state.cat) app.chartData.set(state.cat, firstChart);
+    if (!app.cats.length) await ensureIndex().catch(() => null);
+    const cal = market?.dates || firstChart?.dates || [];
+    if (cal.length > 2) setCalendar(cal);
     if (!state.calendar.length) {
-      fatal(new Error("无法确定交易日轴（缺少 market.json / charts / subs.dates）"));
+      fatal(new Error("无法确定交易日轴（缺少 market.json / charts）"));
       return;
     }
 
-    const [subs, index] = await Promise.all([
-      api.load("subs"),
-      app.index ? Promise.resolve(app.index) : api.load("index").catch(() => null),
-    ]);
-    app.subs = subs;
-    app.index = index;
-    buildCatalog();
     recomputeStats();
-    app.flowOf = flowOf;
-    app.catFlowOf = catFlowOf;
-    app.ready = true;
-
-    applyMeta();
-    // 数据源徽标：以实际命中的加载通道为准
-    setDataBadge(api.net.mode === "live" ? "live" : "static", api.net.mode === "live" ? "本地服务" : "静态数据");
-
     initDetail(app, {
+      ensureSubs,
       onToggleWatch: (name) => {
         toggleWatch(name);
         views.renderCatNav(app);
@@ -1599,13 +1710,16 @@ async function boot() {
         }
       },
     });
-    initAllSubs(app);
+    initAllSubs(app, { ensureSubs });
     initQuality(app);
 
+    setDataBadge(api.net.mode === "live" ? "live" : "static", api.net.mode === "live" ? "本地服务" : "静态数据");
     renderView();
     views.syncNavActive(app);
+    fillPlaceholders();
+    syncCompareUI();
+    syncLogUI();
 
-    // 本地服务能力探测（决定刷新按钮）
     api.probeService().then((has) => {
       const btn = document.getElementById("btnRefresh");
       if (!btn) return;
@@ -1617,16 +1731,16 @@ async function boot() {
         : "静态托管模式无法刷新：需要本地服务 127.0.0.1:5188（npm run dev）；数据文件由构建产出";
     });
 
-    // 抽屉深链：?sub=半导体芯片
-    if (state.sub) {
-      setTimeout(() => openDetail(state.sub), 200);
-    }
-    syncCompareUI();
-    fillPlaceholders();
-    scheduleChartPrefetch();
+    if (state.sub) setTimeout(() => openDetail(state.sub), 200);
 
     document.documentElement.setAttribute("data-ready", "1");
     document.body.classList.remove("is-loading");
+
+    // 首屏图表出现后再补 subs/index，避免和 echarts 抢带宽
+    ensureMarketChart()
+      .then(() => chart.repaintAll())
+      .catch(() => {})
+      .finally(() => scheduleDeferredData());
   } catch (e) {
     fatal(e);
   }
@@ -1635,49 +1749,43 @@ async function boot() {
 /** 页脚占位符兜底：构建时会被 lib/signature.mjs 替换；直接访问 web/ 时用运行时数据填上 */
 async function fillPlaceholders() {
   const foot = document.getElementById("foot");
-  if (!foot) return;
-  const walk = () => {
-    let changed = false;
-    const map = {
-      __REPO__: app.meta?.repo || "",
-      __AUTHOR_URL__: app.meta?.repo || "",
-      __AUTHOR__: app.meta?.author || "",
-      __LICENSE__: app.meta?.license || "MIT",
-      __VERSION__: app.version || "",
-      __YEAR__: String(new Date().getFullYear()),
-    };
-    const tw = document.createTreeWalker(foot, NodeFilter.SHOW_TEXT);
-    const nodes = [];
-    while (tw.nextNode()) nodes.push(tw.currentNode);
-    for (const n of nodes) {
-      let v = n.nodeValue;
-      if (!/__[A-Z_]+__/.test(v)) continue;
-      for (const [k, rep] of Object.entries(map)) if (v.includes(k)) { v = v.split(k).join(rep); changed = true; }
-      n.nodeValue = v;
-    }
-    foot.querySelectorAll("[href],[title]").forEach((a) => {
-      for (const attr of ["href", "title"]) {
-        const val = a.getAttribute(attr);
-        if (!val || !/__[A-Z_]+__/.test(val)) continue;
-        let v = val;
-        for (const [k, rep] of Object.entries(map)) if (v.includes(k)) { v = v.split(k).join(rep); changed = true; }
-        a.setAttribute(attr, v);
-      }
-    });
-    return changed;
-  };
-  if (!foot.innerHTML.includes("__")) return;
+  if (!foot || !foot.innerHTML.includes("__")) return;
   try {
     const sig = await api.load("signature");
     app.version = sig?.version || "";
   } catch (e) {
     /* signature.json 不是必须的 */
   }
-  walk();
+  const map = {
+    __REPO__: app.meta?.repo || "",
+    __AUTHOR_URL__: app.meta?.authorUrl || app.meta?.repo || "",
+    __AUTHOR__: app.meta?.author || "",
+    __LICENSE__: app.meta?.license || "MIT",
+    __VERSION__: app.version || "",
+    __YEAR__: String(new Date().getFullYear()),
+  };
+  const tw = document.createTreeWalker(foot, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (tw.nextNode()) nodes.push(tw.currentNode);
+  for (const n of nodes) {
+    let v = n.nodeValue;
+    if (!/__[A-Z_]+__/.test(v)) continue;
+    for (const [k, rep] of Object.entries(map)) if (v.includes(k)) v = v.split(k).join(rep);
+    n.nodeValue = v;
+  }
+  foot.querySelectorAll("[href],[title]").forEach((a) => {
+    for (const attr of ["href", "title"]) {
+      const val = a.getAttribute(attr);
+      if (!val || !/__[A-Z_]+__/.test(val)) continue;
+      let v = val;
+      for (const [k, rep] of Object.entries(map)) if (v.includes(k)) v = v.split(k).join(rep);
+      a.setAttribute(attr, v);
+    }
+  });
 }
 
 function fatal(err) {
-  console.error("[etf-flow]", err);
+  console.error("[ebbflow]", err);
   setDataBadge("error", "加载失败");
   const main = document.getElementById("main");
   if (!main) return;

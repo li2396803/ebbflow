@@ -12,18 +12,20 @@
 | --- | --- |
 | 作品 | 《ETF 细分行业资金流向》看板 |
 | 作者 | 哔哩哔哩（B站）UP 主 **「生炸瓜」** |
-| 本项目的继承部分 | 9 大类 / 86 个细分行业的**分类体系**；「细分行业份额 = 成分 ETF 份额之和」「债券大类 ×100」的**指标口径**；看板的整体形态、信息层级与配色布局 |
+| 原看板主页 | B 站：<https://space.bilibili.com/3546681834473583> ｜ GitHub：<https://github.com/ysz-xiao> |
+| 本项目的继承部分 | 9 大类 / 86 个细分行业的**分类体系**（本项目在此基础上把深市 841 只 ETF 并入，新增 2 个小类，见 `docs/CLASSIFICATION.md`）；「细分行业份额 = 成分 ETF 份额之和」「债券大类 ×100」的**指标口径**；看板的整体形态、信息层级与配色布局 |
 | 本项目的独立部分 | 全部代码：三源抓取（上交所 / 深交所 / Tushare）、SQLite 存储、校验与回归测试、HTTP API、前端重写（搜索 / 钻取抽屉 / 排行 / 导出 / 暗色 / 响应式）、CI 与文档 |
 
 **声明**：原看板的界面设计、视觉稿与制作成果归原作者所有。本项目不含原作者的源代码分发；页面上的「鸣谢」区块与 `<head>` 中的 `isBasedOn` 结构化数据是对原作者的公开致谢与溯源。原作者与本项目无从属、背书或合作关系。
 
-> 如果你喜欢这个看板，请先去 B 站关注并支持原作者「生炸瓜」。
+> 如果你喜欢这个看板，请先去 B 站关注并支持原作者「生炸瓜」：<https://space.bilibili.com/3546681834473583>；他的 GitHub 是 <https://github.com/ysz-xiao>。
 
 ## 2. 本项目
 
-- 名称：`etf-flow` · ETF 细分行业资金流向
-- 作者 / 维护者：**li2396803**（<https://github.com/li2396803>）
-- 仓库：<https://github.com/li2396803/etf-flow>
+- 名称：**Ebbflow**（ebb & flow，潮起潮落）· ETF 细分行业资金流向
+- 作者 / 维护者：**dreemetoo**（GitHub：<https://github.com/li2396803>）
+- 仓库：<https://github.com/li2396803/ebbflow>
+- 在线站点：<https://li2396803.github.io/ebbflow/>
 - 协议：[MIT](./LICENSE)
 
 ### 隐性作者标识（用于溯源与识别副本）
@@ -40,7 +42,7 @@
 | 数据载荷 | `site/data/meta.json` 与 `data/signature.json` 的 `author`、`repo`、`signature` 字段 |
 | HTTP 响应头 | `X-Powered-By`、`X-Project-Author`、`X-Project-Signature` |
 
-指纹 `28e8c8d6199160a1` = `sha256("etf-flow:li2396803:https://github.com/li2396803/etf-flow")` 的前 16 位十六进制，稳定不随构建变化。署名常量集中在 [`lib/signature.mjs`](./lib/signature.mjs)，改一处即可全局生效。
+指纹 `01965be232d20323` = `sha256("ebbflow:dreemetoo:https://github.com/li2396803/ebbflow")` 的前 16 位十六进制，稳定不随构建变化。署名常量集中在 [`lib/signature.mjs`](./lib/signature.mjs)，改一处即可全局生效。
 
 ## 3. 再分发
 

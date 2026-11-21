@@ -53,7 +53,7 @@
 
 ## 如何报告
 
-**首选：开一个 Issue。** 仓库地址 <https://github.com/li2396803/etf-flow/issues>，
+**首选：开一个 Issue。** 仓库地址 <https://github.com/li2396803/ebbflow/issues>，
 标题以 `[CoC]` 开头，写明发生了什么、涉及哪些链接或截图（能公开的部分）。
 
 - 如果内容涉及他人隐私、人身安全，或你不希望在公开 Issue 里留下记录，
