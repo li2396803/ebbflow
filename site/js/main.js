@@ -556,6 +556,14 @@ export function ensureIndex() {
 /** subs 到位后：补齐所有依赖区间统计的区块（并触发图表预取） */
 function afterSubsReady() {
   buildEtfTagIndex();
+  // URL 里可能带不存在的小类：对比项按 subs 收敛，避免图例/按钮计数与曲线数不一致
+  if (state.compare.length) {
+    const valid = state.compare.filter((n) => app.subs?.[n]);
+    if (valid.length !== state.compare.length) {
+      state.compare = valid;
+      writeURL({ replace: true });
+    }
+  }
   if (state.view === "cat" && state.cat) {
     renderCatChart(state.cat, { silent: true });
   }
