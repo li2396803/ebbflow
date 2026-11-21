@@ -1,24 +1,14 @@
-# 可选：把 site/ 发布到 GitHub Pages（默认不自动跑，只支持手动触发）
+# 手动把站点发布到 GitHub Pages
 #
-# 为什么默认不启用：
-#   · 本仓库是 private，GitHub Pages 对私有仓库只对 Pro / Team / Enterprise 开放；
-#     免费账号在这个仓库上是开不了 Pages 的（Settings → Pages 会提示升级）。
-#   · 上线前请先确认账号套餐与仓库可见性，再去 Settings → Pages 把 Source 设成 "GitHub Actions"。
-#     用 `gh api repos/li2396803/etf-flow/pages` 查当前是否已开启（404 = 没开）。
+# 日常发布不需要这个工作流：daily.yml 每天构建完会直接部署（needs: update → deploy）。
+# 这里用于「改了前端 / 想立刻重发一次」的场景：Actions → Deploy site to GitHub Pages → Run workflow。
 #
-# 因为只挂了 workflow_dispatch，就算这个文件被提交进仓库也不会自己跑起来。
-# 等账号支持了，把下面注释掉的 push 触发器打开即可变成"数据更新后自动发布"。
+# 站点地址：https://li2396803.github.io/etf-flow/
+# 前提：Settings → Pages → Source = GitHub Actions（仓库已配置）
 name: Deploy site to GitHub Pages
 
 on:
   workflow_dispatch:
-
-  # 数据更新后自动发布时，取消下面的注释（并把 daily 的推送当作触发源）
-  # push:
-  #   branches:
-  #     - master
-  #   paths:
-  #     - "site/**"
 
 permissions:
   contents: read
@@ -30,55 +20,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
-    name: 发布 site/ 到 Pages
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
     steps:
-      - name: 前置说明
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 确认 node:sqlite 可用
+        run: node -e "require('node:sqlite'); console.log('node:sqlite OK', process.version)"
+
+      # 有缓存就用完整库；没有缓存时 npm run build 会用仓库里的 data/series.json 冷启动出图
+      - name: 恢复 SQLite 缓存（尽力而为）
+        uses: actions/cache/restore@v4
+        with:
+          path: data/etf.db
+          key: etf-db-none-${{ github.run_id }}
+          restore-keys: |
+            etf-db-
+
+      - name: 构建站点
+        env:
+          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+        run: npm run build
+
+      - name: 检查产物
         run: |
-          echo "私有仓库启用 Pages 需要 Pro/Team/Enterprise 套餐。"
-          echo "若本仓库没开 Pages，下一步 configure-pages 会明确报错，属预期行为。"
+          test -f site/index.html || (echo "::error::缺少 site/index.html"; exit 1)
+          test -f site/data/meta.json || (echo "::error::缺少 site/data/meta.json"; exit 1)
+          grep -q "__SIGNATURE__" site/index.html && (echo "::error::签名占位符未替换"; exit 1) || true
+          echo "站点文件数：$(find site -type f | wc -l)"
 
-      - name: 检出代码
-        uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
 
-      # site/data/ 在 .gitignore 里（构建产物不入库），所以只靠 checkout 拿不到数据。
-      # 先在本地 `npm run build` 跑一次、确认 site/data/ 有内容，再手动触发本工作流；
-      # 想在 CI 里自己构建，把下面这段的注释去掉（需要 daily.yml 存下来的 DB 缓存）：
-      #
-      # - uses: actions/setup-node@v4
-      #   with:
-      #     node-version: "22"
-      # - uses: actions/cache/restore@v4
-      #   with:
-      #     path: data/etf.db
-      #     key: etf-db-${{ github.run_id }}
-      #     restore-keys: |
-      #       etf-db-
-      # - run: npm install --no-audit --no-fund --package-lock=false && npm run build
-
-      - name: 校验 site/ 产物
-        run: |
-          test -f site/index.html || { echo "::error::缺少 site/index.html，先跑 npm run build"; exit 1; }
-          if [ ! -f site/data/meta.json ]; then
-            echo "::error::缺少 site/data/meta.json —— site/data/ 是不入库的构建产物，请先本地 npm run build 并把 site/data/ 一并上传（或把工作流里的构建步骤打开）"
-            exit 1
-          fi
-          node -e 'const m=require("./site/data/meta.json"); if(!m.lastTradeDate){console.error("lastTradeDate 为空");process.exit(1)} console.log("lastTradeDate =", m.lastTradeDate)'
-
-      - name: 配置 Pages
-        uses: actions/configure-pages@v5
-
-      - name: 打包 site/
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
-      - name: 发布
-        id: deployment
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
         uses: actions/deploy-pages@v4

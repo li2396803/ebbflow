@@ -19,12 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-关于"复刻来源"的说明（不属于 MIT 授权范围，但请务必一同保留）：
-
-本项目的分类体系（9 大类 / 86 个细分行业）、指标口径（细分行业份额 = 成分 ETF
-份额之和；债券大类 ×100）与看板形态，源自哔哩哔哩（B站）UP 主「生炸瓜」公开的
-《ETF 细分行业资金流向》看板。原看板的设计与制作成果归原作者所有，本项目在此
-郑重致谢，并不主张对原作设计/数据的任何权利。详见 NOTICE.md。

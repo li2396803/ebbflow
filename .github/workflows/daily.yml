@@ -25,6 +25,8 @@ on:
 # 自动提交需要写权限
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 # 同一时刻只跑一个更新，避免两个 run 抢同一份缓存/同一次提交
 concurrency:
@@ -182,6 +184,17 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+      # 公开站点：直接用这次刚构建好的 site/ 发布到 GitHub Pages（无需二次构建）
+      - name: 配置 Pages
+        if: success() && github.ref == 'refs/heads/master'
+        uses: actions/configure-pages@v5
+
+      - name: 上传 Pages 产物
+        if: success() && github.ref == 'refs/heads/master'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
       - name: 保存 SQLite 缓存
         if: success() && github.ref == 'refs/heads/master'
         uses: actions/cache/save@v4
@@ -197,3 +210,15 @@ jobs:
           path: ${{ runner.temp }}/update.log
           if-no-files-found: ignore
           retention-days: 7
+
+  deploy:
+    needs: update
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 发布到 GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
