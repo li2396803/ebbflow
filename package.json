@@ -19,14 +19,21 @@
     "classify": "node scripts/classify.mjs --v2",
     "tag": "node scripts/tag-v2.mjs",
     "palette": "node scripts/palette-v2.mjs",
-    "quotes": "node scripts/backfill-quotes.mjs"
+    "quotes": "node scripts/backfill-quotes.mjs",
+    "build:web": "vite build",
+    "typecheck": "tsc -p jsconfig.json"
   },
-  "dependencies": {},
-  "devDependencies": {},
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  },
   "author": "dreemetoo <https://github.com/li2396803>",
   "homepage": "https://li2396803.github.io/ebbflow/",
   "repository": {
     "type": "git",
     "url": "https://github.com/li2396803/ebbflow.git"
+  },
+  "dependencies": {
+    "echarts": "^5.5.0"
   }
 }

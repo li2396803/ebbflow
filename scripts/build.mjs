@@ -3,9 +3,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import { openDb, dbStats, putSeries, metaSet } from "../lib/db.mjs";
+import { execFileSync } from "node:child_process";
 import { buildSite } from "../lib/build/site.mjs";
 
 const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname));
+// 前端构建：把 web/ 打成带哈希的产物（SKIP_VITE=1 可跳过，只重建数据）
+if (process.env.SKIP_VITE !== "1") {
+  try {
+    execFileSync("npx", ["vite", "build", "--logLevel", "warn"], { stdio: "inherit" });
+  } catch (e) {
+    console.error("前端构建失败，回退到 web/ 源码目录继续构站");
+  }
+}
+
 const db = openDb();
 let s = dbStats(db);
 

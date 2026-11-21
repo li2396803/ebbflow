@@ -11,47 +11,49 @@
 
 import { axisNum, cnum, esc, fmtPct, isDesktop, prefersReducedMotion, toneColor, throttleRAF } from "./util.js";
 
+let echartsMod = null;
 let echartsReady = null;
+
 /**
- * 按需加载 echarts（约 1MB）：
- * · 页面 <head> 只用 preload 预热，不阻塞首屏解析与 KPI 文本
- * · 第一次真正要画图时才注入 <script>，加载完成后 resolve window.echarts
+ * 按需加载图表库：
+ * · 构建后是一个单独的 chunk（ECharts 按需构建，只含 line/bar 与用到的组件）
+ * · 动态 import ⇒ 不阻塞首屏文本与 KPI；加载完成后缓存模块引用
+ * · 未构建（直接打开 web/index.html）时，走 script 注入的兼容路径
  */
 export function ensureEcharts(timeout = 20000) {
-  if (window.echarts) return Promise.resolve(window.echarts);
+  if (echartsMod) return Promise.resolve(echartsMod);
+  if (window.echarts) {
+    echartsMod = window.echarts;
+    return Promise.resolve(echartsMod);
+  }
   if (echartsReady) return echartsReady;
-  echartsReady = new Promise((resolve, reject) => {
-    let settled = false;
-    const ok = () => {
-      if (settled) return;
-      if (window.echarts) {
-        settled = true;
-        performance.mark("ebbflow:echarts-ready");
-        resolve(window.echarts);
-      } else reject(new Error("图表库不可用"));
-    };
-    const fail = () => {
-      if (settled) return;
-      settled = true;
-      echartsReady = null;
-      reject(new Error("图表库加载失败（echarts.min.js）"));
-    };
-    const existing = Array.from(document.scripts).find((s) => /echarts\.min\.js/.test(s.src));
-    if (existing) {
-      existing.addEventListener("load", ok);
-      existing.addEventListener("error", fail);
-      if (window.echarts) ok();
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = new URL("echarts.min.js", document.baseURI).href;
-    script.async = true;
-    script.onload = ok;
-    script.onerror = fail;
-    document.head.append(script);
-    setTimeout(() => {
-      if (!settled && !window.echarts) fail();
-    }, timeout);
+  echartsReady = Promise.race([
+    import("./vendor-echarts.js")
+      .then((m) => {
+        const lib = m.default || m.echarts || m;
+        echartsMod = lib;
+        try { performance.mark("ebbflow:echarts-ready"); } catch {}
+        return lib;
+      })
+      .catch(() => {
+        // 兼容：没有构建产物时退回注入 echarts.min.js
+        return new Promise((resolve, reject) => {
+          if (window.echarts) return resolve(window.echarts);
+          const script = document.createElement("script");
+          script.src = new URL("echarts.min.js", document.baseURI).href;
+          script.async = true;
+          script.onload = () => (window.echarts ? resolve(window.echarts) : reject(new Error("图表库不可用")));
+          script.onerror = () => reject(new Error("图表库加载失败"));
+          document.head.appendChild(script);
+        });
+      }),
+    new Promise((_, rej) => setTimeout(() => rej(new Error("图表库加载超时")), timeout)),
+  ]).then((lib) => {
+    echartsMod = lib;
+    return lib;
+  }).catch((e) => {
+    echartsReady = null;
+    throw e;
   });
   return echartsReady;
 }
