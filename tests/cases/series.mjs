@@ -1,7 +1,9 @@
 import { test, assert, assertEq, skipNow, note } from "../framework.mjs";
-import { openDb, shareMap } from "../../lib/db.mjs";
+import { openDb, shareMap, shareRows, daySources } from "../../lib/db.mjs";
 import { findGaps } from "../../lib/validate.mjs";
-import { SUB } from "../../lib/taxonomy.mjs";
+import { loadUniverse } from "../../lib/universe.mjs";
+
+const { SUB } = loadUniverse();
 
 test("序列连续性检测器 findGaps：首段 null 允许，中间断裂被抓出", () => {
   const rows = (vals) => vals.map((v, i) => ({ date: `2026-01-0${i + 1}`, val: v }));
@@ -31,7 +33,17 @@ test("序列连续性：小类不得出现中间断裂后恢复（结构性无�
     const cache = new Map();
     const presentOn = (d) => {
       let m = cache.get(d);
-      if (!m) cache.set(d, (m = shareMap(db, d)));
+      if (!m) {
+        // 与 pipeline 同口径：当日若有交易所快照，只认交易所行（ts 补充行不计入）
+        const src = daySources(db, d);
+        m = new Map();
+        for (const r of shareRows(db, d)) {
+          const isSh = /^[569]/.test(r.code);
+          if (isSh ? src.sse && r.src !== "sse" : src.szse && r.src !== "szse") continue;
+          m.set(r.code, r.wan);
+        }
+        cache.set(d, m);
+      }
       return m;
     };
     const bad = [];

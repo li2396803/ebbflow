@@ -1,6 +1,8 @@
 import { test, assert, assertEq } from "../framework.mjs";
 import { validateDay } from "../../lib/validate.mjs";
-import { ALL_CODES, SUB } from "../../lib/taxonomy.mjs";
+import { loadUniverse } from "../../lib/universe.mjs";
+
+const { SUB, ALL_CODES } = loadUniverse();
 import { flatShares, subCodes } from "../helpers.mjs";
 
 const day = (shares, prevShares, opts) => validateDay({ date: "2026-11-20", shares, prevShares, opts });

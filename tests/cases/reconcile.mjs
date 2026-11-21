@@ -1,6 +1,9 @@
 import { test, assert, assertEq, assertClose } from "../framework.mjs";
 import { classifyPair, relDiff, compareCodes, compareSubs, subCommon } from "../../scripts/reconcile.mjs";
 import { subCodes } from "../helpers.mjs";
+import { loadUniverse } from "../../lib/universe.mjs";
+
+const SUB_EXPECTED = loadUniverse().SUB;
 
 test("交叉校验：分档、逐 code 比对与小类公共成分比对（偏离方指认）", () => {
   // ① 分档：完全一致 / ≤0.1% / ≤1% / >1%
@@ -61,7 +64,10 @@ test("交叉校验：分档、逐 code 比对与小类公共成分比对（偏�
   assertClose(cm.b, 210, 1e-9, "ts 侧 21000 万份 → 210（×100）");
 
   const rows = compareSubs(ex2, ts2);
-  assertEq(rows.length, 86, "小类层应覆盖全部 86 项");
+  {
+    const n = Object.keys(SUB_EXPECTED).length;
+    assertEq(rows.length, n, `小类层应覆盖全部 ${n} 项`);
+  }
   const row = rows.find((r) => r.sub === bondSub);
   assert(row, "应包含债券小类那一行");
   assertEq(row.status, "both", "两侧都有数据");
