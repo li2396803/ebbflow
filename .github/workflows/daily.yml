@@ -167,6 +167,16 @@ jobs:
           commit_user_email: "41898282+github-actions[bot]@users.noreply.github.com"
           commit_author: "etf-flow bot <41898282+github-actions[bot]@users.noreply.github.com>"
 
+      # 把构建好的静态站点打成可下载产物：从 Actions 页面下载 zip 即可离线打开/托管
+      - name: 上传站点产物
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-${{ github.run_id }}
+          path: site
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: 保存 SQLite 缓存
         if: success() && github.ref == 'refs/heads/master'
         uses: actions/cache/save@v4
