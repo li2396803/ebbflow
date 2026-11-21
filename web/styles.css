@@ -613,11 +613,6 @@ h2 {
   max-height: 62vh;
   overflow-y: auto;
 }
-.tbl-rank thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
 .rank-no {
   color: var(--muted);
   font-size: 12px;
@@ -1079,7 +1074,7 @@ h2 {
 /* ETF 名称过长时收窄省略，别把金额列挤出可视区 */
 .tbl-etf td:nth-child(2),
 .tbl-etf th:nth-child(2) {
-  max-width: 132px;
+  max-width: 128px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1306,18 +1301,6 @@ h2 {
   .tbl td {
     padding: 6px 8px;
     font-size: 12.5px;
-  }
-  .tbl th:first-child,
-  .tbl td:first-child {
-    position: sticky;
-    left: 0;
-    background: var(--panel);
-    box-shadow: 1px 0 0 var(--grid);
-    z-index: 2;
-  }
-  .tbl thead th:first-child {
-    background: var(--th-bg);
-    z-index: 3;
   }
   .sec-head {
     align-items: flex-start;
