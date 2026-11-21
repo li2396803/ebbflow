@@ -1,6 +1,6 @@
 {
   "name": "etf-flow",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "private": true,
   "description": "ETF 细分行业资金流向：上交所/深交所/Tushare 三源数据管道 + 静态站点 + 本地服务，自动更新与交叉校验",
   "type": "module",
