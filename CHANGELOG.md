@@ -2,6 +2,25 @@
 
 本文件记录对仓库结构、数据口径、命令有影响的变化。日常数据更新（`chore(data): 自动更新站点数据`）不记录。
 
+## v2.1.0 — 开源、署名与去水印
+
+### 变更
+
+- **开源**：仓库协议定为 **MIT**（`LICENSE`），仓库转为 **public**。
+- **署名**：新增 `NOTICE.md`（署名/来源/再分发说明）；README 顶部加入显眼的**鸣谢**与**免责声明**；页面页脚新增「鸣谢 / 免责声明 / 项目」三块卡片。
+  - 鸣谢对象：**哔哩哔哩（B站）UP 主「生炸瓜」** 的《ETF 细分行业资金流向》看板 —— 分类体系、指标口径与看板形态的来源。
+- **去水印**：移除整页平铺水印（`.page-wm`）、每张图表内的水印（`.wm`）与顶栏品牌字样；`site/` 产物与水印相关样式/文本均已清空。
+- **隐性作者标识**（替代水印，见 `lib/signature.mjs`）：`<meta author/generator/etf-flow:signature/etf-flow:origin>`、HTML 注释、`application/ld+json`（含 `isBasedOn`）、`<html data-signature>`、`window.__ETFFLOW__` + 控制台 banner、`data/meta.json` 与 `data/signature.json` 的 `signature` 字段、HTTP 头 `X-Powered-By` / `X-Project-Author` / `X-Project-Signature`。
+  - 指纹：`28e8c8d6199160a1`（`sha256("etf-flow:li2396803:<repo>")` 前 16 位，稳定）。
+- **页脚数据**：新增「数据截至 / 交易日 / 覆盖」实时信息；顶栏右上角改为「⌥ 开源 · MIT」项目链接。
+- `docs/screenshot.png` 更新为**无水印**版本；新增 `tools/README.md` 说明保留原看板副本的用途（回归校验 + 署名溯源，不参与渲染）。
+
+### 兼容性
+
+- 数据口径、命令、接口均无破坏性变更。
+
+---
+
 ## v2.0.0 — 三源数据管道重构（进行中）
 
 状态：三源管道、站点、服务、测试与 CI 均已落地；`npm test` 实测 10 个用例全过（约 0.8 s）。

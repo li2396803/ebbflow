@@ -6,6 +6,14 @@
 <meta name="color-scheme" content="light dark">
 <meta name="description" content="ETF 细分行业资金流向：按细分行业统计 ETF 份额变化，含大类规模、增减排行与长期趋势。">
 <title>ETF 细分行业资金流向</title>
+<!-- etf-flow · ETF 细分行业资金流向 · built by li2396803 · https://github.com/li2396803/etf-flow -->
+<!-- signature 28e8c8d6199160a1 · license MIT · based on a work by 生炸瓜 (哔哩哔哩（B站）) -->
+<meta name="author" content="li2396803">
+<meta name="generator" content="etf-flow/2.1.0 (+https://github.com/li2396803/etf-flow)">
+<meta name="etf-flow:signature" content="28e8c8d6199160a1">
+<meta name="etf-flow:license" content="MIT">
+<meta name="etf-flow:origin" content="生炸瓜 @ 哔哩哔哩（B站）">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"ETF 细分行业资金流向","alternateName":"etf-flow","applicationCategory":"FinanceApplication","operatingSystem":"Node.js >= 22.5","author":{"@type":"Person","name":"li2396803","url":"https://github.com/li2396803"},"license":"https://opensource.org/licenses/MIT","codeRepository":"https://github.com/li2396803/etf-flow","isBasedOn":{"@type":"CreativeWork","name":"ETF 细分行业资金流向","author":{"@type":"Person","name":"生炸瓜"},"inLanguage":"zh-CN"},"identifier":"28e8c8d6199160a1","datePublished":"2026"}</script>
 <script>
 /* 首屏前置主题，避免深浅色闪白 */
 (function () {
@@ -21,7 +29,6 @@
 <script src="echarts.min.js" defer></script>
 </head>
 <body>
-<div class="page-wm" aria-hidden="true"></div>
 <a class="skip-link" href="#charts">跳到图表</a>
 
 <header class="topbar">
@@ -30,7 +37,10 @@
       <h1 id="pageTitle">ETF 细分行业资金流向</h1>
     </div>
     <div class="tb-right">
-      <span class="brand" aria-hidden="true">B站生炸瓜</span>
+      <a class="brand brand-link" href="https://github.com/li2396803/etf-flow" target="_blank" rel="noopener"
+         title="开源项目主页（MIT）：https://github.com/li2396803/etf-flow">
+        <span aria-hidden="true">⌥</span> 开源 · MIT
+      </a>
       <div class="search" id="searchBox" role="search">
         <input id="searchInput" type="search" autocomplete="off" spellcheck="false"
                placeholder="搜小类 / ETF 代码或名称"
@@ -121,12 +131,46 @@
 
   <div id="charts" class="cats"></div>
 
-  <footer class="foot">
-    <span id="footNote">数据来自交易所公开接口，仅供研究参考。</span>
-    <span class="foot-links">
-      <button class="linkbtn" id="btnQuality" type="button">数据质量</button>
-      <button class="linkbtn" id="btnTop" type="button">回到顶部</button>
-    </span>
+  <footer class="foot" id="foot">
+    <div class="foot-cards">
+      <section class="foot-card foot-origin">
+        <h3><span class="foot-tag">鸣谢</span>本项目复刻自 B 站 UP 主「生炸瓜」</h3>
+        <p>
+          分类体系（<b>9 大类 · 86 个细分行业</b>）、看板形态与「份额＝成分 ETF 之和、债券 ×100」的口径，均源自
+          <b>哔哩哔哩（B站）UP 主「生炸瓜」</b>公开的《ETF 细分行业资金流向》看板。
+          原看板的设计与制作成果归原作者所有，这里郑重致谢 —— 没有原作就没有这个项目。
+        </p>
+        <p class="foot-muted">本站是独立重写的数据管道 + 前端（自建抓取、校验、开源代码），与原作者无隶属关系，也不代表原作者的观点。</p>
+      </section>
+
+      <section class="foot-card foot-disclaimer">
+        <h3><span class="foot-tag">免责声明</span>不构成任何投资建议</h3>
+        <p>
+          数据来自<b>上交所、深交所、Tushare</b> 等公开接口，可能存在延迟、缺失、口径差异或抓取错误；
+          「规模」「净流入」为按单位净值折算的<b>估算值</b>。本项目仅供个人研究与技术学习使用，
+          <b>不构成投资建议、要约或推荐</b>，任何人据此作出的投资决策与后果自负。
+        </p>
+        <p class="foot-muted">本项目与原作者、交易所、数据服务商均无从属或合作关系；不保证数据的准确性、完整性与时效性。</p>
+      </section>
+
+      <section class="foot-card foot-about">
+        <h3><span class="foot-tag">项目</span>开源 · MIT</h3>
+        <p>
+          版本 <b>v2.1.0</b> ｜ 作者 <a href="https://github.com/li2396803" target="_blank" rel="noopener">li2396803</a>
+          ｜ 仓库 <a href="https://github.com/li2396803/etf-flow" target="_blank" rel="noopener">https://github.com/li2396803/etf-flow</a>
+        </p>
+        <p>数据截至 <b id="footDate">—</b> ｜ 交易日 <b id="footDays">—</b> ｜ 覆盖 <b id="footCover">—</b></p>
+        <p class="foot-muted">若本项目对你有用，欢迎在仓库提 Issue / PR；转载请注明出处并保留本页署名与免责声明。</p>
+      </section>
+    </div>
+
+    <div class="foot-bottom">
+      <span id="footNote">数据来自交易所公开接口，仅供研究参考，不构成投资建议。</span>
+      <span class="foot-links">
+        <button class="linkbtn" id="btnQuality" type="button">数据质量</button>
+        <button class="linkbtn" id="btnTop" type="button">回到顶部</button>
+      </span>
+    </div>
   </footer>
 </main>
 

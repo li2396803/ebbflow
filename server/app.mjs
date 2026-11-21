@@ -13,6 +13,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { SIGNATURE, FINGERPRINT } from "../lib/signature.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const SITE = path.join(ROOT, "site");
@@ -92,8 +93,13 @@ export function createApp({ port = 5188, host = "127.0.0.1", autoRefresh = true,
     }
   }
 
+  const baseHeaders = {
+    "X-Powered-By": `${SIGNATURE.project}/${SIGNATURE.version}`,
+    "X-Project-Author": SIGNATURE.author,
+    "X-Project-Signature": FINGERPRINT,
+  };
   const json = (res, code, obj) => {
-    res.writeHead(code, { "Content-Type": MIME[".json"], "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
+    res.writeHead(code, { ...baseHeaders, "Content-Type": MIME[".json"], "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
     res.end(JSON.stringify(obj));
   };
 
@@ -141,6 +147,7 @@ export function createApp({ port = 5188, host = "127.0.0.1", autoRefresh = true,
         return json(res, 404, { error: "not found", path: p });
       }
       res.writeHead(200, {
+        ...baseHeaders,
         "Content-Type": MIME[path.extname(file).toLowerCase()] || "application/octet-stream",
         "Cache-Control": path.extname(file) === ".json" ? "no-store" : "public, max-age=60",
       });

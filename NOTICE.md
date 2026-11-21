@@ -1,0 +1,55 @@
+# 署名、来源与再分发说明（NOTICE）
+
+## 0. 一句话
+
+本项目是一个**独立重写**的开源实现：鸣谢原作者的分类体系与看板创意，代码与数据管道由我们自建，遵循 MIT 协议。
+
+---
+
+## 1. 鸣谢 · 原典（显式署名，非水印）
+
+| 项 | 内容 |
+| --- | --- |
+| 作品 | 《ETF 细分行业资金流向》看板 |
+| 作者 | 哔哩哔哩（B站）UP 主 **「生炸瓜」** |
+| 本项目的继承部分 | 9 大类 / 86 个细分行业的**分类体系**；「细分行业份额 = 成分 ETF 份额之和」「债券大类 ×100」的**指标口径**；看板的整体形态、信息层级与配色布局 |
+| 本项目的独立部分 | 全部代码：三源抓取（上交所 / 深交所 / Tushare）、SQLite 存储、校验与回归测试、HTTP API、前端重写（搜索 / 钻取抽屉 / 排行 / 导出 / 暗色 / 响应式）、CI 与文档 |
+
+**声明**：原看板的界面设计、视觉稿与制作成果归原作者所有。本项目不含原作者的源代码分发；页面上的「鸣谢」区块与 `<head>` 中的 `isBasedOn` 结构化数据是对原作者的公开致谢与溯源。原作者与本项目无从属、背书或合作关系。
+
+> 如果你喜欢这个看板，请先去 B 站关注并支持原作者「生炸瓜」。
+
+## 2. 本项目
+
+- 名称：`etf-flow` · ETF 细分行业资金流向
+- 作者 / 维护者：**li2396803**（<https://github.com/li2396803>）
+- 仓库：<https://github.com/li2396803/etf-flow>
+- 协议：[MIT](./LICENSE)
+
+### 隐性作者标识（用于溯源与识别副本）
+
+本项目刻意不使用水印，改为在以下**不干扰阅读**的位置嵌入同一组身份信息，任何副本都可据此溯源：
+
+| 位置 | 形式 |
+| --- | --- |
+| HTML `<head>` | `<meta name="author">`、`<meta name="generator">`、`<meta name="etf-flow:signature">`、`<meta name="etf-flow:license">`、`<meta name="etf-flow:origin">` |
+| HTML 注释 | `<!-- etf-flow · ... · built by li2396803 -->` |
+| 结构化数据 | `application/ld+json`（`SoftwareApplication`，含 `author` / `license` / `codeRepository` / `isBasedOn`） |
+| DOM 属性 | `<html data-signature="28e8c8d6199160a1">` |
+| 运行时 | `window.__ETFFLOW__`（含 author / repo / license / fingerprint）+ 开发者控制台 banner |
+| 数据载荷 | `site/data/meta.json` 与 `data/signature.json` 的 `author`、`repo`、`signature` 字段 |
+| HTTP 响应头 | `X-Powered-By`、`X-Project-Author`、`X-Project-Signature` |
+
+指纹 `28e8c8d6199160a1` = `sha256("etf-flow:li2396803:https://github.com/li2396803/etf-flow")` 的前 16 位十六进制，稳定不随构建变化。署名常量集中在 [`lib/signature.mjs`](./lib/signature.mjs)，改一处即可全局生效。
+
+## 3. 再分发
+
+1. 保留 [`LICENSE`](./LICENSE) 与本章 NOTICE（MIT 要求保留版权声明；署名属基本诚信）。
+2. **不得**删除页面底部的「鸣谢」与「免责声明」，也不得暗示原作者或本项目的维护者为你再分发的版本背书。
+3. **不得**把本项目或原看板包装成官方产品、付费产品，或用于任何形式的荐股、代客理财。
+
+## 4. 数据与商标
+
+- 份额、净值等原始数据版权归**上海证券交易所、深圳证券交易所、Tushare** 等数据提供方；本项目只做抓取与派生计算，不改变数据的权属。
+- B 站 / 哔哩哔哩、上交所、深交所、Tushare 等名称与商标归各自权利人。
+- 本项目的分析结果**不构成投资建议**（见 README 与页面底部的免责声明）。

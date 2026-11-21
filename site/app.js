@@ -644,7 +644,6 @@ function buildCatSections() {
 function card(catKey, n, title, extra) {
   return `<div class="card${extra ? " is-short" : ""}">
     <h3>${esc(title)}</h3>
-    <div class="wm" aria-hidden="true">B站生炸瓜</div>
     <div class="chart${extra}" id="ch-${esc(catKey)}-c${n}" data-cat="${esc(catKey)}" data-n="${n}"
          role="img" aria-label="${esc(title)}"></div>
     <div class="chart-skeleton" data-sk="${esc(catKey)}-c${n}" aria-hidden="true">
@@ -1889,7 +1888,45 @@ function fatalError(msg) {
   $$("#tblCatScale tbody, #tblTop tbody, #tblBottom tbody").forEach((b) => (b.innerHTML = ""));
 }
 
+/** 读取 <meta name="etf-flow:signature"> 等隐性标识，挂到 window 并打一条控制台 banner */
+function stampIdentity() {
+  const q = (n) => document.querySelector(`meta[name="${n}"]`)?.getAttribute("content") || "";
+  const id = {
+    project: "etf-flow",
+    author: q("author"),
+    generator: q("generator"),
+    fingerprint: q("etf-flow:signature"),
+    license: q("etf-flow:license"),
+    origin: q("etf-flow:origin"),
+    repo: "https://github.com/li2396803/etf-flow",
+    build: document.documentElement.getAttribute("data-build") || "",
+  };
+  window.__ETFFLOW__ = id;
+  document.documentElement.setAttribute("data-signature", id.fingerprint || "etf-flow");
+  if (id.fingerprint) {
+    try {
+      console.log(
+        `%c${id.project}%c v${id.generator.split("/")[1]?.split(" ")[0] || ""} · by ${id.author} · ${id.license}`,
+        "background:#1f6feb;color:#fff;padding:2px 6px;border-radius:4px;font-weight:700",
+        "color:#8b949e"
+      );
+      console.log(`%c指纹 ${id.fingerprint} · 仓库 ${id.repo}\n原典：${id.origin}`, "color:#8b949e");
+    } catch (e) {}
+  }
+  return id;
+}
+
+/** 页脚的项目信息（数据截至 / 交易日 / 覆盖） */
+function fillFoot() {
+  const m = S.meta || {};
+  const set = (id, v) => { const e = document.getElementById(id); if (e && v != null) e.textContent = v; };
+  set("footDate", m.lastTradeDate || "—");
+  set("footDays", m.range?.days != null ? `${m.range.days} 个` : "—");
+  set("footCover", m.counts ? `${m.counts.subs} 小类 / ${m.counts.etfs} 只 ETF` : "—");
+}
+
 async function boot() {
+  const ID = stampIdentity();
   wireTheme();
   wireSearch();
   wireTables();
@@ -1920,6 +1957,7 @@ async function boot() {
 
   if (metaR.status === "fulfilled") {
     S.meta = metaR.value.data;
+    fillFoot();
     if (metaR.value.via === "api") noteApiFallback();
   }
   if (tblR.status === "fulfilled") S.tables = tblR.value.data;
