@@ -35,11 +35,11 @@ die() {
 }
 
 [ "$(uname -s)" = "Darwin" ] || die "此脚本只适用于 macOS（LaunchAgent）"
-[ -n "$NODE_BIN" ] || die "找不到 node，请先安装 Node.js 20 或更新版本"
+[ -n "$NODE_BIN" ] || die "找不到 node，请先安装 Node.js 22.5 或更新版本（需要内置 node:sqlite）"
 
 NODE_VER="$("$NODE_BIN" -v)"; NODE_VER="${NODE_VER#v}"
 NODE_MAJOR="${NODE_VER%%.*}"
-[ "${NODE_MAJOR:-0}" -ge 20 ] 2>/dev/null || die "node 版本过低（$NODE_VER），需要 20 或更新版本"
+[ "${NODE_MAJOR:-0}" -ge 22 ] 2>/dev/null || die "node 版本过低（$NODE_VER），需要 22.5 或更新版本（node:sqlite）"
 [ -f "$ROOT/server.mjs" ] || die "缺少 server.mjs，无法安装服务"
 [ -f "$ROOT/bin/update.sh" ] || die "缺少 bin/update.sh，无法安装定时任务"
 

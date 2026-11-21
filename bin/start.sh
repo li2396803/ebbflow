@@ -11,7 +11,7 @@ cd "$ROOT"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
 if [ -z "$NODE_BIN" ]; then
-  echo "✗ 找不到 node，请先安装 Node.js 20 或更新版本" >&2
+  echo "✗ 找不到 node，请先安装 Node.js 22.5 或更新版本（需要内置 node:sqlite）" >&2
   exit 1
 fi
 

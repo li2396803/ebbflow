@@ -1,0 +1,117 @@
+# CI：每次 push / PR 校验
+#
+# 做的事：
+#   1. npm test                       —— 数据校验测试
+#   2. npm run build                  —— 用仓库里已有的数据离线重建 site/（需要 data/etf.db）
+#   3. 校验 site/data/meta.json       —— 文件存在且 lastTradeDate 非空
+#   4. site/ 与重建结果不一致        —— 只告警，不失败（数据可能本来就过期了）
+#
+# data/etf.db 不进 git，所以第 2 步依赖 daily.yml 存下来的 actions/cache。
+# 缓存是空的（例如刚 fork / 缓存过期）时自动跳过重建，只做第 3 步的静态校验，不会莫名变红。
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+
+# 只需要读代码；不需要写权限
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: 测试 + 离线构建 + 站点校验
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          # node:sqlite 需要 Node ≥ 22.5（LTS 22 的最新小版本已免 --experimental-sqlite）
+          node-version: "22"
+
+      - name: 检查运行时
+        run: |
+          node -v
+          npm -v
+          node -e 'const s = require("node:sqlite"); console.log("node:sqlite 可用:", Object.keys(s).join(", "))'
+
+      - name: 安装依赖
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund --package-lock=false
+          fi
+
+      - name: 判断能否离线构建（有 data/etf.db 吗）
+        id: pre
+        run: |
+          if [ -f data/etf.db ]; then
+            echo "has_db=true" >> "$GITHUB_OUTPUT"
+            echo "已拿到 data/etf.db（$(du -h data/etf.db | cut -f1)）"
+          else
+            echo "has_db=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::没有 data/etf.db，跳过离线重建（npm run build 需要库里有数据）"
+          fi
+
+      - name: 跑测试
+        run: npm test
+
+      - name: 离线重建站点
+        if: steps.pre.outputs.has_db == 'true'
+        run: npm run build
+
+      # 注意：`.gitignore` 里有 site/data/（站点数据是构建产物，不入库），
+      # 所以全新 clone 里 site/data/meta.json 本来就不存在。规则：
+      #   · 跑过 npm run build（有 DB）→ 必须存在且 lastTradeDate 非空，否则失败
+      #   · 没跑构建（无 DB 缓存）→ 有文件就校验，没有就只给 notice，不判定失败
+      - name: 校验 site/ 产物
+        run: |
+          fail=0
+          if [ ! -f site/index.html ]; then
+            echo "::error::缺少 site/index.html（前端产物应在 site/ 下）"
+            fail=1
+          fi
+
+          if [ -f site/data/meta.json ]; then
+            if ! node -e '
+              const fs = require("node:fs");
+              const m = JSON.parse(fs.readFileSync("site/data/meta.json", "utf8"));
+              if (!m.lastTradeDate) { console.error("lastTradeDate 为空"); process.exit(1); }
+              console.log("✓ lastTradeDate = " + m.lastTradeDate);
+              if (m.range) console.log("  区间 " + m.range.from + " ~ " + m.range.to + "（" + m.range.days + " 个交易日）");
+            '; then
+              echo "::error::site/data/meta.json 校验失败（非法 JSON 或 lastTradeDate 为空）"
+              fail=1
+            fi
+          elif [ "${{ steps.pre.outputs.has_db }}" = "true" ]; then
+            echo "::error::跑过 npm run build 但没生成 site/data/meta.json"
+            fail=1
+          else
+            echo "::notice::没有 site/data/meta.json（site/data/ 是不入库的构建产物，本次也没有 DB 缓存可构建），跳过产物数值校验"
+          fi
+          exit $fail
+
+      - name: 检查重建结果与提交的 site/ 是否一致
+        if: steps.pre.outputs.has_db == 'true'
+        run: |
+          # 数据可能本来就是旧的（daily 没跑/失败），这里只提示，不判定失败。
+          # 用 git status 而不是 git diff：新建的 site/data/*.json 是未跟踪文件，git diff 看不见
+          dirty="$(git status --porcelain -- site/)"
+          if [ -n "$dirty" ]; then
+            echo "::warning::重建后的 site/ 与仓库里提交的不一致（数据可能已过期），请确认 daily 更新是否正常"
+            echo "$dirty"
+          else
+            echo "site/ 与重建结果一致"
+          fi

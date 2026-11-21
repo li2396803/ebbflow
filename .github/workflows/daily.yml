@@ -1,0 +1,184 @@
+# 每交易日自动更新数据：深交所快照 + 上交所近 N 日 + Tushare 当日 → 重算序列 → 重建 site/
+#
+# 触发：
+#   · schedule           每个工作日 UTC 08:30（≈ 北京时间 16:30，A 股收盘后）
+#   · workflow_dispatch  手动，可选 lookback（上交所回溯天数）
+#
+# 产物：site/ 下的静态站点 + site/data/*.json（会被自动提交回仓库）；
+#       data/etf.db 不进 git，用 actions/cache 在两次运行之间传递。
+#
+# 注意：本仓库不产出 data/shares/（旧版每日原始快照），也不提交 data/etf.db —— 两者都已在 .gitignore 里。
+name: Daily data update
+
+on:
+  schedule:
+    # 定时任务在整点/半点附近排队严重，实际触发可能比 16:30 晚几分钟到几十分钟，属正常现象
+    - cron: "30 8 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      lookback:
+        description: "上交所回溯天数（默认 15；调大可用于补漏跑的日子）"
+        required: false
+        default: "15"
+        type: string
+
+# 自动提交需要写权限
+permissions:
+  contents: write
+
+# 同一时刻只跑一个更新，避免两个 run 抢同一份缓存/同一次提交
+concurrency:
+  group: daily-data-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: 抓数 → 重算 → 构站 → 提交
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      # Tushare Pro token：仓库 Settings → Secrets and variables → Actions 里加同名 secret
+      TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+      # schedule 触发时 inputs 为空，回落到默认 15 天
+      LOOKBACK: ${{ inputs.lookback || '15' }}
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          # node:sqlite 需要 Node ≥ 22.5（LTS 22 的最新小版本已免 --experimental-sqlite）
+          node-version: "22"
+
+      - name: 检查运行时
+        run: |
+          node -v
+          npm -v
+          # 提前确认内置 SQLite 可用，避免跑了几分钟才在写库时炸
+          node -e 'const s = require("node:sqlite"); console.log("node:sqlite 可用:", Object.keys(s).join(", "))'
+
+      - name: 安装依赖
+        run: |
+          # 本项目 dependencies / devDependencies 均为空：有 lockfile 就 npm ci，没有就用 install 且不生成 lockfile
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund --package-lock=false
+          fi
+
+      - name: 检查 TUSHARE_TOKEN
+        if: env.TUSHARE_TOKEN == ''
+        run: |
+          echo "::warning::没有注入 TUSHARE_TOKEN secret —— 深市历史与交叉校验会缺失，本次仅靠交易所数据更新"
+
+      # SQLite 是二进制文件，进不了 git；用 cache 在两次 run 之间传递。
+      # key 里带 run_id 保证每次都是新 key（cache 不可覆盖），restore-keys 前缀回退到最近一次。
+      - name: 恢复 SQLite 缓存
+        id: db-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: data/etf.db
+          key: etf-db-${{ github.run_id }}
+          restore-keys: |
+            etf-db-
+
+      - name: 报告缓存的数据库
+        run: |
+          if [ -f data/etf.db ]; then
+            echo "已恢复 data/etf.db（$(du -h data/etf.db | cut -f1)），在其基础上增量更新"
+          else
+            echo "::notice::没有可恢复的 data/etf.db，本次从空库开始（深市历史只能靠 Tushare 回补）"
+          fi
+
+      # 直接调用 scripts/update.mjs 导出的 update({lookback})：
+      # npm run update 的 CLI 入口固定用默认 15 天，读不到 workflow_dispatch 的 lookback 输入。
+      # 失败（含被锁跳过）必须让 job 失败，绝不能"什么都没更新"却继续往下提交。
+      - name: 增量更新数据
+        run: |
+          set -o pipefail
+          node --input-type=module -e '
+            import { update } from "./scripts/update.mjs";
+            const lookback = Number(process.env.LOOKBACK || 15);
+            console.log("lookback =", lookback, "天");
+            const r = await update({ lookback });
+            console.log("update() →", JSON.stringify(r));
+            if (r && r.skipped) {
+              console.error("更新被互斥锁跳过（" + r.skipped + "），视为失败");
+              process.exit(1);
+            }
+          ' 2>&1 | tee "$RUNNER_TEMP/update.log"
+
+      - name: 跑数据校验测试
+        run: npm test
+
+      - name: 打印更新结果
+        run: |
+          echo "── data/lastrun.json ──"
+          cat data/lastrun.json 2>/dev/null || echo "(缺失)"
+          echo
+          echo "── site/data/meta.json ──"
+          if [ -f site/data/meta.json ]; then
+            node -e '
+              const m = require("./site/data/meta.json");
+              console.log("lastTradeDate:", m.lastTradeDate);
+              console.log("区间:", m.range && (m.range.from + " ~ " + m.range.to + "（" + m.range.days + " 个交易日）"));
+              console.log("规模:", JSON.stringify(m.counts));
+              if (m.warnings && m.warnings.length) console.log("告警:", m.warnings.join(" | "));
+            '
+          else
+            echo "✗ 缺少 site/data/meta.json"
+            exit 1
+          fi
+
+      # WAL 模式下最新事务可能还留在 data/etf.db-wal 里；不 checkpoint 就只缓存主文件会丢数据
+      - name: checkpoint WAL（保证缓存的是完整数据库）
+        if: success()
+        run: |
+          if [ -f data/etf.db ]; then
+            node -e '
+              const { DatabaseSync } = require("node:sqlite");
+              const db = new DatabaseSync("data/etf.db");
+              db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+              db.close();
+              console.log("wal_checkpoint(TRUNCATE) ok");
+            '
+          else
+            echo "没有 data/etf.db，跳过"
+          fi
+
+      - name: 看看改了什么
+        run: |
+          git status --porcelain
+          echo "── git diff --stat ──"
+          git diff --stat
+
+      # 只提交站点与载荷 JSON。data/etf.db、data/shares/、data/lastrun.json 都在 .gitignore 里。
+      # 这里故意写显式文件名而不用 data/*.json：shell 会先把 data/*.json 展开成真实文件名
+      # （其中包含被忽略的 data/lastrun.json），而 git add 一个被忽略的路径会以退出码 1 失败。
+      - name: 提交站点数据
+        if: success() && github.ref == 'refs/heads/master'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore(data): 自动更新站点数据"
+          file_pattern: "site data/quality.json data/series.json data/c3-seed.json"
+          commit_user_name: "etf-flow bot"
+          commit_user_email: "41898282+github-actions[bot]@users.noreply.github.com"
+          commit_author: "etf-flow bot <41898282+github-actions[bot]@users.noreply.github.com>"
+
+      - name: 保存 SQLite 缓存
+        if: success() && github.ref == 'refs/heads/master'
+        uses: actions/cache/save@v4
+        with:
+          path: data/etf.db
+          key: etf-db-${{ github.run_id }}
+
+      - name: 上传更新日志（失败时）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-log
+          path: ${{ runner.temp }}/update.log
+          if-no-files-found: ignore
+          retention-days: 7
