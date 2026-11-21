@@ -256,6 +256,30 @@ function setDataBadge(mode, text) {
 function applyMeta() {
   const m = app.meta || {};
   document.title = `Ebbflow · ${m.title || "ETF 细分行业资金流向"}`;
+
+  // 计数文案统一从 meta.counts 读（小类/ETF/大类数量会随数据增长，不写死）
+  const subs = m.counts?.subs;
+  const etfs = m.counts?.etfs;
+  const cats = m.counts?.cats ?? app.cats.length;
+  const setText = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  if (subs) {
+    setText("navAllSubsLabel", `全部 ${subs} 个小类`);
+    setText("allTitle", `全部 ${subs} 个细分行业`);
+  }
+  if (cats) setText("catGridTitle", `${cats} 大类区间表现`);
+  if (subs && etfs) setText("paletteHint", `输入以搜索 ${subs} 个小类与 ${etfs} 只 ETF`);
+  const navBtn = document.getElementById("btnAllSubsNav");
+  if (navBtn && subs) navBtn.setAttribute("aria-label", `查看全部 ${subs} 个小类`);
+  const desc = document.querySelector('meta[name="description"]');
+  if (desc && subs && etfs) {
+    desc.setAttribute(
+      "content",
+      `Ebbflow · ETF 细分行业资金流向：${cats} 大类 / ${subs} 个细分行业 / ${etfs} 只 ETF 的份额、规模与净流入长期序列，含区间对比、自选、全市场总览与数据质量校验。`
+    );
+  }
   fillFoot();
   const rf = document.getElementById("railFoot");
   if (rf) {
