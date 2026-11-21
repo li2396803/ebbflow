@@ -154,6 +154,11 @@ jobs:
           echo "── git diff --stat ──"
           git diff --stat
 
+      - name: 三源交叉校验（保持 quality.json 新鲜）
+        if: success() && github.ref == 'refs/heads/master'
+        continue-on-error: true
+        run: npm run reconcile -- --days 5 || echo "::warning::交叉校验未通过或不可用，继续提交流程"
+
       # 只提交站点与载荷 JSON。data/etf.db、data/shares/、data/lastrun.json 都在 .gitignore 里。
       # 这里故意写显式文件名而不用 data/*.json：shell 会先把 data/*.json 展开成真实文件名
       # （其中包含被忽略的 data/lastrun.json），而 git add 一个被忽略的路径会以退出码 1 失败。
