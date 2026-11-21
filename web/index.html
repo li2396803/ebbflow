@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="description" content="Ebbflow · ETF 细分行业资金流向：10 大类 / 86 个细分行业的 ETF 份额、规模与净流入长期序列，含区间对比、自选、全市场总览与数据质量校验。">
+<meta name="description" content="Ebbflow · ETF 细分行业资金流向：按大类 / 细分行业统计 ETF 份额、规模与净流入的长期序列，含区间对比、自选、全市场总览与数据质量校验。">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0a0b0e" media="(prefers-color-scheme: dark)">
 <title>Ebbflow · ETF 细分行业资金流向</title>
@@ -138,7 +138,7 @@
         </button>
         <button class="nav-item" type="button" id="btnAllSubsNav">
           <span class="nav-ico" aria-hidden="true"><svg><use href="#i-list"/></svg></span>
-          <span class="nav-label">全部 86 个小类</span>
+          <span class="nav-label" id="navAllSubsLabel">全部小类</span>
         </button>
       </div>
       <div class="rail-sep" role="separator"></div>
@@ -231,7 +231,7 @@
       <section class="card" aria-labelledby="catGridTitle">
         <div class="card-head">
           <div class="card-title">
-            <h2 id="catGridTitle">10 大类区间表现</h2>
+            <h2 id="catGridTitle">大类区间表现</h2>
             <p class="card-sub" id="catGridSub">按当前选中区间计算份额变化，点击进入该类走势</p>
           </div>
           <div class="card-tools">
@@ -579,7 +579,7 @@
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="allTitle">
     <div class="modal-head">
       <div style="flex:1;min-width:0">
-        <h2 id="allTitle">全部 86 个细分行业</h2>
+        <h2 id="allTitle">全部细分行业</h2>
         <p class="modal-sub" id="allSub">按所选区间排序，支持搜索与正负筛选</p>
       </div>
       <button class="icon-btn" type="button" id="allClose" aria-label="关闭">
@@ -668,7 +668,7 @@
       <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
       <span><kbd>Enter</kbd> 打开</span>
       <span><kbd>Esc</kbd> 关闭</span>
-      <span style="margin-left:auto" id="paletteHint">输入以搜索 86 个小类与 773 只 ETF</span>
+      <span style="margin-left:auto" id="paletteHint">输入小类名 / 拼音首字母 / ETF 代码</span>
     </div>
   </div>
 </div>

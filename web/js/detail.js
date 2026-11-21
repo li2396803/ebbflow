@@ -262,7 +262,7 @@ function renderEtfTable(rows, totalScale) {
 }
 
 /* ==========================================================================
-   全部 86 个小类
+   全部小类（数量从 meta.counts 读，不再写死）
    ========================================================================== */
 let allHooks = {};
 let allCache = null; // 金额口径的补充数据 { name: {first,last,delta,pct} }
@@ -326,7 +326,7 @@ export async function openAllSubs(opts = {}) {
     const tbody = document.querySelector("#tblAll tbody");
     if (tbody) tbody.innerHTML = skeletonRows(8, 10);
     const count = document.getElementById("allCount");
-    if (count) count.textContent = "正在加载 86 个小类的区间数据…";
+    if (count) count.textContent = `正在加载 ${allHooks.app?.meta?.counts?.subs ?? "全部"} 个小类的区间数据…`;
     try {
       await allHooks.ensureSubs?.();
     } catch (e) {
