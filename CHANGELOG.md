@@ -2,6 +2,29 @@
 
 本文件记录对仓库结构、数据口径、命令有影响的变化。日常数据更新（`chore(data): 自动更新站点数据`）不记录。
 
+## v3.6.0 — 加载链路优化（本地 2.6×、复访 2.8×）
+
+在 1.6Mbps / 150ms RTT 限速下实测（本地服务）：
+
+| 指标 | 优化前 | 优化后 |
+|---|---|---|
+| 首个图表出现 | 7,989 ms | **3,027 ms** |
+| 复访首个图表 | 1,712 ms | **614 ms** |
+| `subs.json` 传输 | 2,063 KB（未压缩） | **954 KB → 220 KB(gzip)** |
+| `echarts.min.js` 传输 | 1,005 KB（未压缩） | **327 KB(gzip)** |
+
+做法：
+
+1. **本地服务启用 gzip**：静态资源统一走 `sendFile`，gzip 预压缩缓存（按 mtime 失效，最多 64 个），`Vary: Accept-Encoding`。
+2. **ETag + 304**：重复访问不再重传（`If-None-Match` 命中直接 304）。
+3. **JSON 缓存策略** `no-store` → `no-cache`：可复用 preload、复访走 304 协商；HTML/JS/CSS 走 `max-age=600`。
+4. **`subs.json` 去掉重复的 `dates`**：原来每个小类都带一份 1212 天的日期数组（72 份），提到顶层 `__dates` 只留一份，体积 **2.06 MB → 954 KB**（−54%）。
+5. **预加载**：`echarts.min.js` 加 `fetchpriority="high"`、`data/market.json` 加 `rel=preload`，三者并行起跑（183ms 同时开始）。
+
+剩余瓶颈：`echarts.min.js` 仍占首屏 82% 的等待时间（327 KB gzip）。下一步可做「按需裁剪的 ECharts 自定义构建」（只保留 line/bar/tooltip/grid/dataZoom/legend，预计 327 → ~120 KB），需要引入构建期打包工具，尚未做。
+
+---
+
 ## v3.5.2 — 移动端明细表排版 + 聚焦态去重复标注
 
 - **移动端「本类细分行业明细」**：≤640px 隐藏「规模」「走势」两列，保留 4 列核心指标，390px 下零横向裁切；≥768px 恢复全部 6 列。

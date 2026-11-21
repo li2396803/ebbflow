@@ -583,6 +583,8 @@ async function ensureCalendar() {
     }
   }
   // 3) subs 里的 dates
+  const rootDates = Array.isArray(app.subs?.__dates) ? app.subs.__dates : null;
+  if (rootDates && rootDates.length > 2) { setCalendar(rootDates); return state.calendar; }
   const anySub = Object.values(app.subs || {}).find((x) => Array.isArray(x.dates) && x.dates.length > 2);
   if (anySub) {
     setCalendar(anySub.dates);
