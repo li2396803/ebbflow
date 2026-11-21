@@ -174,12 +174,13 @@ jobs:
       # 只提交站点与载荷 JSON。data/etf.db、data/shares/、data/lastrun.json 都在 .gitignore 里。
       # 这里故意写显式文件名而不用 data/*.json：shell 会先把 data/*.json 展开成真实文件名
       # （其中包含被忽略的 data/lastrun.json），而 git add 一个被忽略的路径会以退出码 1 失败。
-      # 用原生 git 提交，并在冲突时自动 rebase 重试 —— 避免「维护者刚好也推送了一次」导致整条流水线失败
+      # 用原生 git 提交；遇到并发推送时 rebase 重试，数据文件冲突一律以「本次 CI 生成的结果」为准
       - name: 提交站点数据
         if: success() && github.ref == 'refs/heads/master'
         shell: bash
         run: |
           set -euo pipefail
+          BR="${GITHUB_REF_NAME}"
           git config user.name "etf-flow bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add site data/series.json data/quality.json
@@ -188,15 +189,27 @@ jobs:
             exit 0
           fi
           git commit -m "chore(data): 自动更新站点数据"
-          for i in 1 2 3 4; do
-            if git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}"; then
-              echo "已推送（第 $i 次尝试）"
-              exit 0
+
+          # 生成物（series/quality/site）每次都会被本 job 重写，冲突时取本 job 的版本即可
+          resolve_generated() {
+            git checkout --theirs -- data/quality.json data/series.json 2>/dev/null || true
+            git checkout --theirs -- site 2>/dev/null || true
+            git add -A data/series.json data/quality.json site 2>/dev/null || true
+          }
+
+          for i in 1 2 3 4 5; do
+            if git pull --rebase --autostash origin "$BR" 2>/dev/null; then
+              if git push origin "HEAD:$BR"; then echo "已推送（第 $i 次尝试）"; exit 0; fi
+            else
+              echo "rebase 冲突，保留本次生成的数据后继续"
+              resolve_generated
+              GIT_EDITOR=true git rebase --continue || { git rebase --abort || true; }
+              if git push origin "HEAD:$BR"; then echo "已推送（解决冲突后，第 $i 次尝试）"; exit 0; fi
             fi
-            echo "推送被拒（第 $i 次），3 秒后重试…"
+            echo "第 $i 次未成功，3 秒后重试…"
             sleep 3
           done
-          echo "::error::连续 4 次推送失败"
+          echo "::error::连续多次推送失败"
           exit 1
 
       # 把构建好的静态站点打成可下载产物：从 Actions 页面下载 zip 即可离线打开/托管
