@@ -7,7 +7,14 @@
    ========================================================================== */
 
 const STATIC_DIR = "data";
-const API_PREFIX = "/api";
+// 相对路径：本地服务在站点根（/api），GitHub Pages 子路径（/etf-flow/api）也能正确拼接
+const API_PREFIX = "api";
+
+/** 只有本机/文件协议才可能跑着本地服务；静态托管时直接跳过探测，避免控制台 404 噪音 */
+function mayHaveService() {
+  const h = location.hostname;
+  return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "" || location.protocol === "file:";
+}
 
 const cache = new Map(); // key -> data
 const inflight = new Map(); // key -> Promise
@@ -111,6 +118,10 @@ export const failures = () => errors.slice();
 
 /** 探测本地服务（用于刷新按钮/数据源徽标） */
 export async function probeService() {
+  if (!mayHaveService()) {
+    net.hasService = false;
+    return false;
+  }
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 2500);
