@@ -1765,7 +1765,17 @@ function wireTheme() {
 
 /* --------------------------------- 11. 刷新 ------------------------------- */
 
+/** 是否可能存在本地服务（静态托管时直接跳过探测，避免控制台 404 噪音） */
+function mayHaveServer() {
+  const h = location.hostname;
+  return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "" || location.protocol === "file:";
+}
+
 async function probeServer() {
+  if (!mayHaveServer()) {
+    setDataBadge("static", "静态快照");
+    return false;
+  }
   try {
     const res = await fetch("/api/status", { cache: "no-store" });
     if (!res.ok) throw new Error(res.status);
