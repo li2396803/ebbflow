@@ -35,9 +35,9 @@
 - 适用字段：`charts-*.json` 的 `series[].shares`、`tables.*.{now,start,delta,first,last}`、
   `subs[].values/current`、`subs[].etfs[].shares/delta`。
 - 不适用：`market.json`（全市场自然口径，不折算）、所有 `scale` / `flow`。
-- ⚠️ **已知不一致**：v2 分类下（默认口径）债券小类的**小类级**数值来自 `series_v2`，当前**没有**乘 100，
-  而 `subs[].etfs[].shares` 乘了 100 —— 同一小类的成分明细合计会是头部数值的约 100 倍。
-  详见 §7「已知问题」，修复前请按 `meta.taxonomy` 判断（legacy 口径一致）。
+- ✅ **已修复（v3.4.0）**：此前 v2 口径的债券小类级数值漏乘 100（`recomputeAll()` 只认 `9_债券`），
+  导致小类值只有成分明细合计的 1/100。现在统一走 `isBondCat()`（legacy `9_债券` / v2 `bond`），
+  两套口径一致：`subs["科创债"].current` 与其 `etfs[].shares` 合计比值实测为 1.00。
 
 ### 1.2 `flow` 是「份额净申购（估算）」
 
@@ -198,7 +198,7 @@ site/data/
 | `all[].flow` | number | 亿元 | 是 | 窗口内 `flow` 求和；整窗无值则 `null` |
 | `top` / `bottom` | array | — | 否 | `all` 的前 5 / 后 5（`bottom` 已反转，最差在前） |
 
-> 份额类字段（`now/start/first/last/delta`）在 legacy 债券大类已 ×100；v2 存在 §1.1 的已知不一致。
+> 份额类字段（`now/start/first/last/delta`）在债券小类已 ×100 —— legacy（`9_债券`）与 v2（`bond`）都适用（v3.4.0 起一致）。
 
 ### 4.3 `GET /api/charts/:catKey`
 
@@ -282,8 +282,8 @@ site/data/
 | `scale` | number | 亿元 | 是 | 末日规模 = `份额(万份)/1e4 × nav` |
 | `flow` | number | 亿元/日 | 是 | 末日净申购（已剔除拆分/合并与上市首日） |
 
-> 行情相关字段（`price/premium/pctChg/amount/turnover`）依赖 `quote` 表；该表由
-> `node scripts/backfill-quotes.mjs` 回补，**不在每日更新流程里**。未回补的日期这些字段为 `null`。
+> 行情相关字段（`price/premium/pctChg/amount/turnover`）依赖 `quote` 表：**每日增量会更新当日行情**
+> （`update` 第 2.6 步），更早的历史用 `node scripts/backfill-quotes.mjs` 回补。未回补的日期这些字段为 `null`。
 
 ### 4.5 `GET /api/sub/:name`
 
@@ -528,18 +528,28 @@ node -e 'const m=require("./site/data/meta.json");console.log(m.taxonomy,m.lastT
 
 ---
 
-## 7. 已知问题（读契约时请留意）
+## 7. 已知问题与已修复项
 
-1. **v2 债券小类的小类级数值未 ×100**（详见 §1.1）。证据：`subs["科创债"].current ≈ 33.5`，
-   而其 `etfs[].shares` 合计 ≈ 3345.6（≈100×）。原因在 `lib/pipeline.mjs` 的 `recomputeAll()`
-   只对 `9_债券` 这一个 cat key 乘 100，v2 的债券 cat key 是 `bond`。修复方向：统一用
-   `isBondCat()` 判断（`lib/payloads.mjs` 已有该函数），或在 v2 分类生成时把 cat 映射成 `9_债券`。
-2. **`tables.cats[].label` 不是中文**：v2 下等于大类 key（`industry`），legacy 下是 `9.债券` 形式。
+### 7.1 已修复（v3.4.0 · 提交 `d23203a`）
+
+| 问题 | 修复方式 | 现在怎么验证 |
+| --- | --- | --- |
+| v2 债券小类级数值未 ×100，与成分明细差约 100 倍 | `lib/pipeline.mjs` 改用 `isBondCat()`（同时认 `9_债券` 与 `bond`） | `subs["科创债"].current` 与其 `etfs[].shares` 合计比值 = 1.00 |
+| 新库缺 `fund.list_date` 列，`upsertFunds()` / `buildSubs()` 报 `no column named list_date` | `openDb()` 增加幂等迁移 `ALTER TABLE fund ADD COLUMN list_date TEXT` | 空库启动后 `PRAGMA table_info(fund)` 含该列 |
+| `event` / `quote` 不在每日流程：折算检测与行情只在手动脚本里 | `scripts/update.mjs` 第 2.6 步每日常规执行 `ingestQuotes()` + `detectShareEvents()` + `putEvents()` | 更新日志出现「行情：N 天 / M 行」「份额折算事件：K 起」 |
+| `server/app.mjs` 的 `get payloads()` 调用未定义函数（潜在 `ReferenceError`） | 改为 `return payloadsFallback()` | 访问 `/api/*` 的数据端点正常返回 |
+
+### 7.2 仍存在 / 设计如此
+
+1. **`tables.cats[].label` 不是中文**：v2 下等于大类 key（`industry`），legacy 下是 `9.债券` 形式。
    中文名请查 `meta.categories`。
-3. **`/api/sub/:name` 仅当前口径**；legacy 没有对应路由（见 §4.5）。
-4. **`/api/signature`、`/api/archive/<date>` 未实现**；只有静态文件（见 §4.11 末尾）。
-5. **`/api/refresh` 失败时 HTTP 仍是 200**，必须检查响应体里的 `error` 字段。
-6. **`quote` 表覆盖不完整**（行情回补按需推进）：未回补日期的 `price/premium/pctChg/amount/turnover` 为 `null`。
+2. **`/api/sub/:name` 仅当前口径**；legacy 没有对应路由（见 §4.5），前端在 legacy 下用
+   `subs.json` 做本地索引。
+3. **`/api/signature`、`/api/archive/<date>` 未实现**；只有静态文件（见 §4.11 末尾）。
+   前端是静态优先，不受影响。
+4. **`/api/refresh` 失败时 HTTP 仍是 200**，必须检查响应体里的 `error` 字段。
+5. **行情历史覆盖不全**：每日增量只补「当日」，更早日期需要 `scripts/backfill-quotes.mjs`。
+   当前约 297 个交易日有行情；未覆盖日期的 `price/premium/pctChg/amount/turnover` 为 `null`。
 
 ---
 
@@ -548,6 +558,6 @@ node -e 'const m=require("./site/data/meta.json");console.log(m.taxonomy,m.lastT
 - 端点、状态码、响应头、错误文案：逐行对照 `server/app.mjs`（2026-11-21 20:4x），未起服务实跑全部请求。
 - 字段名与形状：对照 `lib/payloads.mjs`、`lib/build/site.mjs`，并用 `site/data/*.json` 的真实样例核对
   （示例值取自 2026-11-20 构建产物）。
-- 债券 ×100 的不一致：用 `site/data/subs.json` 实测比值（bond ≈ 99.9×，非 bond ≈ 1.00×）确认。
+- 债券 ×100：v3.4.0 修复后用 `site/data/subs.json` 复测，bond 与非 bond 的「小类值 / 成分合计」比值均为 1.00。
 - `quote` 字段单位：用 `close × vol / 10 ≈ amount`（误差 0.4%）确认 `vol` 为「手」、`amount` 为「千元」。
 - 未实跑：`/api/refresh`（会触发联网更新）、`/api/status` 的运行时字段（示例为结构说明）。

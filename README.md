@@ -88,7 +88,7 @@
 - 深色 / 浅色 / 跟随系统三态主题，手动切换会记住。
 - 色盲友好配色（蓝涨橙跌）、减少动效开关。
 - 「全部 72 个小类」总表：搜索、只看净流入/净流出、按份额或金额口径、排序、CSV。
-- 数据质量面板：三源交叉校验的一致率、差异天数、逐日差异样例，可下载原始 JSON。
+- 数据质量面板：沪市双口径交叉校验（交易所 vs Tushare）的一致率、差异天数、逐日差异样例，可下载原始 JSON。
 - 移动端：底部 tab + 全屏抽屉，图表支持双指缩放，提示文案自动切换。
 
 ---
@@ -126,13 +126,16 @@ npm start        # → http://localhost:5188
 
 ## 2. 数据来源与口径
 
-### 2.1 三个数据源
+### 2.1 两个数据源（上交所 + Tushare）
 
 | 来源 | 接口 | 给的是什么 | 能回溯历史吗 | 本项目怎么用 |
 | --- | --- | --- | --- | --- |
 | **上交所** | `GET query.sse.com.cn/commonQuery.do`，`sqlId=COMMON_SSE_ZQPZ_ETFZL_XXPL_ETFGM_SEARCH_L`，参数 `STAT_DATE=YYYY-MM-DD`（字段 `TOT_VOL`，**万份**） | 该交易日**沪市全部 ETF** 的基金份额 | **能**，按日期回溯任意历史交易日；非交易日返回空（代码里当 `null` 跳过） | 沪市官方口径：沪市成分 ETF（773 只）的权威来源，日常近 15 日增量 + 可选全量回补 |
-| ~~深交所~~ | 已弃用 | 官方 ShowReport 只有"最新交易日"快照、无历史 | 不能 | v3 起深市数据**统一由 Tushare 提供**（`fund_share` 可按 `ts_code` 回溯），代码中已无调用点 |
 | **Tushare Pro** | `fund_share`：`ts_code` 单只（配 `start_date`/`end_date`）或全市场（配 `trade_date`），字段 `fd_share`，**万份、4 位小数** | **沪深两市**每日份额 | **能**，可回溯（`fund_share` 一般能查到 5 年以上，具体受账号积分影响） | ① 深市历史的**唯一**可回溯来源 ② 沪市补缺 ③ 交叉校验的高精度参照 |
+
+> **深交所接口已弃用**：官方 ShowReport 只有「最新交易日」快照、无法回溯历史，代码中已无调用点；深市份额与净值统一由 Tushare 提供。
+
+> **Tushare 提供四类数据**：份额 `fund_share`、单位净值 `fund_nav`、基金名录 `fund_basic`、行情 `fund_daily`（收盘价 / 成交额 / 成交量 / 涨跌幅，用于折溢价、成交额与换手率）。
 
 上交所一次请求带 `pageHelp.pageSize=2000` 并自动取回全量（带 UA 与 Referer，不加会被拒）。Tushare 侧有**全局令牌桶 + 单次/每日预算**（`TUSHARE_RPM=120`、`TUSHARE_MAX_CALLS_PER_RUN=800`、`TUSHARE_DAILY_BUDGET=4000`），日常增量只需 2 次调用（`fund_share`/`fund_nav` 各按交易日取全市场）。
 
@@ -142,7 +145,7 @@ npm start        # → http://localhost:5188
 
 ```
 细分行业值(亿份) = Σ 成分 ETF 当日份额(万份) ÷ 1e4
-大类「9.债券」  = 上面的值 × 100          # 债券 ETF 面值 100 元/份，跟随原站折算口径
+债券大类        = 上面的值 × 100          # legacy「9_债券」/ v2「bond」；债券 ETF 面值 100 元/份
 内部精度：round 到 4 位小数（series.val）；前端展示取 1 位
 ```
 
@@ -150,6 +153,9 @@ npm start        # → http://localhost:5188
 - 成分股名单分两层：
   - `lib/taxonomy.mjs`（`BASE_*`）：**原看板的 10 大类 / 86 细分行业 / 773 只沪市 ETF**，保持冻结，用于与原看板做回归校验。
   - `data/universe.json` + `lib/universe.mjs`：深市 ETF 的归属（391 只按「同跟踪指数」、450 只按关键词规则、2 个新增小类），合并后是 **10 大类 / 88 细分行业 / 1614 只 ETF**（沪 773 + 深 841）。v2 口径另见 `data/classification-v2.json`（7 大类 / 72 小类 / 1903 只，申万一级行业骨架）。归类方法见 [`docs/CLASSIFICATION.md`](docs/CLASSIFICATION.md)。
+- **规模 / 净流入口径**：`规模(亿元) = Σ 份额 × 当日单位净值`；`净流入(亿元/日) = Σ (份额_t − 份额_{t−1}) × 当日净值`。
+  其中份额差已按 `event`（份额拆分/合并，254 起）换算到当前份额单位，并剔除**上市首日**——新发基金一次性进来的份额不是申赎。
+  因此它是「份额净申购（估算）」：ETF 二级买卖不改变份额，只有一级申赎才会体现在这里（详见 [`docs/DATA.md`](docs/DATA.md) §1）。
 - **为什么债券要 ×100**：债券 ETF 面值是 100 元/份，而股票 ETF 通常 1 元/份。不折算的话债券大类的"亿份"和其他大类不可比，×100 后各列的数量级才对齐（原站就是这么做的）。
 
 ### 2.3 来源优先级
@@ -169,8 +175,9 @@ npm start        # → http://localhost:5188
 
 ```
         上交所 commonQuery（逐日，可回溯）
-        Tushare fund_nav  （按日取全市场净值）
         Tushare fund_share（逐只/逐日，可回溯）
+        Tushare fund_nav  （按日取全市场净值）
+        Tushare fund_daily（按日取全市场行情）
                    │
                    │  lib/sources.mjs / lib/tushare.mjs（UA/Referer/重试/限并发）
                    ▼
@@ -178,20 +185,22 @@ npm start        # → http://localhost:5188
                    │
                    ▼
    lib/db.mjs → data/etf.db  (SQLite, node:sqlite, WAL)
-     fund     名录        share     原始份额（code,date,wan,src）
-     series   派生序列    reconcile 交叉校验明细
-     run      运行记录    meta      零碎状态
+     fund  名录      share 份额      nav  净值      quote 行情
+     series / series_v2       双口径派生序列（legacy / v2）
+     market / market_type     全市场聚合（沪深 + 按基金类型）
+     event 份额折算  reconcile 交叉校验  run 运行记录  dayinfo 覆盖标记  meta 状态
                    │
        ┌───────────┴────────────┐
        ▼                        ▼
  lib/payloads.mjs          scripts/reconcile.mjs
- 派生载荷（meta/charts/     双口径交叉校验
- tables/subs/index/quality）    │
-       │                        ▼
-       ▼                  data/quality.json
- lib/build/site.mjs        （+ reconcile 表）
- 拷贝 web/ → site/，
- 写 site/data/*.json
+ 派生载荷（meta/tables/     双口径交叉校验
+ charts/subs/index/            │
+ market/quality + 签名）        ▼
+       │                  data/quality.json
+       ▼                  （+ reconcile 表）
+ lib/build/site.mjs
+ 拷贝 web/ → site/，写 site/data/*.json
+ （含 legacy/ 子树与 archive/）
        │
    ┌───┴────────────────────┐
    ▼                        ▼
@@ -200,9 +209,11 @@ npm start        # → http://localhost:5188
    或任意静态服务器）     前端「静态优先、API 兜底」
 ```
 
-前端（`web/app.js`）的取数策略是**静态优先**：先 fetch 同目录 `data/*.json`，失败才回退 `/api/*`。所以同一份 `site/` 既能本地起服务看，也能扔到任意静态托管（含 GitHub Pages）上只读浏览。
+前端（`web/js/api.js`）的取数策略是**静态优先**：先 fetch 同目录 `data/*.json`，失败才回退 `/api/*`。所以同一份 `site/` 既能本地起服务看，也能扔到任意静态托管（含 GitHub Pages）上只读浏览。
 
 `data/etf.db` 是**本地缓存**：不进 git，可由「原始快照 + 接口」重建（backfill / update 见 §4）。
+
+**两套分类口径（可切换）**：默认 **v2** —— 7 大类 / 72 小类 / 1903 只，指数类别 + 申万一级骨架，数据在 `series_v2`、目录 `site/data/`；兼容 **legacy** —— 10 大类 / 88 小类 / 1614 只，原看板 86 小类 + 深市归属，数据在 `series`、目录 `site/data/legacy/`。两套互不覆盖，页面上可切换，接口前缀分别是 `/api/*` 与 `/api/legacy/*`（契约见 [`docs/API.md`](docs/API.md) §1.3）。
 
 > **延伸阅读**：[`docs/API.md`](docs/API.md) —— HTTP/JSON 契约（端点、字段、单位、空值、错误码，含 `/api/legacy/*`）；
 > [`docs/DICTIONARY.md`](docs/DICTIONARY.md) —— SQLite 数据字典（13 张表的字段、来源与更新频率）。
@@ -214,7 +225,7 @@ npm start        # → http://localhost:5188
 | 命令 | 干什么 | 联网 | 耗时 | 本次核对 |
 | --- | --- | --- | --- | --- |
 | `npm start` | 起本地服务（默认 5188；`PORT=8080 npm start` 换端口；加 `--no-refresh` 关掉自动刷新） | 按需* | 秒级启动 | ✅ 服务在跑（`/api/status` 可访问） |
-| `npm run update` | 增量更新：Tushare 当日全市场（份额+净值） + 上交所近 15 日 → 重算 → 构站 | ✅ | 本机最近一次记录 **13.9 s**（`data/lastrun.json` 的 `ms`） | ⚠️ 未由本文档复跑（记录来自本机既有运行） |
+| `npm run update` | 增量更新：Tushare 当日全市场（份额+净值+行情）+ 份额折算检测 + 上交所近 15 日 → 重算 → 构站 | ✅ | 本机最近一次记录 **13.9 s**（`data/lastrun.json` 的 `ms`） | ⚠️ 未由本文档复跑（记录来自本机既有运行） |
 | `npm run build` | 只用本地 `data/etf.db` 重建 `site/`，不碰网络。库为空会**退出码 1** 并提示先回补 | ❌ | 秒级 | ⚠️ 未复跑（会改写 `site/`，属他人工作区） |
 | `npm run backfill` | 全量回补历史。参数：`--from 2021-11-22` `--to today` `--source ts\|sse\|both` `--limit N` `--dry-run` `--concurrency 6` `--no-resume` `--help` | ✅ | 取决于区间与积分限速（未计时） | ⚠️ 未复跑 |
 | `npm run reconcile` | 双口径交叉校验（沪市交易所 vs Tushare），写 `data/quality.json` + `reconcile` 表。参数：`--days 30` `--date YYYY-MM-DD` `--tol 1` `--quiet` `--no-write` `--out file`；退出码 0/1/2 | ✅（现抓 Tushare） | 未计时 | ✅ `--help` 实测（输出即上表参数） |
@@ -295,7 +306,7 @@ npm run reconcile -- --no-write        # 只看结果，不写库/不写文件
 它做三件事：
 
 1. **逐只比**：把同一交易日「交易所侧（`src=sse`，`szse` 为历史遗留）」与「Tushare 侧（现抓 `shareOnDate`，拿不到才用库里的 `ts` 行）」的同 code 数值对比，按相对差分档：完全一致 / ≤0.1% / ≤1% / >1%。
-2. **小类层再比**：分别用两侧份额重算 86 个小类，但**只用两侧都有值的公共成分**（`covered`），避免把"覆盖率差异"误判成"数值分歧"；同时比较方向（涨/跌）并指出哪边偏离。
+2. **小类层再比**：分别用两侧份额重算 88 个小类（legacy 宇宙），但**只用两侧都有值的公共成分**（`covered`），避免把"覆盖率差异"误判成"数值分歧"；同时比较方向（涨/跌）并指出哪边偏离。
 3. **落盘**：先清空 `reconcile` 表（最多留 5000 行明细）再写入，并写 `data/quality.json`。
 
 **退出码**：`0` 都在容差内；`1` 存在 >1% 分歧；`2` 无法校验（无交易日 / Tushare 不可用）。
@@ -315,10 +326,10 @@ npm run reconcile -- --no-write        # 只看结果，不写库/不写文件
 | `summary.tolerance.bucket1Pct` | 判定容差（默认 0.01 = 1%） |
 | `summary.diverged` / `summary.ok` | 分歧项数 / 是否全部通过 |
 | `days[].perSource` | 当天各来源覆盖只数，例如 `{sse:{codes:746}, szse:{codes:0}, exchange:{codes:746}, ts:{codes:746,from:"live"}}` |
-| `days[].seriesCheck[]` | 当天 86 个小类的逐项对比：`exchange`/`ts`/`covered`/`relPct`/`dirExchange`/`dirTs`/`inconsistent`/`note` |
+| `days[].seriesCheck[]` | 当天 88 个小类的逐项对比：`exchange`/`ts`/`covered`/`relPct`/`dirExchange`/`dirTs`/`inconsistent`/`note` |
 | `days[].mismatch` | 当天超容差的明细（`count` + `byCode[]`） |
 
-**一份实测样例**（本机当前 `data/quality.json`，2026-11-16 ~ 2026-11-20）：`compared.both = 3730`（= 746 只 × 5 天），`identical = 3730`，`gt1 = 0`，小类层 `checked = 430` 全部一致，`ok = true`。同一天 `days[].perSource.szse.codes = 0` —— 因为分类体系的 773 只成分**全是沪市代码**，深市快照不在这份比对里。
+**一份实测样例**（本机当前 `data/quality.json`，2026-11-16 ~ 2026-11-20）：`compared.both = 3730`（= 746 只 × 5 天），`identical = 3730`，`gt1 = 0`，小类层 `checked = 430` 全部一致，`ok = true`。同一天 `days[].perSource.ts.codes` 明显多于 `sse.codes` —— 深市没有官方历史，逐只比对天然只覆盖沪市；`onlyTs` 就代表「Tushare 有、交易所没有」的那部分。
 
 ### 出现分歧意味着什么
 
@@ -519,10 +530,10 @@ gh api user                             # 看 plan 字段（本机实测返回 n
 
 | 项 | 状态 |
 | --- | --- |
-| 版本 | **v3.0.0（进行中）** —— 产品化重构，变更见 [`CHANGELOG.md`](CHANGELOG.md) |
+| 版本 | **v3.x** —— 产品化重构与双口径并存，变更见 [`CHANGELOG.md`](CHANGELOG.md) |
 | 测试 | `npm test`：10 个数据校验用例；`node scripts/lint.mjs`：7 项仓库自检（语法 / 密钥 / 占位符 / 产物边界 / 数据底座） |
-| 数据规模 | **1212 个交易日**（2021-11-22 ~ 2026-11-20）/ **86 个细分行业** / **773 只 ETF 成分**（9 个编号大类） |
-| 全市场总览 | 另统计沪深**全部场内 ETF（约 1953 只）** 的份额与规模，与上面的 773 只分类成分是两套口径 |
+| 数据规模 | **1212 个交易日**（2021-11-22 ~ 2026-11-20）｜默认 **v2**：7 大类 / 72 小类 / 1903 只 ｜ 兼容 **legacy**：10 大类 / 88 小类 / 1614 只 |
+| 全市场总览 | 另统计沪深**全部场内 ETF**（名录约 1953 只、当日有份额约 1730 只）的份额与规模；与分类成分是两套口径 |
 | 公网站点 | <https://li2396803.github.io/ebbflow/>（每个工作日约 16:30 自动更新并发布） |
 | 数据最后更新 | 见站点页脚「数据截至 / 交易日」，或 `data/quality.json` 的 `generatedAt` |
 | 运行时 | Node.js **≥ 22.5**（内置 `node:sqlite`），零运行时依赖 |

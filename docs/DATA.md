@@ -1,167 +1,148 @@
 # 数据说明 · 口径、字段与质量
 
-本文是数据侧的「字典 + 说明书」。架构与模块职责见 [`ARCHITECTURE.md`](ARCHITECTURE.md)。
+本文是数据侧的「口径 + 质量 + 文件」说明书。
+逐列字段字典见 [`DICTIONARY.md`](DICTIONARY.md)，HTTP/JSON 契约见 [`API.md`](API.md)，
+架构与模块职责见 [`ARCHITECTURE.md`](ARCHITECTURE.md)，分类方法见 [`CLASSIFICATION.md`](CLASSIFICATION.md)。
 
-一句话：**看板展示的是「份额（亿份）」，不是金额**；金额口径的「规模 / 净流入」是按净值折算的估算值。
-两者都标注了单位和大致误差来源，请勿混用。
+一句话：**看板展示的是「份额（亿份）」，不是金额**；「规模 / 净流入」是按净值折算的估算值。
+两者都有明确的单位与误差来源，请勿混用。
 
 ---
 
 ## 1. 口径
 
-### 1.1 细分行业值（主口径）
+### 1.1 细分行业份额（主口径）
 
 ```
 细分行业值(亿份) = Σ 该小类成分 ETF 当日份额(万份) ÷ 1e4
-大类「9_债券」    = 上面的值 × 100        # 债券 ETF 面值 100 元/份，跟随原站折算口径
+债券小类        = 上面的值 × 100
+                  # legacy 大类「9_债券」与 v2 大类「bond」都适用
+                  # 债券 ETF 面值 100 元/份，跟随原看板折算口径
 ```
 
-- 单位：**亿份**。交易所给的是「万份」，除以 1e4 得亿份。
-- 库内精度：**4 位小数**（`series.val`）；展示取 1 位小数。
-- 没有成分数据的日子写 `NULL`，**不写 0**：0 会伪造出「份额归零」的断崖。
+- 单位：**亿份**（交易所给「万份」，÷1e4 得亿份）。
+- 库内精度 **4 位小数**（`series.val` / `series_v2.val`），展示取 1 位。
+- 没有成分数据的日子写 `NULL`，**不写 0**：0 会伪造「份额归零」的断崖。
 - 若某小类当天一个成分都没数据 → `NULL`（不是 0）。
 
 ### 1.2 为什么债券要 ×100
 
 债券 ETF 面值 100 元/份，股票 ETF 通常 1 元/份。同样「1 亿份」，债券对应的资金量是 100 倍。
-不折算的话债券大类的「亿份」和其他大类不在一个量级，跨大类的规模对比与排行会失真。
-×100 后各列数量级对齐 —— 这是原站的口径，本项目保持一致。
+不折算的话债券小类的「亿份」和其他小类不在一个量级，跨大类的规模对比与排行会失真。
+×100 后各列数量级对齐 —— 这是原看板的口径，本项目保持一致。
 
-> 注意：×100 **只作用于份额口径**。金额口径（规模/净流入）本身已按净值折算，不再乘。
+判断口径统一走 `isBondCat()`：**legacy 认 `9_债券`，v2 认 `bond`**（v3.4.0 修复，此前 v2 漏乘）。
 
-### 1.3 金额口径（估算）
+> 注意：×100 **只作用于份额口径**。金额口径（`scale` / `flow`）本身已按净值折算，不再乘；
+> 全市场总览（`market`）用自然口径，也不乘。
+
+### 1.3 规模与净申购（估算）
 
 ```
-规模(亿元)  = Σ 成分 ETF [ 份额(万份) ÷ 1e4 × 当日单位净值(元/份) ]
-净流入(亿元) = Σ 成分 ETF [ (当日份额 − 上一交易日份额)(万份) ÷ 1e4 × 当日单位净值 ]
+规模(亿元)    = Σ 成分 ETF [ 份额(万份) ÷ 1e4 × 当日单位净值(元/份) ]
+
+净申购(亿元/日) = Σ 成分 ETF [ (adjWan(份额_t) − adjWan(份额_{t−1})) ÷ 1e4 × 当日单位净值 ]
 ```
 
-- 净值来自 Tushare `fund_nav`；缺净值的成分不进金额合计（份额口径不受影响）。
-- 「净流入」是**近似值**：严格口径要按申赎清单/折溢价拆解，这里只做「Δ份额 × 当日净值」。
-  它回答的是「这一周钱大概往哪边挪」，不是精确的申赎金额。
-- 覆盖率与缺失成分会在前端抽屉里标注（`navCoverage`）。
+其中 `adjWan` 与「是否计入」有两处修正：
 
-### 1.4 归一化序列（图表用，不是数据本身）
+1. **剔除份额拆分 / 合并**：`event` 表（当前 254 起：`split` 166 / `merge` 88）记录折算事件，
+   计算前把事件之前的历史份额按比例换算到**当前份额单位**，再相减 —— 否则 1:2 折算会被算成几十亿的假申购。
+   份额水位本身（`series.val` / 载荷里的 `shares`）仍按原始披露值展示，不做换算。
+2. **剔除上市首日**：`fund.list_date == 当日` 的成分不参与当日 `flow` —— 新发基金会一次性进几亿份，
+   那是一级募集，不是日常申赎。
 
-`lib/payloads.mjs` 在**展示层**做两种归一，不改库里的值：
+其它约定：
 
-| 序列 | 基准 | 含义 |
-| --- | --- | --- |
-| `c2` 长期 | 该小类首个有效日 = 100 | 长期趋势（与原站一致：切窗口后重新归一） |
-| `c3` 近 7 日 | 窗口内首个有效值 = 100 | 「最近一周谁在动」 |
+- 净值来自 Tushare `fund_nav`；**缺净值**的成分不计入 `scale` / `flow`（份额口径不受影响），
+  前端抽屉里用 `navCoverage` 标注命中数/总数。
+- 「净申购」是**估算**：ETF 二级买卖不改变份额，只有一级申赎才改；真实金额还受折溢价、
+  申赎清单与现金差额影响。它回答的是「这段时间钱大概往哪边挪」，不是精确申赎额。
+- `flow` 仅在「当日与上一交易日都有份额、且当日有净值」时有值，否则为 `null`。
 
-因此 `c2`/`c3` 的起点永远是 100，**不是绝对涨跌**。要绝对量请看 `c1`（亿份）。
+### 1.4 全市场口径（`market` / `market_type`）
+
+```
+market.shares   = Σ 全部场内 ETF 份额(万份) ÷ 1e4        # 亿份，自然口径（不 ×100）
+market.scale    = Σ 全部场内 ETF [份额 ÷ 1e4 × 当日净值]  # 亿元
+market_type.*   = 同上，按 fund.type 分组
+```
+
+- 范围是**名录里全部场内 ETF（沪深）**，不是分类体系里的成分；交易所快照里混着的 REITs / LOF /
+  普通指数基金会按名称含 `ETF` 过滤掉。
+- `scope ∈ SH / SZ / ALL`；三个 scope 每天各一行。
+- 与细分行业口径**不可相加或互比**：一个是全市场，一个是精选成分。
+- 缺净值的成分只计份额、不计规模（因此 `scale` 可能略低于真实市值）。
+
+### 1.5 两套分类口径（互不覆盖）
+
+| 口径 | 大类 | 小类 | 成分 ETF | 序列表 | 目录/前缀 | 定位 |
+| --- | --- | --- | --- | --- | --- | --- |
+| **v2**（默认） | 7 | 72 | 1903 | `series_v2` | `site/data/` · `/api/*` | 指数类别 + 申万一级/主题骨架，覆盖沪深 |
+| **legacy** | 10 | 88 | 1614 | `series` | `site/data/legacy/` · `/api/legacy/*` | 原看板 86 小类（773 只沪市）+ 深市归属 |
+
+- legacy 的 1614 = 原看板 773 只 + 深市 841 只（391 只按「同跟踪指数」、450 只按关键词规则、2 个新增小类）。
+- 两套分类的 `sub` 命名与语义不同，**分别写入两张表、两个目录**，切换口径不会串数据。
+- 构建时默认用 v2；`series_v2` 覆盖不足 1000 个交易日时自动回落 legacy（见 `lib/build/site.mjs`）。
 
 ---
 
 ## 2. 数据源能力矩阵
 
-本项目只有**两个**数据源。深交所官方接口只有「当前规模」一份快照、无法回溯历史，
-v3 起已**不再调用**（`scripts/update.mjs` 的调用点已移除），深市数据统一走 Tushare。
+本项目只有**两个**数据源。深交所官方接口只有「当前规模」快照、无法回溯，已弃用，
+深市份额与净值统一由 Tushare 提供。
 
 | 来源 | 接口 | 字段 | 单位 | 可回溯 | 在本项目中的角色 |
 | --- | --- | --- | --- | --- | --- |
 | 上交所 | `query.sse.com.cn/commonQuery.do`，`sqlId=COMMON_SSE_ZQPZ_ETFZL_XXPL_ETFGM_SEARCH_L`，`STAT_DATE=YYYY-MM-DD` | `TOT_VOL` | 万份（整数） | ✅ 任意历史交易日 | 沪市主数据源（官方口径）；日常近 15 日增量 + 全量回补 |
-| Tushare Pro | `fund_share`（按 `ts_code` 或 `trade_date`） | `fd_share` | 万份，4 位小数 | ✅ 一般 5 年以上（受账号积分限制） | **深市唯一来源**；沪市补缺与第二参照 |
-| Tushare Pro | `fund_nav` | `unit_nav` | 元/份 | ✅ | 金额口径（规模/净流入） |
-| Tushare Pro | `fund_basic` | 名称/类型/市场 | — | — | 刷新 `fund` 名录（每周一次） |
-
-### 2.1 覆盖范围：两套口径
-
-| 口径 | 范围 | 用在哪 | 载荷 |
-| --- | --- | --- | --- |
-| 分类体系 | 86 个小类、773 只成分 ETF（**全部沪市** `5xxxxx`） | 细分行业曲线、大类汇总、排行、明细抽屉 | `charts` / `tables` / `subs` |
-| 全市场 | 沪深**全部场内 ETF（约 1953 只）** | 全市场总览（沪深合计与按基金类型分布） | `market` |
-
-两套口径的数字**不可互相比较或相加**：全市场统计所有 ETF，分类体系只统计被选中的 773 只沪市成分。
-`market.json` 里的 `note` / `unit` 字段会再次提示这一点。
+| Tushare Pro | `fund_share`（按 `ts_code` 或 `trade_date`） | `fd_share` | 万份，4 位小数 | ✅ 一般 5 年以上（受积分限制） | **深市唯一来源**；沪市补缺与第二参照 |
+| Tushare Pro | `fund_nav`（按 `ts_code` 或 `trade_date`） | `unit_nav` | 元/份 | ✅ | 金额口径（`scale` / `flow`） |
+| Tushare Pro | `fund_daily`（按 `trade_date`，全市场） | `close / pct_chg / vol / amount` | 元 / % / 手 / 千元 | ✅ | 折溢价、成交额、换手率（`quote` 表） |
+| Tushare Pro | `fund_basic`（`market="E"`） | 名称/类型/上市日 | — | — | 刷新 `fund` 名录（每周一次） |
 
 抓取纪律（`lib/tushare.mjs`）：
 
 | 参数 | 默认 | 环境变量 | 作用 |
 | --- | --- | --- | --- |
-| 每分钟调用上限 | 120 | `TUSHARE_RPM` | 全局令牌桶，跨并发共享，不随并发放大 |
+| 每分钟调用上限 | 120 | `TUSHARE_RPM` | 全局令牌桶，跨并发共享 |
 | 单次运行预算 | 800 | `TUSHARE_MAX_CALLS_PER_RUN` | 超出即停并报错，重跑可断点续抓 |
-| 每日预算 | 4000 | `TUSHARE_DAILY_BUDGET` | 计数持久化在 `meta.ts:calls:<date>`，跨进程累计 |
+| 每日预算 | 4000 | `TUSHARE_DAILY_BUDGET` | 计数持久化在 `meta.ts:calls:<date>` |
 | 重试 | 4 次 | — | 频率类错误指数退避 + 抖动 |
 
 交易所侧：并发 ≤ 6、请求带浏览器 UA 与 Referer、单次增量只回溯最近 15 天。
 **请勿改成高频轮询** —— 这是对公共接口的基本礼貌，也是本项目能长期免费运行的前提。
 
+> 每日增量现在会顺带维护 `quote`（行情，按当日）+ `event`（折算事件，全量重算），
+> 见 `scripts/update.mjs` 第 2.6 步；行情的历史回补仍可用 `node scripts/backfill-quotes.mjs`。
+
 ---
 
-## 3. 字段字典
+## 3. 存储与字段
 
-数据库 `data/etf.db`（SQLite，WAL，`node:sqlite`）。`data/etf.db` 不进 git，可由接口重建。
+库：`data/etf.db`（SQLite / WAL / `node:sqlite`，不进 git，可由接口重建）。
 
-### 3.1 `fund` — ETF 名录
+| 表 | 一句话 | 关键列 | 详见 |
+| --- | --- | --- | --- |
+| `fund` | 场内基金名录 | `code, name, type, market, list_date` | [`DICTIONARY.md` §2](DICTIONARY.md) |
+| `share` | 每只每日份额（事实层） | `code, date, wan, src` | §3 |
+| `nav` | 单位净值 | `code, date, nav` | §4 |
+| `quote` | 行情（收盘/涨跌/量/额） | `code, date, close, pct_chg, vol, amount` | §5 |
+| `series` | legacy 口径派生序列 | `sub, date, val, scale, flow` | §6 |
+| `series_v2` | v2 口径派生序列 | `sub, date, val, scale, flow` | §7 |
+| `market` | 全市场聚合（SH/SZ/ALL） | `date, scope, shares, scale, etfs` | §8 |
+| `market_type` | 按基金类型聚合 | `date, type, shares, scale, etfs` | §9 |
+| `event` | 份额拆分/合并事件 | `code, date, kind, ratio` | §10 |
+| `reconcile` | 交叉校验明细（每次清空重写） | `date, sub, code, a, b, note` | §11 |
+| `run` | 运行台账 | `at, kind, ok, stats, err` | §12 |
+| `dayinfo` | 当日来源覆盖标记 | `date, has_sse, has_szse, has_ts` | §13 |
+| `meta` | 键值状态 | `k, v`（JSON 字符串） | §14 |
 
-| 列 | 类型 | 说明 |
-| --- | --- | --- |
-| `code` | TEXT PK | 6 位基金代码 |
-| `name` | TEXT | 基金简称（截断显示用） |
-| `type` | TEXT | 基金类型（股票型 / 债券型 / 货币型 / 其他） |
-| `market` | TEXT | `SH` / `SZ`（由代码前缀与名录推断） |
+两条容易踩的细节：
 
-### 3.2 `share` — 原始份额（事实层）
-
-| 列 | 类型 | 说明 |
-| --- | --- | --- |
-| `code` | TEXT | 6 位代码 |
-| `date` | TEXT | `YYYY-MM-DD` |
-| `wan` | REAL | 份额，单位**万份**；只接受有限正数 |
-| `src` | TEXT | 来源：`sse` / `ts`，写入时按优先级裁决（旧库里可能残留 `szse`） |
-
-主键 `(code, date)`：同一只基金同一天只有一行。索引 `idx_share_date(date)` 支撑按日读取。
-
-### 3.3 `nav` — 单位净值
-
-| 列 | 类型 | 说明 |
-| --- | --- | --- |
-| `code` | TEXT | 6 位代码 |
-| `date` | TEXT | 净值日期 |
-| `nav` | REAL | 单位净值（元/份） |
-
-主键 `(code, date)`。**净值可能早于/晚于份额日期**：取用时按当日精确匹配，不做插值。
-
-### 3.4 `series` — 派生序列（看板数值）
-
-| 列 | 类型 | 说明 |
-| --- | --- | --- |
-| `sub` | TEXT | 细分行业名（键与 `lib/taxonomy.mjs` 的 `SUB` 一致） |
-| `date` | TEXT | 交易日 |
-| `val` | REAL | 主口径值（亿份，4 位小数；债券大类已 ×100） |
-| `scale` | REAL | 规模（亿元，估算）= Σ 份额 × 当日净值 |
-| `flow` | REAL | 净流入（亿元，估算）= Σ Δ份额 × 当日净值 |
-
-主键 `(sub, date)`。**这是看板唯一的数值来源**：前端不读 `share`，只读 `series`（经载荷转换）。
-
-### 3.5 `dayinfo` — 当日来源就绪情况
-
-| 列 | 说明 |
-| --- | --- |
-| `date` | 交易日（PK） |
-| `has_sse` / `has_szse` / `has_ts` | 该日各来源是否已入库（0/1）；`has_szse` 仅为旧库兼容保留 |
-
-用于判断「某天是不是真的没有数据」以及增量更新时跳过已完成的来源。
-
-### 3.6 `reconcile` / `run` / `meta`
-
-| 表 | 关键列 | 用途 |
-| --- | --- | --- |
-| `reconcile` | `date, sub, code, a, b, note` | 交叉校验明细（每次重建前清空，最多保留 5000 行） |
-| `run` | `at, kind, ok, stats, err` | 运行记录，排查「哪次更新失败/跑了多久」 |
-| `meta` | `k, v` | 零碎状态：`bf:tsDone`（回补断点）、`navDone`（净值断点）、`ts:calls:<date>`（当日调用数）、`updatedAt`、`fundsAt` 等 |
-
-### 3.7 `market` / `market_type` — 全市场聚合
-
-- `market(date, scope, shares, scale, etfs)`：`scope ∈ SH / SZ / ALL`。
-  与 `series` 的区别：`series` 只统计分类体系里的 773 只沪市成分，
-  `market` 统计名录里**全部场内 ETF（沪深，约 1953 只）**。
-- `market_type(date, type, shares, scale, etfs)`：按基金类型（股票型 / 债券型 / 货币型 / 其他）聚合。
-
-这两张表服务于**全市场总览**（`market.json`），**不改变** 773 只成分的看板数值；
-且**不做债券 ×100 折算**（那是细分行业页的展示口径）。
+- **交易日轴由 `dayinfo.has_sse=1` 决定**（`tradingDates()`），不是 `share` 里出现过的所有日期：
+  Tushare 会在季末/非交易日披露份额，那些日期不进入看板序列（`share` 有 1288 个日期，序列轴 1212 天）。
+- **来源优先级**：`sse`（=1）> `ts`（=2）；同 `(code,date)` 只保留一行，低优先级不覆盖高优先级。
+  `szse` 仅旧库历史残留，新流程不再写入。
 
 ---
 
@@ -180,106 +161,124 @@ v3 起已**不再调用**（`scripts/update.mjs` 的调用点已移除），深�
 | 零/负值 | 任何 ≤ 0 | error | 份额不可能是非正数 |
 | 序列断裂 | 中间出现 `NULL` 后恢复 | warn/error | 由 `findGaps()` 检测，结构性无数据可放行 |
 
-`npm test` 覆盖了上述规则的代表性用例（跳变、白名单、覆盖度骤降、断裂检测、口径与优先级），
-任何一条规则被改坏都会让 CI 变红。
+`npm test` 覆盖了代表性用例（口径、DB 优先级、跳变、白名单、覆盖度骤降、断裂检测、交叉校验分档），
+任何一条被改坏都会让 CI 变红。
 
 ---
 
 ## 5. 交叉校验（沪市两口径）
 
-数据源只剩两个，所以校验比较的是**同一天的两种口径**：交易所（`src=sse`，官方披露）
-vs Tushare（`src=ts`，第三方加工，优先现抓、拿不到才用库里的行）。
-深市没有交易所侧可比，因此不在逐只比对范围内 —— 它的质量靠 Tushare 自身与范围校验兜底。
+数据源只有两个，校验比较的是**同一天的两种口径**：交易所（`src=sse`，官方披露）
+vs Tushare（`src=ts`；优先现抓，拿不到才用库里的行）。深市没有交易所侧可比，不在逐只比对范围内。
 
 `npm run reconcile` 做两件事：
 
-1. **逐只比**：同一交易日，「交易所侧（`src=sse`）」vs「Tushare 侧」，
-   按相对差分档：完全一致（< 1e-6）/ ≤ 0.1% / ≤ 1% / > 1%。
-2. **小类层再比**：分别用两侧份额重算 86 个小类，但**只用两侧都有值的公共成分**（`covered`），
+1. **逐只比**：同一交易日逐 code 对比，按相对差分档：完全一致（< 1e-6）/ ≤ 0.1% / ≤ 1% / > 1%。
+2. **小类层再比**：分别用两侧份额重算小类，但**只用两侧都有值的公共成分**（`covered`），
    避免把「覆盖率差异」误判成「数值分歧」；同时比较方向并指出谁偏离。
 
 **退出码**：`0` 都在容差内 / `1` 存在 >1% 分歧 / `2` 无法校验（无交易日或 Tushare 不可用）。
 
-> 旧库里若还留着 `src='szse'` 的历史行，校验侧仍会把它并入「交易所侧」参与比对 —— 这是兼容行为，
-> 不影响新数据的判断（新流程不会产生 `szse` 行）。
+> 旧库若残留 `src='szse'` 行，校验侧会把它并入「交易所侧」参与比对 —— 兼容行为，不影响新数据判断。
 
-产出 `data/quality.json`，关键字段：
+产出 `data/quality.json`（同时被适配进 `site/data/quality.json` 供前端展示），关键字段：
 
 | 字段 | 含义 |
 | --- | --- |
 | `summary.compared.both` | 两侧都有值的 code-day 对数（如 746 只 × 5 天 = 3730） |
 | `summary.compared.identical / le0_1 / le1 / gt1` | 分档计数 |
-| `summary.subs.checked / inconsistent` | 小类层可比项 / 不一致项 |
+| `summary.subs.checked / inconsistent / singleSource` | 小类层可比项 / 不一致项 / 单侧有数据项 |
 | `summary.tsSource` | Tushare 数据来源：`live` / `db` / `unavailable` |
 | `summary.dateAxis` | 交易日轴口径（`tradingOnly`）与参与比对的日数 |
 | `summary.worstCode / worstSub` | 最大分歧对象及说明 |
 | `summary.ok` | 全部通过为 `true` |
 | `days[]` | 逐日明细：`perSource`、`mismatch.byCode[]`、`seriesCheck[]` |
 
-**出现分歧时的处理顺序**：先看 `onlyExchange`/`onlyTs`（覆盖率问题）→ 再看是否是精度差（小盘 ETF 常见）
+**出现分歧时的处理顺序**：先看 `onlyExchange`/`onlyTs`（覆盖率问题）→ 再看是否精度差（小盘 ETF 常见）
 → 再看是否有半天口径差（Tushare 修正过历史）→ 最后怀疑没更新（对照 `run` 表与 `.run/update.log`）。
-**原则：不改数。** 手改 `series` 会让「数据可重建」这个前提失效。要么重跑更新让它自然收敛，要么记录在案。
+**原则：不改数。** 手改 `series` 会让「数据可重建」的前提失效。
 
 ---
 
-## 6. 数据文件
+## 6. 数据文件与构建产物
+
+### 6.1 源文件（`data/`）
 
 | 文件 | 入库 | 说明 |
 | --- | --- | --- |
-| `data/etf.db` | ❌ gitignore | SQLite 本地缓存，可重建 |
-| `data/series.json` | ✅ | 冷启动底座 + 回归基线（`{ dates: [...], subs: { 小类: [值…] } }`），当前 1212 个交易日 |
+| `data/etf.db` | ❌ gitignore | SQLite 本地缓存，可重建；CI 用 cache 或 Release 种子（`scripts/publish-db-seed.sh`） |
+| `data/series.json` | ✅ | legacy 口径序列导出：冷启动底座 + 回归基线，≥ 1000 个交易日（`scripts/lint.mjs` 强制检查） |
 | `data/quality.json` | ✅ | 最近一次交叉校验结果（每日流水线刷新） |
-| `data/validation-origin.json` | ✅ | `npm run verify:origin` 的对比结果 |
+| `data/validation-origin.json` | ✅ | `npm run verify:origin` 与原站的对比结果 |
+| `data/universe.json` / `universe-report.json` | ✅ | legacy 宇宙：深市归属（指数指纹/关键词/新增小类）与生成报告 |
+| `data/classification-v2.json` / `classification-v2-report.json` | ✅ | v2 分类（7 大类 / 72 小类 / 1903 只）与生成报告 |
+| `data/tags-v2.json` | ✅ | 多维标签（指数类别/申万/中证/主题/地区/因子/债券/商品），供成分明细展示 |
 | `data/lastrun.json` | ❌ gitignore | 本机最近一次更新标记（服务据此判断是否过期） |
-| `data/shares/<date>.json` | ❌ gitignore | v1 遗留的每日原始快照，主流程不再写入 |
-| `site/data/*.json` | ❌ gitignore | 站点载荷，构建产物；其中 `market.json` 是全市场总览（沪深 + 按类型），与细分行业口径不同 |
+| `data/shares/<date>.json` | ❌ gitignore | v1 遗留每日快照，主流程不再写入 |
 
-`data/series.json` 必须保留 ≥ 1000 个交易日 —— 这是「新克隆也能直接出图」与「回归校验有基线」的双重前提，
-`scripts/lint.mjs` 会强制检查。
+### 6.2 产物（`site/data/`，构建生成、不入库）
+
+```
+meta.json  tables.json  subs.json  index.json  market.json  quality.json
+signature.json  lastrun.json  charts-<catKey>.json
+archive/<YYYY-MM-DD>.json          # 最近 120 个交易日的轻量快照
+legacy/                            # 同构的 legacy 口径子树（含自己的 archive/）
+```
+
+- `charts-<catKey>.json` 的 key 随口径变化：v2 为 `broad/industry/…`，legacy 为 `1_宽基市场/9_债券`。
+- `legacy/` 是**完整的一套**（meta/tables/subs/index/market/quality/signature/lastrun/charts/archive），
+  供页面切换口径与 `/api/legacy/*` 使用。
+- 字段级说明见 [`API.md`](API.md) §2–§4。
 
 ---
 
 ## 7. 已知偏差与解释
 
-> 这一节是「读数之前应该知道的事」。遇到和别的平台对不上，先来这里对一遍。
+> 读数之前应该知道的事。和别的平台对不上时，先来这里对一遍。
 
 1. **原站有 2 个交易日的数据是冻结的**：`2026-08-25` 与 `2026-10-28`，原站所有小类数值与前一日完全相同
    （疑似抓取失败后沿用旧值）。本项目从交易所重抓，得到真实值，所以这两天的曲线会与原站不同 ——
    **这是我们更准，不是回归**。核对方式：`npm run verify:origin`。
 2. **`501307` 是永久空成分**：Tushare 只有 18 个季末披露、交易所交易日无数据，对「港红利股息」贡献恒为 0。
    保留它不影响数值，属于分类体系的既定事实。
-3. **净值覆盖率约 96%**：最近 250 个净值日里，773 只成分平均只有约 96% 有当日净值
-   （口径不同会略有浮动）。缺净值的成分不计入「规模 / 净流入」，份额口径不受影响。
+3. **净值覆盖率视口径而定**（最近 120 个净值日均值）：原看板 773 只沪市成分约 **98%**；
+   legacy 1614 只约 **91%**；v2 1903 只约 **85%**（深市与新发基金的历史净值回补尚未覆盖全）。
+   缺净值的成分不计入 `scale` / `flow`，份额口径不受影响。
 4. **`nav` 表里有少量非交易日行**：例如 `2026-03-08`（周日）只有 1 行净值。这是数据源侧的脏点，
-   **不进入序列轴**（序列轴只取 `share` 出现过的日期），也不影响任何展示数值。
-   重跑回补会再次写回，不建议手工清理。
-5. **份额 ≠ 资金流**：份额是「份数」，不是金额。折算后的「净流入」是 `Δ份额 × 当日净值` 的近似值，
+   **不进入序列轴**（序列轴只取 `dayinfo.has_sse=1` 的日期），也不影响展示数值。重跑回补会再次写回，不建议手工清理。
+5. **份额 ≠ 资金流**：份额是「份数」。`flow` 已按 §1.3 做折算/上市首日修正，但仍是估算，
    不含折溢价与申赎清单效应。
-6. **看板仍只覆盖沪市 773 只成分**：深市数据现在由 Tushare 提供，但只进入**全市场总览**（`market.json`），
-   不进入小类/大类数值。要纳入深市需先扩 `lib/taxonomy.mjs` 的成分表（见 `DEVELOPING.md`）。
-7. **两套口径别混用**：`market.json` 统计全部场内 ETF（约 1953 只，沪深），`subs`/`series` 只统计 773 只沪市成分；
-   后者对债券大类做了 ×100 折算，前者没有。
-8. **债券大类 ×100**：跨大类比规模时务必记得这是折算口径，不是真实份额。
-9. **精度差异**：交易所给整数万份、Tushare 给 4 位小数。小量级 ETF 容易出现 ≤1% 的相对差，
-   属于正常范围（`reconcile` 的 0.1%/1% 分档就是为此设计的）。
-10. **旧库里的 `src='szse'` 行**：v3 之前抓的深交所快照，新流程不再写入。不影响任何展示数值，
-    清理与否都可以（清理请用 `DELETE FROM share WHERE src='szse'`，重跑回补不会再产生）。
+6. **两套口径别混用**：`market.json` 统计全部场内 ETF（自然口径），`subs`/`charts` 统计当前分类的成分
+   （份额口径，债券 ×100）。两者的数字不能相加。
+7. **债券 ×100**：跨大类比规模时记得这是折算口径，不是真实份额；`scale` / `flow` / `market` 不受影响。
+8. **精度差异**：交易所给整数万份、Tushare 给 4 位小数。小量级 ETF 容易出现 ≤1% 的相对差，
+   属正常范围（`reconcile` 的 0.1%/1% 分档就是为此设计的）。
+9. **旧库里的 `src='szse'` 行**：v3 之前抓的深交所快照，新流程不再写入。不影响展示数值；
+   如需清理：`DELETE FROM share WHERE src='szse'; UPDATE dayinfo SET has_szse=0;`。
+10. **行情（`quote`）历史仍在回补**：每日增量只补「当日」，更早的日期靠
+    `node scripts/backfill-quotes.mjs`。未回补日期的 `price/premium/pctChg/amount/turnover` 为 `null`，
+    其余口径不受影响。
+11. **深市已参与看板**：legacy（88 小类 / 1614 只）与 v2（72 小类 / 1903 只）都包含深市成分；
+    只有原看板基线 773 只仍全部是沪市代码（用于 `verify:origin` 回归校验）。
 
 ---
 
 ## 8. 自查命令（只读，可随时跑）
 
 ```bash
-# 1) 库规模与时间范围（只读打开，不会写库）
+# 1) 库规模、口径与时间范围
 node -e '
 const { DatabaseSync } = require("node:sqlite");
 const db = new DatabaseSync("data/etf.db", { readOnly: true });
 const q = (s) => db.prepare(s).get();
 console.log("名录", q("SELECT COUNT(*) c FROM fund").c,
             "有份额", q("SELECT COUNT(DISTINCT code) c FROM share").c,
-            "交易日", q("SELECT COUNT(DISTINCT date) c FROM share").c,
-            "序列行", q("SELECT COUNT(*) c FROM series").c);
-console.log("序列区间", q("SELECT MIN(date) a FROM series").a, "~", q("SELECT MAX(date) b FROM series").b);
+            "份额日期", q("SELECT COUNT(DISTINCT date) c FROM share").c,
+            "序列轴", q("SELECT COUNT(DISTINCT date) c FROM series_v2").c);
+console.log("legacy 小类", q("SELECT COUNT(DISTINCT sub) s FROM series").s,
+            "v2 小类", q("SELECT COUNT(DISTINCT sub) s FROM series_v2").s);
+console.log("行情日期", q("SELECT COUNT(DISTINCT date) c FROM quote").c,
+            "折算事件", q("SELECT COUNT(*) c FROM event").c);
 db.close();
 '
 
@@ -292,8 +291,8 @@ console.log(d, db.prepare("SELECT src, COUNT(*) c FROM share WHERE date=? GROUP 
 db.close();
 ' -- 2026-11-20
 
-# 3) 交叉校验 / 回归对比 / 单测
-npm run reconcile          # 会联网（现抓 Tushare）并写 data/quality.json
+# 3) 校验 / 回归 / 单测
+npm run reconcile          # 联网（现抓 Tushare）并写 data/quality.json
 npm run verify:origin      # 只读本地：与原站已发布序列逐点对比
 npm test                   # 只读本地：10 个数据校验用例
 ```
@@ -303,21 +302,22 @@ npm test                   # 只读本地：10 个数据校验用例
 ## 9. 想改口径 / 加数据源？
 
 1. **先写测试**：口径在 `tests/cases/caliber.mjs`，规则在 `tests/cases/rules.mjs`；新增行为先补用例。
-2. 口径只允许在 `lib/pipeline.mjs`（`recompute`）里改 —— 不要在 `payloads.mjs` 或前端做二次计算，
+2. 口径只允许在 `lib/pipeline.mjs`（`recomputeAll`）里改 —— 不要在 `payloads.mjs` 或前端做二次计算，
    否则「库里的值」和「页面上的值」会各说各话。
-3. 加数据源要同时处理：来源优先级（`lib/db.mjs` 的 `putShares`）、`dayinfo` 标记、`reconcile` 的对侧口径。
-4. 任何口径变更都会改变已发布数值，必须在 `CHANGELOG.md` 记录并说明影响范围。
+3. 改分类：v2 走 `scripts/classify.mjs` + `scripts/tag-v2.mjs` 生成 `data/classification-v2.json` / `tags-v2.json`；
+   legacy 走 `data/universe.json`（`lib/universe.mjs` 合并）。两套都要过 `npm test` 与 `verify:origin`。
+4. 加数据源要同时处理：来源优先级（`putShares`）、`dayinfo` 标记、`reconcile` 的对侧口径、`validate` 规则。
+5. 任何口径变更都会改变已发布数值，必须在 `CHANGELOG.md` 记录并说明影响范围。
+
+---
 
 ## 本文的核对状态
 
-- 公式、精度、阈值：对照 `lib/pipeline.mjs`、`lib/aggregate.mjs`、`lib/validate.mjs`、`lib/payloads.mjs` 源码核对。
-- 表结构：只读打开 `data/etf.db` 的 `sqlite_master` + `PRAGMA table_info` 实测（2026-11-21），
-  确认 `series.scale/flow`、`market`、`market_type` 均已存在。
-- 数据源为**两个**（上交所 + Tushare，深交所不再直连）：依据维护者 2026-11-21 的变更说明与
-  `lib/payloads.mjs` 中 `meta.sources = ["上交所", "Tushare"]`。
-- 净值覆盖率 96%：对最近 250 个净值日按 773 只成分逐日统计得出（均值 96.15%）。
-- 非交易日脏点：实测 `nav` 表有 5 个日期不出现在 `share` 表中，`2026-03-08` 仅 1 行。
-- 数据规模（交易日 1212 / 86 小类 / 773 只）与 `data/series.json` 实测一致；
-  全市场“约 1953 只”来自维护者说明与 `fund` 名录（名称含 ETF）的规模量级，**未逐只核对**。
-- **未复跑**：`npm run reconcile`、`npm run verify:origin`（会改写 `data/`，协同时避免互相踩踏）；
-  文中关于其输出的描述来自源码与仓库既有的 `data/quality.json`。`npm test` 的用例数来自 `tests/runner.mjs` 的导入清单。
+- 公式（份额/规模/净申购、事件折算、上市首日剔除）：对照 `lib/pipeline.mjs::recomputeAll`、
+  `detectShareEvents`、`lib/payloads.mjs` 源码核对（含 v3.4.0 的 `isBondCat` 修复）。
+- 表结构：以 `docs/DICTIONARY.md` 为准（该文由 `PRAGMA table_info` 实测生成），本文只列摘要。
+- 两套口径规模（7/72/1903、10/88/1614）：`node -e` 读 `lib/universe.mjs` 的 `loadUniverse()` 实测。
+- 净值覆盖率（98% / 91% / 85%）：对最近 120 个净值日按各口径代码集合逐日统计的均值。
+- 事件数（254 = split 166 + merge 88）、行情覆盖（当前约 297 个交易日）：只读查库实测。
+- **未复跑**：`npm run reconcile`、`npm run verify:origin`、`npm run update`（会联网并改写 `data/`）；
+  相关描述来自源码与仓库既有 `data/quality.json`、`run` 表记录。

@@ -31,12 +31,12 @@
 | `fund` | 名录（维度） | `code` | `lib/db.mjs::upsertFunds`（Tushare `fund_basic`） | 每周（`update` 检查 `fundsAt`）或回补前 |
 | `share` | **原始事实**：份额 | `(code, date)` | `putShares` / `putSharesBulk` | 每交易日增量；历史靠 `backfill` |
 | `nav` | **原始事实**：单位净值 | `(code, date)` | `putNav`（Tushare `fund_nav`） | 每交易日 |
-| `quote` | **原始事实**：行情 | `(code, date)` | `putQuotes`（Tushare `fund_daily`） | 手动回补（`scripts/backfill-quotes.mjs`） |
+| `quote` | **原始事实**：行情 | `(code, date)` | `putQuotes`（Tushare `fund_daily`） | 每交易日增量（`update` 第 2.6 步）+ 历史回补 |
 | `series` | 派生：legacy 口径序列 | `(sub, date)` | `recomputeAll(legacy)` | 每次 `rebuild` / `update` 全量重算 |
 | `series_v2` | 派生：v2 口径序列 | `(sub, date)` | `recomputeAll(universe=v2, legacy=false)` | 同上 |
 | `market` | 派生：全市场聚合 | `(date, scope)` | `recomputeAll` | 同上 |
 | `market_type` | 派生：按基金类型聚合 | `(date, type)` | `recomputeAll` | 同上 |
-| `event` | 派生：份额拆分/合并事件 | `(code, date, kind)` | `detectShareEvents` + `putEvents` | **手动**（见 §17.3） |
+| `event` | 派生：份额拆分/合并事件 | `(code, date, kind)` | `detectShareEvents` + `putEvents` | 每交易日重算（`update` 第 2.6 步） |
 | `reconcile` | 质量：交叉校验明细 | 无主键（rowid 表） | `scripts/reconcile.mjs` | 每次校验前清空重写 |
 | `run` | 运行台账 | 自增 `id` | `recordRun` | 每次 update/backfill/recompute/reconcile |
 | `dayinfo` | 覆盖标记 | `date` | `markDaySource` | 抓取时 |
@@ -129,8 +129,8 @@ SELECT date, wan FROM share WHERE code = '510050' ORDER BY date DESC LIMIT 5;
 
 - 主键 `(code, date)`，`WITHOUT ROWID`。
 - **来源**：Tushare `fund_daily`（按 `trade_date` 一次取全市场）。
-- **更新频率**：**手动**。`node scripts/backfill-quotes.mjs [--days 250] [--from --to]`，
-  按日增量（已有 `date` 会跳过），进度记 `meta.quotesAt`。**不在** `npm run update` 的每日流程里。
+- **更新频率**：每交易日增量 —— `scripts/update.mjs` 第 2.6 步调用 `ingestQuotes()` 补当日行情；
+  更早的历史用 `node scripts/backfill-quotes.mjs [--days 250] [--from --to]` 回补（已有 `date` 跳过），进度记 `meta.quotesAt`。
 - **用途**：`subs[].etfs[]` 的 `price / premium（折溢价）/ pctChg / amount / turnover`。
   未回补的日期这些字段为 `null`（其余口径不受影响）。
 - 单位校验：`amount ≈ close × vol / 10`（千元 = 元 × 手 × 100 / 1000）。
@@ -157,7 +157,7 @@ SELECT date, wan FROM share WHERE code = '510050' ORDER BY date DESC LIMIT 5;
 | --- | --- | --- | --- |
 | `sub` | TEXT | 否 | 小类名（v2，72 个；如 `大盘宽基`、`科创债`） |
 | `date` | TEXT | 否 | 交易日 |
-| `val` | REAL | 是 | 份额（亿份，4 位小数）。⚠️ 债券小类当前**未** ×100（见 §17.2） |
+| `val` | REAL | 是 | 份额（亿份，4 位小数）；债券小类 ×100（v3.4.0 起与 legacy 一致） |
 | `scale` | REAL | 是 | 规模（亿元） |
 | `flow` | REAL | 是 | 净申购（亿元/日） |
 
@@ -210,8 +210,8 @@ SELECT date, wan FROM share WHERE code = '510050' ORDER BY date DESC LIMIT 5;
 - **来源**：派生。`detectShareEvents()`（`lib/pipeline.mjs`）扫描 `share` 表得到候选：
   1. 相邻两日份额比值落在常见比例（2/3/4/5/8/10 及其倒数）±3% 内；
   2. **新水平要维持住**（次日相对当日变化在 ±15% 内），排除「快照残缺」造成的假跳变。
-- **写入**：`putEvents()`；**当前没有接入自动调度**（`update`/`rebuild` 都不写），
-  需要时手动执行（见 §17.3）。
+- **写入**：`putEvents()`；`scripts/update.mjs` 第 2.6 步每日执行「检测 + 写入」，
+  需要时也可以单独重跑（`detectShareEvents()` → `putEvents()`）。
 - **用途**：`recomputeAll()` 计算 `flow` 时，把事件之前的历史份额换算到当前份额单位后再做差，
   避免拆分/合并被当成巨额申赎。**份额水位（`series.val` / 载荷里的 `shares`）仍按原始披露值展示。**
 - 现有规模：254 起（`split` 166 / `merge` 88），日期范围 2021-11-26 ~ 2026-11-05。
@@ -328,49 +328,40 @@ SELECT id, at, kind, ok FROM run ORDER BY id DESC LIMIT 10;
 
 ---
 
-## 17. 维护注意与已知问题
+## 17. 维护注意与已修复问题
 
-### 17.1 新库缺少 `fund.list_date` 列（影响建库）
+### 17.1 已修复（v3.4.0 · 提交 `d23203a`）
 
-`openDb()` 的 `CREATE TABLE fund(...)` 只建了 `code/name/type/market`，
-而 `upsertFunds()` 会 `INSERT ... list_date`、`buildSubs()`/`recomputeAll()` 会 `SELECT ... list_date`。
-**从一个全新空库启动**时（没有种子库、也没人手动加过列），`refreshFunds()` 会报
-`table fund has no column named list_date`，`buildSite()` 也会因 `SELECT list_date FROM fund` 失败。
+| 问题 | 现象 | 修复方式 |
+| --- | --- | --- |
+| 新库缺 `fund.list_date` 列 | 空库首次刷新名录报 `table fund has no column named list_date`；`buildSubs()` 也会失败 | `openDb()` 迁移段加幂等 `ALTER TABLE fund ADD COLUMN list_date TEXT`（与 `series.scale/flow` 同写法） |
+| v2 债券小类未 ×100 | 同一小类的「小类值」与「成分明细合计」差约 100 倍 | `recomputeAll()` 的 factor 改用 `isBondCat()`，同时认 legacy `9_债券` 与 v2 `bond` |
+| `event` / `quote` 不在每日流程 | 新拆分/合并不会进 `event`（`flow` 假跳变）；行情只有手动脚本会写 | `scripts/update.mjs` 第 2.6 步每日执行 `ingestQuotes()` + `detectShareEvents()` + `putEvents()` |
+| `server/app.mjs` 的 `get payloads()` 调用未定义函数 | 一旦访问该 getter 抛 `ReferenceError` | 改为 `return payloadsFallback()` |
 
-- 临时绕过：`ALTER TABLE fund ADD COLUMN list_date TEXT;` 再重跑。
-- 正式修复方向：在 `openDb()` 的迁移段加一行 `if (!cols("fund").includes("list_date")) db.exec("ALTER TABLE fund ADD COLUMN list_date TEXT");`
-  （与 `series.scale/flow` 的写法一致）。
-- 为什么线上没暴露：`data/etf.db` 是一次性迁移过来的老库（已有该列），CI 也优先下载 Release 种子库。
+验证方式：空库启动后 `PRAGMA table_info(fund)` 含 `list_date`；`subs["科创债"].current` 与成分合计比值 1.00；
+`npm run update` 日志出现「行情：N 天 / M 行」「份额折算事件：K 起」。
 
-### 17.2 v2 债券小类未 ×100（口径不一致）
+### 17.2 重建窗口内可能读到空表
 
-`recomputeAll()` 的 `factor` 只判断 `meta.cat === "9_债券"`；v2 分类里债券大类的 key 是 `bond`，
-因此 `series_v2` 的债券小类**没有**乘 100，而 `lib/payloads.mjs` 的 `isBondCat()` 在成分层乘了 100 ——
-同一小类的「小类值」与「成分明细合计」相差约 100 倍。修复见 `API.md` §7 第 1 条。
-
-### 17.3 `event` 与 `quote` 不在每日流程内
-
-- `event`：`detectShareEvents()` / `putEvents()` 都已实现，但没有被 `update`/`rebuild` 调用。
-  新增拆分/合并后，需手动重跑检测并写入，否则 `flow` 会出现假跳变。
-- `quote`：只有 `scripts/backfill-quotes.mjs` 会写，`npm run update` 不抓行情。
-
-### 17.4 重建窗口内可能读到空表
-
-`rebuild()` 先 `DELETE FROM series / market / market_type`，再批量重算写入。
+`rebuild()` 先 `DELETE FROM series / market / market_type`（以及 `series_v2`），再批量重算写入。
 两个步骤之间是已提交状态，**并发读者可能读到 0 行**（WAL 下单连接事务快照内不会）。
 用 `run` 表里 `kind='recompute'` 的时间戳判断是否刚重建过；自己的脚本建议先 `BEGIN` 读事务再查多表。
 
-### 17.5 旧库的 `src='szse'` 行
+### 17.3 旧库的 `src='szse'` 行
 
 v3 起不再写深交所快照，但旧库可能残留 `src='szse'`（及其 `dayinfo.has_szse=1`）。
 读取侧仍兼容（按「该市场有官方快照则优先官方」处理），不影响数值；
 如需清理：`DELETE FROM share WHERE src='szse'; UPDATE dayinfo SET has_szse=0;`。
 
-### 17.6 `reconcile` 表是「最新一次」而非历史
+### 17.4 `reconcile` 表是「最新一次」而非历史
 
 每次校验前清空。要留档请另存 `data/quality.json`（每日流水线会提交）。
 
----
+### 17.5 行情历史仍不完整
+
+每日增量只补「当日」，更早的日期依赖 `scripts/backfill-quotes.mjs`。当前约 297 个交易日有行情；
+未覆盖日期的 `subs[].etfs[]` 行情字段为 `null`，其余口径不受影响。
 
 ## 本文的核对状态
 
@@ -381,5 +372,7 @@ v3 起不再写深交所快照，但旧库可能残留 `src='szse'`（及其 `da
   并在 `event` 表实测（`split` 166 / `merge` 88）。
 - `quote` 单位：用 `close × vol / 10 ≈ amount`（误差 0.4%）实测确认。
 - 行数：本文刻意不写死（并发重建期间会瞬时变化），只给自查命令。
+- **v3.4.0 修复已在源码与产物中复核**（`isBondCat` 统一、`fund.list_date` 迁移、`update` 接行情/事件、
+  `payloadsFallback()`）；债券比值用 `site/data/subs.json` 复测为 1.00。
 - **未实跑**：`npm run update` / `backfill` / `reconcile`（会联网并改写 `data/`）；相关行为按源码与既有
-  `run` 表记录描述。§17.1 的新库问题用「建表 + INSERT」最小复现验证过（报 `no column named list_date`）。
+  `run` 表记录描述。
