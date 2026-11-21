@@ -323,11 +323,12 @@ check("web/index.html 保留构站占位符（__SIGNATURE__ / __REPO__ / __LICEN
 
 // 5) site/ 入库白名单
 check(
-  "site/ 入库文件只在白名单内（index.html / app.js / styles.css / echarts.min.js）",
+  "site/ 入库文件只在白名单内（index.html、css/*、js/*、echarts.min.js）",
   () => {
-    const allowed = new Set(["site/index.html", "site/app.js", "site/styles.css", "site/echarts.min.js"]);
+    const allowed = new Set(["site/index.html", "site/echarts.min.js"]);
+    const allowedPrefix = ["site/css/", "site/js/", "site/assets/"]; // 前端源码构建产物
     const tracked = gitPaths(["ls-files", "-z", "site"]);
-    const extra = tracked.filter((p) => !allowed.has(p));
+    const extra = tracked.filter((p) => !allowed.has(p) && !allowedPrefix.some((pre) => p.startsWith(pre)));
     if (extra.length) {
       throw new Error(
         `site/ 下出现了不该入库的文件（构建产物请留在本地，已在 .gitignore 里）：\n${extra.join("\n")}\n` +
