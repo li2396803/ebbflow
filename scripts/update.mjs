@@ -57,6 +57,17 @@ async function ensureHistory(db, warn, quiet) {
   const sse = await ingestExchangeRange(db, { from, to, onProgress: (n) => { if (!quiet && n % 30000 < 1000) process.stdout.write("."); } });
   if (!quiet) log(`\n上交所回补：${sse.ok} 个交易日 / 写入 ${sse.written} 行`);
   if (hasToken()) {
+    // 名录为空时先拉名录，否则 etfCodes() 是空数组，回补会「0 只」
+    const fundCount = db.prepare("SELECT COUNT(*) n FROM fund").get()?.n ?? 0;
+    if (fundCount < 100) {
+      try {
+        await refreshFunds(db);
+        metaSet(db, "fundsAt", new Date().toISOString());
+        if (!quiet) log(`名录已刷新：${db.prepare("SELECT COUNT(*) n FROM fund").get()?.n ?? 0} 只`);
+      } catch (e) {
+        warn.push("名录刷新失败，回补可能不完整");
+      }
+    }
     const codes = etfCodes(db);
     const ts = await ingestTushareRange(db, { from, to, codes, resume: true });
     if (!quiet) log(`Tushare 份额回补：${ts.codes} 只 / 写入 ${ts.written} 行`);
