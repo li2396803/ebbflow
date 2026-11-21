@@ -418,6 +418,23 @@
   z-index: 3;
   overflow: hidden;
 }
+.axis-cap {
+  position: absolute;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--c);
+  white-space: nowrap;
+  transform: translateY(-100%);
+}
+.axis-cap--left {
+  transform: translate(0, -100%);
+  text-align: left;
+}
+.axis-cap--right {
+  transform: translate(0, -100%);
+  text-align: left;
+}
 .pane-title {
   position: absolute;
   font-size: 10px;

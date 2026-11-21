@@ -274,7 +274,8 @@ function paintEndLabels() {
   const layer = main.labelsLayer;
   const p = main.lastPayload;
   if (!layer) return;
-  if (!p || !p.endLabels || !isDesktop() || !(p.series || []).some((x) => x.kind !== "bar")) {
+  const labelsFor = p && (p.layout === "panes" ? p.paneEndLabels : p.endLabels);
+  if (!p || !labelsFor || !isDesktop() || !(p.series || []).some((x) => x.kind !== "bar")) {
     layer.innerHTML = "";
     return;
   }
@@ -285,7 +286,7 @@ function paintEndLabels() {
 
   const seen = new Set();
   const items = [];
-  for (const s of p.endLabels) {
+  for (const s of labelsFor) {
     if (s.value == null || !Number.isFinite(s.value) || seen.has(s.name)) continue;
     seen.add(s.name);
     const y = chart.convertToPixel({ yAxisIndex: Number.isInteger(s.axis) ? s.axis : 0 }, s.value);
@@ -328,7 +329,8 @@ function paintEndLabels() {
     it.y = placed[i];
   });
 
-  const left = Math.round(rect.x + rect.width + 8 + (p.labelGutterOffset || 0));
+  const gutterOff = p.layout === "panes" ? p.paneLabelGutterOffset || 0 : p.labelGutterOffset || 0;
+  const left = Math.round(rect.x + rect.width + 8 + gutterOff);
   const maxW = Math.max(56, Math.round((layer.clientWidth || left + 100) - left - 6));
   const html = shown
     .map(
@@ -490,21 +492,49 @@ function paintPaneTitles() {
   const layer = main.paneLayer;
   const p = main.lastPayload;
   if (!layer) return;
-  if (!p || !p.titles || !p.titles.length || !main.ec || main.ec.isDisposed()) {
+  if (!p || ((!p.titles || !p.titles.length) && (!p.axes || !p.axes.length)) || !main.ec || main.ec.isDisposed()) {
     layer.innerHTML = "";
     return;
   }
   const chart = main.ec;
-  const html = [];
-  for (const item of p.titles) {
-    const model = chart.getModel()?.getComponent("grid", item.pane);
-    const rect = model?.coordinateSystem?.getRect?.();
-    if (!rect) continue;
-    html.push(
-      `<span class="pane-title" style="left:${Math.round(rect.x)}px;top:${Math.round(rect.y) - 16}px">${esc(item.text)}</span>`
-    );
+  const parts = [];
+  const rect = chart.getModel()?.getComponent("grid", 0)?.coordinateSystem?.getRect?.();
+  if (!rect) {
+    layer.innerHTML = "";
+    return;
   }
-  layer.innerHTML = html.join("");
+  if (p.layout !== "axes") {
+  for (const item of p.titles || []) {
+    const r = chart.getModel()?.getComponent("grid", item.pane)?.coordinateSystem?.getRect?.();
+    if (!r) continue;
+    parts.push(`<span class="pane-title" style="left:${Math.round(r.x)}px;top:${Math.round(r.y) - 16}px">${esc(item.text)}</span>`);
+  }
+  }
+  // 聚焦多轴：仅 1-2 条轴时显示角标（≥3 条轴时靠彩色刻度 + 图例，避免顶部拥挤）
+  if (p.layout === "panes" || (p.axes || []).length > 2) {
+    layer.innerHTML = parts.join("");
+    return;
+  }
+  for (const ax of p.axes || []) {
+    const off = ax.offset || 0;
+    const row = Math.floor(off / 56);
+    const y = Math.round(rect.y - 12 - row * 12);
+    if (ax.position === "right") {
+      parts.push(
+        `<span class="axis-cap axis-cap--right" style="left:${Math.round(rect.x + rect.width + 6 + off)}px;top:${y}px;--c:${ax.color}">${esc(
+          ax.name
+        )}</span>`
+      );
+    } else {
+      // 左轴标题左对齐放在绘图区左上，避免长单位名被容器裁掉
+      parts.push(
+        `<span class="axis-cap axis-cap--left" style="left:${Math.round(rect.x + 2 + off)}px;top:${y}px;--c:${ax.color}">${esc(
+          ax.name
+        )}</span>`
+      );
+    }
+  }
+  layer.innerHTML = parts.join("");
 }
 
 /** 分面 tooltip：无论 hover 哪一栏，都列出当天全部已选指标 */
@@ -535,10 +565,182 @@ function focusTooltip(p, params) {
 }
 
 /** 聚焦态：多栏（small multiples）配置 */
-function focusOption(p) {
+function axesFocusOption(p) {
   const t = tokens();
   const mobile = !isDesktop();
-  const H = main.el?.clientHeight || 460;
+  const [za, zb] = p.zoom || [0, (p.dates?.length || 1) - 1];
+  const grid = {
+    left: p.gridLeft ?? 14,
+    right: p.gridRight ?? 120,
+    top: 28,
+    bottom: mobile ? 30 : 58,
+    containLabel: true,
+  };
+  const xAxis = {
+    type: "category",
+    gridIndex: 0,
+    data: p.dates,
+    boundaryGap: true,
+    axisLine: { lineStyle: { color: t.line } },
+    axisTick: { show: true, length: 4, lineStyle: { color: t.line } },
+    axisLabel: { color: t.ink4, fontSize: AXIS_FONT, hideOverlap: true, margin: 8 },
+    splitLine: { show: false },
+    axisPointer: { label: { show: false } },
+  };
+  const yAxes = (p.axes || []).map((ax, i) => {
+    const vals = (p.series || [])
+      .filter((s) => s.axis === i)
+      .flatMap((s) => (s.values || []).slice(za, zb + 1));
+    const includeZero = ax.kind === "flow" || ax.kind === "pct";
+    const b = niceBounds(vals, 4, includeZero);
+    const compact = (v) => {
+      const n = +v;
+      if (!Number.isFinite(n)) return `${v}`;
+      if (Math.abs(n) >= 1000) {
+        const k = n / 1000;
+        return `${(Math.abs(k) >= 10 ? k.toFixed(0) : k.toFixed(1)).replace(/\.0$/, "")}k`;
+      }
+      return `${Math.round(n)}`;
+    };
+    return {
+      type: "value",
+      position: ax.position,
+      offset: ax.offset || 0,
+      name: "",
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: {
+        color: ax.color,
+        fontSize: AXIS_FONT,
+        margin: 6,
+        formatter: ax.kind === "pct" ? (v) => `${compact(v)}%` : compact,
+      },
+      splitLine: { show: i === 0, lineStyle: { color: t.grid, type: [3, 3] } },
+      scale: true,
+      min: b.min,
+      max: b.max,
+      interval: b.interval,
+      z: 3,
+    };
+  });
+  const series = (p.series || []).map((s) => {
+    const base = {
+      name: s.name,
+      xAxisIndex: 0,
+      yAxisIndex: s.axis,
+      data: s.values,
+      animation: false,
+      unit: s.unit,
+      z: s.kind === "bar" ? 2 : 3,
+    };
+    const baseline = s.baseline
+      ? {
+          markLine: {
+            silent: true,
+            symbol: "none",
+            label: { show: false },
+            lineStyle: { color: t.lineStrong, width: 1 },
+            data: [{ yAxis: 0 }],
+          },
+        }
+      : {};
+    if (s.kind === "bar") {
+      return {
+        ...base,
+        type: "bar",
+        barMaxWidth: mobile ? 10 : 16,
+        barCategoryGap: "30%",
+        itemStyle: {
+          color: (par) => (par.value >= 0 ? t.up : t.down),
+          opacity: 0.9,
+          borderRadius: [1, 1, 0, 0],
+        },
+        emphasis: { focus: "series", itemStyle: { opacity: 1 } },
+        ...baseline,
+      };
+    }
+    return {
+      ...base,
+      type: "line",
+      showSymbol: false,
+      sampling: "lttb",
+      smooth: 0.12,
+      connectNulls: false,
+      lineStyle: { width: 1.8, color: s.color },
+      itemStyle: { color: s.color },
+      emphasis: { focus: "series", lineStyle: { width: 2.6 } },
+      ...baseline,
+    };
+  });
+  const dz = [
+    {
+      type: "inside",
+      xAxisIndex: 0,
+      filterMode: "filter",
+      zoomOnMouseWheel: false,
+      moveOnMouseWheel: false,
+      moveOnMouseMove: false,
+      startValue: p.dates[za] ?? p.dates[0],
+      endValue: p.dates[zb] ?? p.dates[p.dates.length - 1],
+    },
+  ];
+  if (!mobile) {
+    dz.push({
+      type: "slider",
+      xAxisIndex: 0,
+      filterMode: "filter",
+      height: 16,
+      bottom: 6,
+      startValue: p.dates[za] ?? p.dates[0],
+      endValue: p.dates[zb] ?? p.dates[p.dates.length - 1],
+      brushSelect: false,
+      borderColor: "transparent",
+      backgroundColor: t.dark ? "rgba(255,255,255,0.03)" : "rgba(16,19,26,0.035)",
+      fillerColor: t.area,
+      handleSize: "100%",
+      handleStyle: { color: t.surface, borderColor: t.accent, borderWidth: 1.2, shadowBlur: 3, shadowColor: "rgba(0,0,0,.18)" },
+      moveHandleStyle: { color: t.lineStrong, opacity: 0.7 },
+      emphasis: { handleStyle: { borderColor: t.accent }, moveHandleStyle: { color: t.accent } },
+      dataBackground: { lineStyle: { color: t.lineStrong, opacity: 0.9, width: 1 }, areaStyle: { color: t.surface3, opacity: 0.9 } },
+    });
+  }
+  return {
+    animation: false,
+    grid,
+    xAxis,
+    yAxis: yAxes,
+    series,
+    dataZoom: dz,
+    axisPointer: { label: { show: false }, lineStyle: { color: t.lineStrong } },
+    tooltip: {
+      trigger: "axis",
+      appendToBody: true,
+      className: "ec-tip",
+      axisPointer: { type: "cross", lineStyle: { color: t.lineStrong }, crossStyle: { color: t.lineStrong } },
+      formatter: (params) => focusTooltip(p, params),
+    },
+    toolbox: { show: false },
+    legend: { show: false },
+    brush: {
+      xAxisIndex: 0,
+      brushMode: "lineX",
+      transformable: false,
+      removeOnClick: true,
+      throttleType: "debounce",
+      throttleDelay: 120,
+      inBrush: { opacity: 1 },
+      outOfBrush: { opacity: 0.4 },
+    },
+  };
+}
+
+
+/** 分面布局：主图（份额/规模双轴）+ 份额净申购 + 变化率，共享 X 轴与十字光标 */
+function panesFocusOption(p) {
+  const t = tokens();
+  const mobile = !isDesktop();
+  const [za, zb] = p.zoom || [0, (p.dates?.length || 1) - 1];
+  const H = main.el?.clientHeight || 520;
   const n = p.panes.length;
   const gap = mobile ? 18 : 36;
   const topPad = 22;
@@ -547,7 +749,7 @@ function focusOption(p) {
   let top = topPad;
   const grids = p.panes.map((pane, i) => {
     const h = usable * (pane.fraction ?? 1 / n);
-    const g = { left: 10, right: p.gridRight, top: Math.round(top), height: Math.round(h), containLabel: true };
+    const g = { left: 14, right: p.paneGridRight, top: Math.round(top), height: Math.round(h), containLabel: true };
     top += h + gap;
     return g;
   });
@@ -563,55 +765,65 @@ function focusOption(p) {
     splitLine: { show: false },
     axisPointer: { label: { show: false } },
   }));
-  const yAxes = p.yAxes.map((y, idx) => {
-    const paneH = grids[y.pane]?.height ?? 999;
-    // 紧凑刻度：≥1000 用 1.2k，其余整数；单位只在栏标题里写一次
+  const yAxes = p.paneAxes.map((ax, i) => {
+    const paneH = grids[ax.pane]?.height ?? 999;
+    const vals = (p.series || [])
+      .filter((s) => s.metricId === ax.metric)
+      .flatMap((s) => (s.values || []).slice(za, zb + 1));
+    const includeZero = ax.kind === "flow" || ax.kind === "pct";
+    const b = niceBounds(vals, paneH < 120 ? 2 : 4, includeZero);
     const compact = (v) => {
-      const n = +v;
-      if (!Number.isFinite(n)) return `${v}`;
-      if (Math.abs(n) >= 1000) {
-        const k = n / 1000;
+      const num = +v;
+      if (!Number.isFinite(num)) return `${v}`;
+      if (Math.abs(num) >= 1000) {
+        const k = num / 1000;
         return `${(Math.abs(k) >= 10 ? k.toFixed(0) : k.toFixed(1)).replace(/\.0$/, "")}k`;
       }
-      return `${Math.round(n)}`;
+      return `${Math.round(num)}`;
     };
-    const color = p.series.find((x) => x.metricId === y.metric)?.color || tokens().ink4;
-    const [za, zb] = p.zoom || [0, p.dates.length - 1];
-    const vals = p.series
-      .filter((x) => x.metricId === y.metric)
-      .flatMap((x) => (x.values || []).slice(za, zb + 1));
-    const includeZero = y.kind === "flow" || y.kind === "pct";
-    const b = niceBounds(vals, paneH < 120 ? 2 : 4, includeZero);
     return {
-      gridIndex: y.pane,
-      position: y.position,
+      type: "value",
+      gridIndex: ax.pane,
+      position: ax.position,
+      name: "",
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
-        color,
+        color: ax.color,
         fontSize: AXIS_FONT,
         margin: 6,
-        formatter: y.kind === "pct" ? (v) => `${compact(v)}%` : compact,
+        formatter: ax.kind === "pct" ? (v) => `${compact(v)}%` : compact,
       },
-      splitLine: { show: idx === 0 || y.position === "left", lineStyle: { color: t.grid, type: [3, 3] } },
-      // 副栏更矮：刻度少一点；主栏 4 段。边界用 nice 值，保证含 0 且不出现数据端点刻度
+      splitLine: { show: i === 0 || ax.position === "left", lineStyle: { color: t.grid, type: [3, 3] } },
       splitNumber: paneH < 120 ? 2 : 4,
       scale: true,
       min: b.min,
       max: b.max,
       interval: b.interval,
+      z: 3,
     };
   });
-  const series = p.series.map((s) => {
+  const series = (p.series || []).map((s) => {
     const base = {
       name: s.name,
       xAxisIndex: s.pane,
-      yAxisIndex: s.axis,
+      yAxisIndex: s.paneAxis,
       data: s.values,
       animation: false,
       unit: s.unit,
       z: s.kind === "bar" ? 2 : 3,
     };
+    const baseline = s.baseline
+      ? {
+          markLine: {
+            silent: true,
+            symbol: "none",
+            label: { show: false },
+            lineStyle: { color: t.lineStrong, width: 1 },
+            data: [{ yAxis: 0 }],
+          },
+        }
+      : {};
     if (s.kind === "bar") {
       return {
         ...base,
@@ -624,6 +836,7 @@ function focusOption(p) {
           borderRadius: [1, 1, 0, 0],
         },
         emphasis: { focus: "series", itemStyle: { opacity: 1 } },
+        ...baseline,
       };
     }
     return {
@@ -636,20 +849,9 @@ function focusOption(p) {
       lineStyle: { width: 1.8, color: s.color },
       itemStyle: { color: s.color },
       emphasis: { focus: "series", lineStyle: { width: 2.6 } },
-      ...(s.baseline
-        ? {
-            markLine: {
-              silent: true,
-              symbol: "none",
-              label: { show: false },
-              lineStyle: { color: t.lineStrong, width: 1 },
-              data: [{ yAxis: 0 }],
-            },
-          }
-        : {}),
+      ...baseline,
     };
   });
-  const [a, b] = p.zoom;
   const dz = [
     {
       type: "inside",
@@ -658,8 +860,8 @@ function focusOption(p) {
       zoomOnMouseWheel: false,
       moveOnMouseWheel: false,
       moveOnMouseMove: false,
-      startValue: p.dates[a] ?? p.dates[0],
-      endValue: p.dates[b] ?? p.dates[p.dates.length - 1],
+      startValue: p.dates[za] ?? p.dates[0],
+      endValue: p.dates[zb] ?? p.dates[p.dates.length - 1],
     },
   ];
   if (!mobile) {
@@ -669,8 +871,8 @@ function focusOption(p) {
       filterMode: "filter",
       height: 16,
       bottom: 6,
-      startValue: p.dates[a] ?? p.dates[0],
-      endValue: p.dates[b] ?? p.dates[p.dates.length - 1],
+      startValue: p.dates[za] ?? p.dates[0],
+      endValue: p.dates[zb] ?? p.dates[p.dates.length - 1],
       brushSelect: false,
       borderColor: "transparent",
       backgroundColor: t.dark ? "rgba(255,255,255,0.03)" : "rgba(16,19,26,0.035)",
@@ -699,11 +901,21 @@ function focusOption(p) {
     },
     toolbox: { show: false },
     legend: { show: false },
+    brush: {
+      xAxisIndex: allX,
+      brushMode: "lineX",
+      transformable: false,
+      removeOnClick: true,
+      throttleType: "debounce",
+      throttleDelay: 120,
+      inBrush: { opacity: 1 },
+      outOfBrush: { opacity: 0.4 },
+    },
   };
 }
 
 function baseOption(p) {
-  if (p.panes && p.panes.length) return focusOption(p);
+  if (p.focusMode) return p.layout === "panes" ? panesFocusOption(p) : axesFocusOption(p);
   const t = tokens();
   const dates = p.dates;
   const showSlider = isDesktop() && !p.compare;
@@ -973,13 +1185,12 @@ function tooltipHTML(params, p) {
 /** 渲染主图；p: { dates, series, mode, unit, zoom:[a,b], focused, compare, secondary, footNote, endLabels } */
 export function renderMain(p) {
   if (!main.ec) return;
-  // 移动端分面：每栏至少 110px，不够就把图表容器拉高（页面滚动，不压缩）
-  if (p?.panes?.length && !isDesktop() && main.el) {
-    const n = p.panes.length;
-    const fmin = Math.min(...p.panes.map((x) => x.fraction || 1 / n));
-    const need = Math.ceil(110 / fmin + 18 * (n - 1) + 52);
-    if (main.el.clientHeight < need) {
-      main.el.style.height = `${need}px`;
+  // 图窗自适应：按布局与指标数量给画布高度
+  const wantedH = p?.focusMode ? (p.layout === "panes" ? p.heightPanes : p.heightAxes) : p?.height;
+  if (wantedH && main.el) {
+    const next = `${wantedH}px`;
+    if (main.el.style.height !== next) {
+      main.el.style.height = next;
       try {
         main.ec.resize();
       } catch (e) {}

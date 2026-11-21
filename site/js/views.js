@@ -134,8 +134,19 @@ export function syncNavActive(app) {
     n.classList.toggle("is-active", n.dataset.catgroup === state.cat && state.view === "cat");
   });
   document.querySelectorAll(".sub-link").forEach((n) => {
-    n.classList.toggle("is-active", n.dataset.sub === state.sub);
+    const active = !!state.sub && n.dataset.navsub === state.sub;
+    n.classList.toggle("is-active", active);
+    if (active) n.setAttribute("aria-current", "true");
+    else n.removeAttribute("aria-current");
   });
+  // 当前聚焦的小类所在大类保持展开
+  if (state.sub) {
+    const group = [...document.querySelectorAll(".cat-nav")].find((g) => g.dataset.catgroup === state.cat);
+    if (group) {
+      group.dataset.open = "1";
+      group.querySelector(".cat-btn")?.setAttribute("aria-expanded", "true");
+    }
+  }
   const wc = document.getElementById("watchCount");
   const tb = document.getElementById("tabWatchBadge");
   if (wc) {
@@ -679,33 +690,42 @@ function kpiCard(label, num, unit, foot, dot) {
 
 /* ============================ 大类视图 ============================ */
 
+/** 大类/小类标题与面包屑：聚焦小类时大标题变成小类名 */
+export function syncCatHeading(app) {
+  const key = state.cat;
+  const c = app?.catMap?.get(key);
+  if (!c) return;
+  const title = document.getElementById("catTitle");
+  const sub = document.getElementById("catSub");
+  const summary = app.stats?.byCat?.get(key);
+  const focused = !!(state.sub && (app.subsByCat?.get(key) || []).includes(state.sub));
+  if (title) title.textContent = focused ? state.sub : c.label;
+  if (!sub) return;
+  const flow = app.catFlowOf
+    ? app.catFlowOf(key)
+    : (app.subsByCat?.get(key) || []).reduce((s, n) => s + flowEstimate(app.stats?.byName?.get(n)), 0);
+  sub.innerHTML = [
+    focused ? `<span class="chip chip--line" title="所属大类">${esc(c.label)}</span>` : "",
+    focused ? `<span class="chip chip--accent">单系列</span>` : "",
+    `<span class="chip chip--line">${esc(rangeText(app))}</span>`,
+    `<span>${app.subsReady ? (summary?.count ?? "—") : (c.subs ?? "—")} 个细分行业</span>`,
+    `<span class="delta ${summary?.pct > 0 ? "delta--up" : summary?.pct < 0 ? "delta--down" : "delta--flat"}">${fmtPct(
+      summary?.pct,
+      2
+    )}</span>`,
+    `<span class="dim">区间份额净申购${app.chartData?.has(key) ? "" : "（估算）"} ${esc(fmtSigned(flow, 1))} 亿元</span>`,
+    state.compare.length
+      ? `<span class="chip chip--accent">对比 ${esc(state.compare.join(" vs "))}<button class="rc-x" type="button" data-clear-compare="1" aria-label="退出对比" title="退出对比" style="width:16px;height:16px;margin-left:2px"><svg width="9" height="9"><use href="#i-close"/></svg></button></span>`
+      : "",
+  ].join("");
+}
+
 export function renderCategory(app, opts = {}) {
   const cat = state.cat;
   const key = cat || app.cats?.[0]?.key;
   const c = app.catMap?.get(key);
   if (!c) return;
-  const title = document.getElementById("catTitle");
-  const sub = document.getElementById("catSub");
-  const summary = app.stats?.byCat?.get(key);
-  if (title) title.textContent = c.label;
-  if (sub) {
-    const flow = app.catFlowOf ? app.catFlowOf(key) : (app.subsByCat?.get(key) || []).reduce((s, n) => s + flowEstimate(app.stats?.byName?.get(n)), 0);
-    sub.innerHTML = [
-      `<span class="chip chip--line">${esc(rangeText(app))}</span>`,
-      `<span>${app.subsReady ? (summary?.count ?? "—") : (c.subs ?? "—")} 个细分行业</span>`,
-      `<span class="delta ${summary?.pct > 0 ? "delta--up" : summary?.pct < 0 ? "delta--down" : "delta--flat"}">${fmtPct(
-        summary?.pct,
-        2
-      )}</span>`,
-      `<span class="dim">区间份额净申购${app.chartData?.has(key) ? "" : "（估算）"} ${esc(fmtSigned(flow, 1))} 亿元</span>`,
-      state.sub && (app.subsByCat?.get(key) || []).includes(state.sub)
-        ? `<span class="chip chip--accent">聚焦 · ${esc(state.sub)}</span>`
-        : "",
-      state.compare.length
-        ? `<span class="chip chip--accent">对比 ${esc(state.compare.join(" vs "))}<button class="rc-x" type="button" data-clear-compare="1" aria-label="退出对比" title="退出对比" style="width:16px;height:16px;margin-left:2px"><svg width="9" height="9"><use href="#i-close"/></svg></button></span>`
-        : "",
-    ].join("");
-  }
+  syncCatHeading(app);
   const sub2 = document.getElementById("catTableSub");
   if (sub2) sub2.textContent = `${rangeText(app)} · 点击表头排序 · 点击行看明细`;
   const note = document.getElementById("chartNoteRange");

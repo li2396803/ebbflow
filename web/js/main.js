@@ -16,6 +16,7 @@ import {
   METRIC_IDS,
   setMetricSel,
   toggleMetricSel,
+  setFocusLayout,
   setFocus,
   clearFocus,
   state,
@@ -925,106 +926,144 @@ function buildFocusPayload(payload, catKey, name) {
   const sub = payload.series?.find((x) => x.name === name);
   if (!sub) return buildChartPayload(payload, catKey);
 
-  const sel = state.metricSel.length ? state.metricSel.slice() : [state.metric];
+  const sel = (state.metricSel.length ? state.metricSel.slice() : [state.metric]).slice(0, 4);
   const dark = isDark();
   const UNIT = { shares: "亿份", scale: "亿元", flow: "亿元/日", pct: "%" };
   const LABEL = { shares: "份额", scale: "规模", flow: "份额净申购", pct: "变化率" };
-  const colorOf = (m) =>
-    m === "flow" ? (dark ? "#ff6b5e" : "#C8322D") : toneColor(FOCUS_COLORS[m], dark);
+  const colorOf = (m) => (m === "flow" ? (dark ? "#ff6b5e" : "#C8322D") : toneColor(FOCUS_COLORS[m], dark));
+  const valuesOf = (m) =>
+    m === "pct"
+      ? normalizeSeries(sub.shares || [], a, b, state.norm === "all" ? null : a, { index100: false })
+      : sub[m] || [];
 
-  // 分面：份额/规模同栏（双轴），净申购、变化率各一栏
-  const panes = [];
-  const amountSel = sel.filter((m) => m === "shares" || m === "scale");
-  if (amountSel.length) panes.push({ key: "amount", metrics: amountSel });
-  if (sel.includes("flow")) panes.push({ key: "flow", metrics: ["flow"] });
-  if (sel.includes("pct")) panes.push({ key: "pct", metrics: ["pct"] });
-  const fracs = panes.length === 1 ? [1] : panes.length === 2 ? [0.65, 0.35] : [0.55, 0.25, 0.2];
-  panes.forEach((pane, i) => {
-    pane.fraction = fracs[i] || 0.2;
+  // ── 叠加模式：选中顺序 = 轴顺序（左右交替，每个指标一条轴）
+  const axes = [];
+  const series = [];
+  let leftCount = 0;
+  let rightCount = 0;
+  sel.forEach((m) => {
+    const position = axes.length % 2 === 0 ? "left" : "right";
+    const offset = (position === "left" ? leftCount++ : rightCount++) * 56;
+    axes.push({
+      metric: m,
+      index: axes.length,
+      position,
+      offset,
+      unit: UNIT[m],
+      kind: m === "flow" ? "flow" : m === "pct" ? "pct" : "amount",
+      name: `${LABEL[m]} ${UNIT[m]}`,
+      color: colorOf(m),
+    });
+    series.push({
+      name: LABEL[m],
+      metricId: m,
+      values: valuesOf(m),
+      color: colorOf(m),
+      kind: m === "flow" ? "bar" : "line",
+      axis: axes.length - 1,
+      unit: UNIT[m],
+      baseline: m === "flow" || m === "pct",
+    });
   });
 
-  const series = [];
-  const yAxes = [];
+  // ── 分面模式：份额/规模同栏（双轴），净申购、变化率各一栏
+  const panes = [];
+  const amountSel = sel.filter((m) => m === "shares" || m === "scale");
+  if (amountSel.length) panes.push({ index: panes.length, metrics: amountSel });
+  if (sel.includes("flow")) panes.push({ index: panes.length, metrics: ["flow"] });
+  if (sel.includes("pct")) panes.push({ index: panes.length, metrics: ["pct"] });
+  const fracs = panes.length === 1 ? [1] : panes.length === 2 ? [0.65, 0.35] : [0.55, 0.25, 0.2];
+  const paneAxes = [];
   const titles = [];
-  let axisIndex = 0;
+  const paneOf = new Map();
+  const paneAxisOf = new Map();
   panes.forEach((pane, pi) => {
-    const dual = pane.key === "amount" && pane.metrics.length === 2;
-    pane.metrics.forEach((m) => {
-      const axis = axisIndex++;
-      yAxes.push({
+    pane.fraction = fracs[pi] || 0.2;
+    pane.metrics.forEach((m, mi) => {
+      const axisIndex = paneAxes.length;
+      paneAxes.push({
         metric: m,
         pane: pi,
-        position: m === "scale" && dual ? "right" : "left",
+        index: axisIndex,
+        position: mi === 1 ? "right" : "left",
         unit: UNIT[m],
-        name: `${LABEL[m]} ${UNIT[m]}`,
         kind: m === "flow" ? "flow" : m === "pct" ? "pct" : "amount",
-      });
-      const values =
-        m === "pct"
-          ? normalizeSeries(sub.shares || [], a, b, state.norm === "all" ? null : a, { index100: false })
-          : sub[m] || [];
-      series.push({
-        name: LABEL[m],
-        metricId: m,
-        values,
+        name: `${LABEL[m]} ${UNIT[m]}`,
         color: colorOf(m),
-        kind: m === "flow" ? "bar" : "line",
-        pane: pi,
-        axis,
-        unit: UNIT[m],
-        baseline: m === "flow" || m === "pct",
       });
+      paneOf.set(m, pi);
+      paneAxisOf.set(m, axisIndex);
     });
     titles.push({ pane: pi, text: pane.metrics.map((m) => `${LABEL[m]} ${UNIT[m]}`).join(" · ") });
   });
+  for (const s of series) {
+    s.pane = paneOf.get(s.metricId) ?? 0;
+    s.paneAxis = paneAxisOf.get(s.metricId) ?? 0;
+  }
 
   const lastVal = (values) => lastNonNull(values, 0, values.length - 1);
-  const legend = panes.flatMap((pane) =>
-    pane.metrics.map((m) => ({
-      id: m,
-      label: LABEL[m],
-      unit: UNIT[m],
-      color: colorOf(m),
-      kind: m === "flow" ? "bar" : "line",
-      value: lastVal(series.find((x) => x.metricId === m)?.values || []),
-      toggle: true,
-    }))
-  );
+  const legend = series.map((x) => ({
+    id: x.metricId,
+    label: LABEL[x.metricId],
+    unit: UNIT[x.metricId],
+    color: colorOf(x.metricId),
+    kind: x.kind,
+    value: lastVal(x.values),
+    toggle: true,
+  }));
 
-  const dualAxis = panes[0]?.key === "amount" && panes[0].metrics.length === 2;
   const gutter = isDesktop() ? 92 : 8;
-  const endLabels = series
-    .filter((x) => x.pane === 0)
-    .map((x) => {
-      const v = lastVal(x.values);
-      return v == null ? null : { name: x.name, value: v, color: x.color, axis: x.axis };
-    })
-    .filter(Boolean);
+  const axisW = 58;
+  const gridLeft = 14 + (leftCount > 1 ? (leftCount - 1) * axisW : 0);
+  const gridRight = 14 + (rightCount > 0 ? rightCount * axisW : 0) + gutter;
+  const dualPane = panes[0]?.key !== "flow" && panes[0]?.metrics.length === 2;
+  const paneGridRight = 14 + (dualPane ? axisW : 0) + gutter;
+
+  const labelsOf = (layout) =>
+    series
+      .filter((x) => x.kind !== "bar")
+      .filter((x) => (layout === "panes" ? x.pane === 0 : true))
+      .map((x) => {
+        const v = lastVal(x.values);
+        return v == null ? null : { name: x.name, value: v, color: x.color, axis: layout === "panes" ? x.paneAxis : x.axis };
+      })
+      .filter(Boolean);
 
   return {
     dates,
     series,
+    axes,
     panes,
-    yAxes,
+    paneAxes,
     titles,
     legend,
     selected: sel,
     zoom: [a, b],
     focusMode: true,
-    mixed: panes.length > 1,
     mode: "focus",
+    layout: state.focusLayout,
     unit: UNIT[sel[0]],
     unitOf: Object.fromEntries(series.map((x) => [x.name, x.unit])),
     secondary: null,
     compare: false,
     zero: sel.includes("flow"),
     log: false,
-    footNote: `${sel.map((m) => LABEL[m]).join(" · ")}（${panes.length} 栏，共享时间轴）`,
-    endLabels,
+    footNote: `${sel.map((m) => LABEL[m]).join(" · ")}`,
+    endLabels: labelsOf("axes"),
+    paneEndLabels: labelsOf("panes"),
     endLabelDigits: sel.includes("pct") ? 1 : 0,
-    labelGutterOffset: dualAxis ? 54 : 0,
+    labelGutterOffset: rightCount * axisW,
+    paneLabelGutterOffset: dualPane ? axisW : 0,
     gutterRight: gutter,
-    gridRight: 12 + (dualAxis ? 54 : 0) + gutter,
+    gridLeft,
+    gridRight,
+    paneGridRight,
+    heightAxes: isDesktop()
+      ? Math.min(600, 420 + Math.max(0, sel.length - 1) * 46)
+      : 320 + Math.max(0, sel.length - 1) * 40,
+    heightPanes: isDesktop()
+      ? 420 + Math.max(0, panes.length - 1) * 70
+      : 340 + Math.max(0, panes.length - 1) * 60,
     metric: state.metric,
     catKey,
   };
@@ -1126,6 +1165,9 @@ function syncFocusUI() {
     writeURL({ replace: true });
   }
   views.renderMetricSegs(on);
+  views.syncCatHeading(app);
+  views.syncNavActive(app);
+  syncFocusLayoutUI(on);
   syncShowAllUI();
   const log = document.getElementById("chartLog");
   if (log && on) log.hidden = true;
@@ -1218,14 +1260,18 @@ async function renderCatChart(catKey, opts = {}) {
     const hintEl = document.querySelector(".legend-hint");
     if (hintEl) {
       hintEl.textContent = p.focusMode
-        ? "点击图例或上方按钮可取消/加入指标（至少保留 1 个）"
+        ? p.layout === "axes"
+          ? "多轴模式：注意各系列刻度独立 · 点击图例或按钮可取消指标"
+          : "分面模式：各指标独立坐标轴，共享时间轴 · 点击图例可取消指标"
         : "点击图例聚焦某个小类 · 再点「全部」退出";
     }
     if (unitEl) {
       unitEl.innerHTML = p.focusMode
-        ? `<b>${esc(state.sub)}</b> 单系列 · ${p.panes.length} 栏 · 指标 ${esc(
-            state.metricSel.map((m) => METRIC_LABEL[m]).join(" / ")
-          )} · ${esc(rangeTextForChart())}`
+        ? isDesktop()
+          ? `<b>${esc(state.sub)}</b> 单系列 · ${state.focusLayout === "axes" ? `${state.metricSel.length} 条独立轴` : `${p.panes.length} 栏分面`} · 指标 ${esc(
+              state.metricSel.map((m) => METRIC_LABEL[m]).join(" / ")
+            )} · ${esc(rangeTextForChart())}`
+          : `<b>${esc(state.sub)}</b> · ${state.focusLayout === "axes" ? `${state.metricSel.length} 轴` : `${p.panes.length} 栏`} · ${esc(rangeTextForChart())}`
         : `<b>${esc(metricObj?.label || "")}</b> ${esc(p.unit)} · ${p.series.length} 个系列 · ${esc(rangeTextForChart())}${
             p.compare ? " · 对比模式" : ""
           }`;
@@ -1249,6 +1295,17 @@ async function renderCatChart(catKey, opts = {}) {
   } finally {
     if (token === freshChartToken && loading) loading.hidden = true;
   }
+}
+
+/** 聚焦布局开关：仅聚焦且 ≥2 个指标时出现 */
+function syncFocusLayoutUI(on = isFocusMode()) {
+  const el = document.getElementById("focusLayout");
+  if (!el) return;
+  const show = on && state.metricSel.length >= 2;
+  el.hidden = !show;
+  el.querySelectorAll("[data-layout]").forEach((b) => {
+    b.setAttribute("aria-pressed", String(b.dataset.layout === state.focusLayout));
+  });
 }
 
 /** Top-N 切换按钮状态 */
@@ -1961,6 +2018,16 @@ function wireEvents() {
     }
     if (closest("#btnExitFocus")) {
       exitFocus();
+      return;
+    }
+    const layoutBtn = closest("[data-layout]");
+    if (layoutBtn) {
+      const next = layoutBtn.dataset.layout;
+      if (next === state.focusLayout) return;
+      setFocusLayout(next);
+      writeURL({ replace: true });
+      syncFocusUI();
+      if (state.view === "cat") renderCatChart(state.cat, { silent: true });
       return;
     }
     if (closest("#btnShowAll")) {

@@ -43,7 +43,8 @@ export const state = {
   cat: null,
   sub: null, // 抽屉打开的小类
   metric: "shares", // 非聚焦态的单选指标
-  metricSel: ["shares"], // 聚焦态：选中的指标集合（≥1，顺序固定）
+  metricSel: ["shares"], // 聚焦态：选中的指标集合（≥1，顺序=选择顺序）
+  focusLayout: "panes", // 聚焦布局：panes（分面，默认）| axes（叠加多轴）
   norm: "win", // 变化率基准：win（区间首日）| all（全历史首日）
   preset: DEFAULT_PRESET,
   custom: null, // {from,to} 自定义区间（≤ 日历范围）
@@ -285,6 +286,21 @@ export function removeWatch(name) {
 }
 
 /* ------------------------------- 单系列聚焦 + 指标选择 ------------------------------- */
+const FOCUS_LAYOUT_KEY = "ebbflow-focus-layout";
+
+/** 聚焦布局：panes（默认）/ axes；记住上次选择 */
+export function setFocusLayout(layout, { silent = false } = {}) {
+  const next = layout === "axes" ? "axes" : "panes";
+  if (state.focusLayout === next) return next;
+  state.focusLayout = next;
+  try {
+    localStorage.setItem(FOCUS_LAYOUT_KEY, next);
+  } catch (e) {
+    /* ignore */
+  }
+  if (!silent) emit("focusLayout", next);
+  return next;
+}
 export const focusActive = () => !!(state.sub && state.view === "cat");
 
 /** 聚焦某个小类（同时用于图例聚焦与 URL 的 sub=） */
@@ -303,7 +319,14 @@ export function clearFocus({ silent = false } = {}) {
 
 /** 规范化并写入聚焦态选中集合（至少 1 项，按固定顺序） */
 export function setMetricSel(list, { silent = false } = {}) {
-  const sel = orderedSel(list);
+  // 保留用户点选顺序：第 1 个选中的指标排第 1 条轴（左右交替），不预设主次
+  const seen = new Set();
+  const sel = [];
+  for (const id of list || []) {
+    if (!METRIC_IDS.includes(id) || seen.has(id)) continue;
+    seen.add(id);
+    sel.push(id);
+  }
   state.metricSel = sel.length ? sel : [state.metric];
   if (!silent) emit("metricSel", state.metricSel.slice());
 }
@@ -317,7 +340,7 @@ export function toggleMetricSel(id, { max = Infinity } = {}) {
     state.metricSel = state.metricSel.filter((m) => m !== id);
   } else {
     if (state.metricSel.length >= max) return { changed: false, sel: state.metricSel.slice(), reason: "limit" };
-    state.metricSel = orderedSel([...state.metricSel, id]);
+    state.metricSel = [...state.metricSel, id];
   }
   emit("metricSel", state.metricSel.slice());
   return { changed: true, sel: state.metricSel.slice() };
@@ -373,9 +396,17 @@ export function readURL() {
     .filter((x) => METRIC_IDS.includes(x));
   // 兼容旧链接：?metric=shares&overlay=flow,pct
   if (ovRaw) sel = sel.concat(ovRaw.split(",").map((x) => x.trim()).filter((x) => METRIC_IDS.includes(x)));
-  state.metricSel = orderedSel(sel);
-  if (!state.metricSel.length) state.metricSel = ["shares"];
+  setMetricSel(sel, { silent: true });
   state.metric = state.metricSel[0];
+  const layout = p.get("layout");
+  if (layout === "panes" || layout === "axes") state.focusLayout = layout;
+  else {
+    try {
+      state.focusLayout = localStorage.getItem(FOCUS_LAYOUT_KEY) === "axes" ? "axes" : "panes";
+    } catch (e) {
+      state.focusLayout = "panes";
+    }
+  }
   state.overlay = [];
   state.norm = p.get("norm") === "all" ? "all" : "win";
   state.log = p.get("log") === "1";
@@ -411,6 +442,7 @@ export function writeURL({ push = false, replace = true } = {}) {
   }
   if (state.sub && state.view === "cat") {
     if (state.metricSel.join(",") !== "shares") p.set("metric", state.metricSel.join(","));
+    if (state.focusLayout === "axes") p.set("layout", "axes");
   } else if (state.metric !== "shares") {
     p.set("metric", state.metric);
   }
