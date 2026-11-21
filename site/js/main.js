@@ -13,11 +13,11 @@ import * as views from "./views.js";
 import {
   PRESETS,
   METRICS,
-  OVERLAY_METRICS,
-  overlayAllowed,
+  METRIC_IDS,
+  setMetricSel,
+  toggleMetricSel,
   setFocus,
   clearFocus,
-  toggleOverlay,
   state,
   on,
   readURL,
@@ -68,6 +68,7 @@ let marketReady = false;
 let mainReady = false;
 let freshChartToken = 0;
 const COMPARE_COLORS = ["#4b57d6", "#d97a2b"];
+const FOCUS_COLORS = { shares: "#4B57D6", scale: "#0E9C9C", pct: "#8B5CF6" };
 const OVERLAY_COLORS = { scale: "#0e9c9c", pct: "#8b5cf6", flow: "#8b93a7" };
 const METRIC_LABEL = { shares: "份额", scale: "规模", flow: "份额净申购", pct: "变化率" };
 const METRIC_UNIT = { shares: "亿份", scale: "亿元", flow: "亿元/日", pct: "%" };
@@ -924,129 +925,222 @@ function buildFocusPayload(payload, catKey, name) {
   const sub = payload.series?.find((x) => x.name === name);
   if (!sub) return buildChartPayload(payload, catKey);
 
-  const main = state.metric;
-  const overlays = state.overlay.filter((m) => m !== main && OVERLAY_METRICS.includes(m));
-  const arrOf = (m) => (m === "scale" ? sub.scale : m === "flow" ? sub.flow : sub.shares);
-  const pctSource = main === "scale" ? "scale" : "shares";
-  const pctValues = () => normalizeSeries(arrOf(pctSource), a, b, state.norm === "all" ? null : a, { index100: false });
+  const sel = state.metricSel.length ? state.metricSel.slice() : [state.metric];
+  const dark = isDark();
+  const UNIT = { shares: "亿份", scale: "亿元", flow: "亿元/日", pct: "%" };
+  const LABEL = { shares: "份额", scale: "规模", flow: "份额净申购", pct: "变化率" };
+  const colorOf = (m) =>
+    m === "flow" ? (dark ? "#ff6b5e" : "#C8322D") : toneColor(FOCUS_COLORS[m], dark);
 
-  const mainColor = toneColor(sub.color || "#4b57d6", isDark());
-  const scaleColor = toneColor(OVERLAY_COLORS.scale, isDark());
-  const pctColor = toneColor(OVERLAY_COLORS.pct, isDark());
-
-  const hasScale = overlays.includes("scale");
-  const hasFlow = main === "flow" || overlays.includes("flow");
-  const hasPct = main === "pct" || overlays.includes("pct");
-
-  let leftRole;
-  if (main === "flow") leftRole = "flow";
-  else if (main === "shares" || main === "scale") leftRole = "amount";
-  else leftRole = hasScale ? "amount" : "pct";
-
-  const axes = [];
-  const addAxis = (role, position) => {
-    axes.push({ role, position, offset: 0 });
-    return axes.length - 1;
-  };
-  const leftIdx = addAxis(leftRole, "left");
-  const pctIdx = hasPct ? (leftRole === "pct" ? leftIdx : addAxis("pct", "right")) : null;
-  const flowIdx = hasFlow ? (leftRole === "flow" ? leftIdx : addAxis("flow", "right")) : null;
-  const amountRightIdx = main === "flow" && hasScale ? addAxis("amount", "right") : null;
-  let rightCount = 0;
-  for (const ax of axes) {
-    if (ax.position === "right") {
-      ax.offset = rightCount * 54;
-      rightCount += 1;
-    }
-  }
+  // 分面：份额/规模同栏（双轴），净申购、变化率各一栏
+  const panes = [];
+  const amountSel = sel.filter((m) => m === "shares" || m === "scale");
+  if (amountSel.length) panes.push({ key: "amount", metrics: amountSel });
+  if (sel.includes("flow")) panes.push({ key: "flow", metrics: ["flow"] });
+  if (sel.includes("pct")) panes.push({ key: "pct", metrics: ["pct"] });
+  const fracs = panes.length === 1 ? [1] : panes.length === 2 ? [0.65, 0.35] : [0.55, 0.25, 0.2];
+  panes.forEach((pane, i) => {
+    pane.fraction = fracs[i] || 0.2;
+  });
 
   const series = [];
-  const lastOf = (values) => lastNonNull(values, 0, values.length - 1);
-  const pushLine = (metric, values, color, { dash = false } = {}) => {
-    const axis = metric === "scale" ? (main === "flow" ? amountRightIdx : leftIdx) : metric === "pct" ? pctIdx : leftIdx;
-    series.push({
-      name: METRIC_LABEL[metric],
-      metricId: metric,
-      isOverlay: metric !== main,
-      values,
-      color,
-      kind: "line",
-      axis,
-      unit: METRIC_UNIT[metric],
-      dash,
+  const yAxes = [];
+  const titles = [];
+  let axisIndex = 0;
+  panes.forEach((pane, pi) => {
+    const dual = pane.key === "amount" && pane.metrics.length === 2;
+    pane.metrics.forEach((m) => {
+      const axis = axisIndex++;
+      yAxes.push({
+        metric: m,
+        pane: pi,
+        position: m === "scale" && dual ? "right" : "left",
+        unit: UNIT[m],
+        name: `${LABEL[m]} ${UNIT[m]}`,
+        kind: m === "flow" ? "flow" : m === "pct" ? "pct" : "amount",
+      });
+      const values =
+        m === "pct"
+          ? normalizeSeries(sub.shares || [], a, b, state.norm === "all" ? null : a, { index100: false })
+          : sub[m] || [];
+      series.push({
+        name: LABEL[m],
+        metricId: m,
+        values,
+        color: colorOf(m),
+        kind: m === "flow" ? "bar" : "line",
+        pane: pi,
+        axis,
+        unit: UNIT[m],
+        baseline: m === "flow" || m === "pct",
+      });
     });
-  };
-  const pushBars = (metric, values) => {
-    series.push({
-      name: METRIC_LABEL[metric],
-      metricId: metric,
-      isOverlay: metric !== main,
-      values,
-      color: toneColor(OVERLAY_COLORS.flow, isDark()),
-      kind: "bar",
-      axis: flowIdx,
-      unit: METRIC_UNIT.flow,
-    });
-  };
+    titles.push({ pane: pi, text: pane.metrics.map((m) => `${LABEL[m]} ${UNIT[m]}`).join(" · ") });
+  });
 
-  // 主指标
-  if (main === "flow") pushBars("flow", arrOf("flow"));
-  else if (main === "pct") pushLine("pct", pctValues(), mainColor);
-  else pushLine(main, arrOf(main), mainColor);
+  const lastVal = (values) => lastNonNull(values, 0, values.length - 1);
+  const legend = panes.flatMap((pane) =>
+    pane.metrics.map((m) => ({
+      id: m,
+      label: LABEL[m],
+      unit: UNIT[m],
+      color: colorOf(m),
+      kind: m === "flow" ? "bar" : "line",
+      value: lastVal(series.find((x) => x.metricId === m)?.values || []),
+      toggle: true,
+    }))
+  );
 
-  // 叠加项
-  if (hasScale && main !== "scale") pushLine("scale", arrOf("scale"), scaleColor);
-  if (overlays.includes("flow")) pushBars("flow", arrOf("flow"));
-  if (overlays.includes("pct")) pushLine("pct", pctValues(), pctColor, { dash: true });
-
-  const unitOf = {};
-  for (const s of series) unitOf[s.name] = s.unit;
-  const lineSeries = series.filter((s) => s.kind === "line");
-  const gutter = isDesktop() && lineSeries.length ? 92 : 0;
-  const gridRight = 12 + rightCount * 54 + gutter;
-  const endLabels = lineSeries
-    .map((s) => {
-      const v = lastOf(s.values);
-      return v == null ? null : { name: s.name, value: v, color: s.color, axis: s.axis };
+  const dualAxis = panes[0]?.key === "amount" && panes[0].metrics.length === 2;
+  const gutter = isDesktop() ? 92 : 8;
+  const endLabels = series
+    .filter((x) => x.pane === 0)
+    .map((x) => {
+      const v = lastVal(x.values);
+      return v == null ? null : { name: x.name, value: v, color: x.color, axis: x.axis };
     })
     .filter(Boolean);
 
   return {
     dates,
     series,
-    axes,
-    unitOf,
+    panes,
+    yAxes,
+    titles,
+    legend,
+    selected: sel,
     zoom: [a, b],
-    area: series.length === 1,
-    mixed: series.length > 1,
-    mode: series.some((s) => s.kind === "bar") ? "bar" : "line",
-    unit: series[0]?.unit || "",
-    zero: false,
-    focused: null,
-    log: false,
-    compare: false,
-    secondary: null,
-    footNote: [
-      `${name} · 主指标 ${METRIC_LABEL[main]}`,
-      overlays.length ? `叠加 ${overlays.map((m) => METRIC_LABEL[m]).join(" / ")}` : "未叠加",
-    ].join(" ｜ "),
-    endLabels,
-    endLabelDigits: 1,
-    gutterRight: gutter,
-    gridRight,
     focusMode: true,
-    focusName: name,
-    legend: series.map((s) => ({
-      id: s.metricId,
-      label: s.name,
-      unit: s.unit,
-      color: s.color,
-      kind: s.kind,
-      toggle: s.isOverlay,
-      value: lastOf(s.values),
-    })),
+    mixed: panes.length > 1,
+    mode: "focus",
+    unit: UNIT[sel[0]],
+    unitOf: Object.fromEntries(series.map((x) => [x.name, x.unit])),
+    secondary: null,
+    compare: false,
+    zero: sel.includes("flow"),
+    log: false,
+    footNote: `${sel.map((m) => LABEL[m]).join(" · ")}（${panes.length} 栏，共享时间轴）`,
+    endLabels,
+    endLabelDigits: sel.includes("pct") ? 1 : 0,
+    labelGutterOffset: dualAxis ? 54 : 0,
+    gutterRight: gutter,
+    gridRight: 12 + (dualAxis ? 54 : 0) + gutter,
+    metric: state.metric,
+    catKey,
   };
 }
+
+function onFocusSeries(name) {
+  if (state.compare.length) {
+    // 对比模式：维持「淡化其它」的语义
+    state.focused = name || null;
+    if (state.view !== "cat") return;
+    const payload = getChart(state.cat);
+    if (!payload) return;
+    chart.renderMain(buildChartPayload(payload, state.cat));
+    views.renderLegend(
+      (payload.series || []).map((s) => ({
+        name: s.name,
+        color: s.color,
+        endValue: legendValue({ name: s.name, values: (state.metric === "pct" ? s.shares : s[state.metric]) || [] }, payload),
+      })),
+      state.focused,
+      onFocusSeries
+    );
+    return;
+  }
+  if (!name) return; // 多系列里的「全部」= 已经是全部
+  if (state.sub === name) return;
+  setFocus(name);
+  writeURL({ replace: true });
+  syncFocusUI();
+  if (state.view === "cat") renderCatChart(state.cat, { silent: true });
+}
+
+/** 叠加项开关（指标按钮 / 图例共用） */
+function toggleMetricFromUI(id) {
+  if (!isFocusMode()) return;
+  const max = isDesktop() ? Infinity : 2;
+  const res = toggleMetricSel(id, { max });
+  if (res.reason === "min") {
+    toast("至少选择 1 个指标", "info", 1800);
+    return;
+  }
+  if (res.reason === "limit") {
+    openMetricReplacePicker(id, max);
+    return;
+  }
+  if (!res.changed) return;
+  writeURL({ replace: true });
+  syncFocusUI();
+  renderCatChart(state.cat, { silent: true });
+}
+
+/** 小屏指标上限时：用 popover 选一个已有指标替换 */
+function openMetricReplacePicker(id, max) {
+  const current = state.metricSel.slice(0, max);
+  const anchor =
+    document.getElementById("chartMetrics")?.querySelector(`[data-metric="${id}"]`) ||
+    document.getElementById("chartMetrics");
+  const pop = document.getElementById("popover");
+  if (!current.length || !pop || !anchor) {
+    toast(`小屏最多选择 ${max} 项`, "error", 2200);
+    return;
+  }
+  ui.openPopover(pop, anchor, (node) => {
+    node.innerHTML = `<div class="popover-title">最多选择 ${max} 项</div>
+      <div class="popover-note">选一项替换为「${esc(METRIC_LABEL[id])}」</div>
+      ${current
+        .map(
+          (m) =>
+            `<button class="popover-item" type="button" data-replace-metric="${m}">替换「${esc(METRIC_LABEL[m])}」</button>`
+        )
+        .join("")}
+      <div class="popover-sep"></div>
+      <button class="popover-item" type="button" data-replace-metric="">取消</button>`;
+    node.onclick = (e) => {
+      const btn = e.target.closest("[data-replace-metric]");
+      if (!btn) return;
+      const old = btn.dataset.replaceMetric;
+      ui.closePopover();
+      if (!old) return;
+      state.metricSel = state.metricSel.filter((m) => m !== old);
+      toggleMetricSel(id, { max });
+      writeURL({ replace: true });
+      syncFocusUI();
+      renderCatChart(state.cat, { silent: true });
+    };
+  });
+}
+
+/** 聚焦态 UI：4 个指标按钮多选（无主次）+ 顶部「返回大类」入口 */
+function syncFocusUI() {
+  const on = isFocusMode();
+  const exit = document.getElementById("btnExitFocus");
+  if (exit) exit.hidden = !on;
+
+  // 小屏：最多 2 个指标（分享链接可能带更多）
+  const max = isDesktop() ? Infinity : 2;
+  if (on && state.metricSel.length > max) {
+    setMetricSel(state.metricSel.slice(0, max), { silent: true });
+    writeURL({ replace: true });
+  }
+  views.renderMetricSegs(on);
+  syncShowAllUI();
+  const log = document.getElementById("chartLog");
+  if (log && on) log.hidden = true;
+}
+
+/** 退出单系列聚焦，回到该大类合并视图 */
+function exitFocus() {
+  if (!state.sub) return;
+  clearFocus();
+  writeURL({ replace: true });
+  syncFocusUI();
+  if (state.view === "cat") renderCatChart(state.cat, { silent: true });
+}
+
+const rangeTextForChart = () => `${state.rangeInfo.from} → ${state.rangeInfo.to} · ${state.rangeInfo.days} 个交易日`;
 
 async function renderCatChart(catKey, opts = {}) {
   if (!app.ready) return;
@@ -1104,7 +1198,7 @@ async function renderCatChart(catKey, opts = {}) {
     }
     chart.renderMain(p);
     if (p.focusMode) {
-      views.renderFocusLegend(p.legend, (id) => toggleOverlayFromUI(id), () => exitFocus());
+      views.renderFocusLegend(p.legend, (id) => toggleMetricFromUI(id));
       renderFocusEtf(state.sub);
     } else {
       const feCard = document.getElementById("focusEtfCard");
@@ -1124,14 +1218,14 @@ async function renderCatChart(catKey, opts = {}) {
     const hintEl = document.querySelector(".legend-hint");
     if (hintEl) {
       hintEl.textContent = p.focusMode
-        ? "点带单位的叠加项可从图例移除；主指标在上方切换"
+        ? "点击图例或上方按钮可取消/加入指标（至少保留 1 个）"
         : "点击图例聚焦某个小类 · 再点「全部」退出";
     }
     if (unitEl) {
       unitEl.innerHTML = p.focusMode
-        ? `<b>${esc(state.sub)}</b> 单系列 · 主指标 ${esc(metricObj?.label || "")}（${esc(METRIC_UNIT[state.metric])}）${
-            state.overlay.length ? ` · 叠加 ${esc(state.overlay.map((m) => METRIC_LABEL[m]).join(" / "))}` : " · 未叠加"
-          } · ${esc(rangeTextForChart())}`
+        ? `<b>${esc(state.sub)}</b> 单系列 · ${p.panes.length} 栏 · 指标 ${esc(
+            state.metricSel.map((m) => METRIC_LABEL[m]).join(" / ")
+          )} · ${esc(rangeTextForChart())}`
         : `<b>${esc(metricObj?.label || "")}</b> ${esc(p.unit)} · ${p.series.length} 个系列 · ${esc(rangeTextForChart())}${
             p.compare ? " · 对比模式" : ""
           }`;
@@ -1155,87 +1249,6 @@ async function renderCatChart(catKey, opts = {}) {
   } finally {
     if (token === freshChartToken && loading) loading.hidden = true;
   }
-}
-
-const rangeTextForChart = () => `${state.rangeInfo.from} → ${state.rangeInfo.to} · ${state.rangeInfo.days} 个交易日`;
-
-function onFocusSeries(name) {
-  if (state.compare.length) {
-    // 对比模式：维持「淡化其它」的语义
-    state.focused = name || null;
-    if (state.view !== "cat") return;
-    const payload = getChart(state.cat);
-    if (!payload) return;
-    chart.renderMain(buildChartPayload(payload, state.cat));
-    views.renderLegend(
-      (payload.series || []).map((s) => ({
-        name: s.name,
-        color: s.color,
-        endValue: legendValue({ name: s.name, values: (state.metric === "pct" ? s.shares : s[state.metric]) || [] }, payload),
-      })),
-      state.focused,
-      onFocusSeries
-    );
-    return;
-  }
-  if (!name) return; // 多系列里的「全部」= 已经是全部
-  if (state.sub === name) return;
-  setFocus(name);
-  writeURL({ replace: true });
-  syncFocusUI();
-  if (state.view === "cat") renderCatChart(state.cat, { silent: true });
-}
-
-/** 叠加项开关（指标按钮 / 图例共用） */
-function toggleOverlayFromUI(id) {
-  if (!isFocusMode()) return;
-  const max = isDesktop() ? Infinity : 2;
-  const res = toggleOverlay(id, { max });
-  if (window.__OVDEBUG) console.log("[ov]", id, "max", max, "reason", res.reason, "overlay", JSON.stringify(state.overlay));
-  if (res.reason === "limit") {
-    // 小屏：不硬截断，让用户选择替换掉哪一项
-    openOverlayReplacePicker(id, max);
-    return;
-  }
-  if (!res.changed) return;
-  writeURL({ replace: true });
-  syncFocusUI();
-  renderCatChart(state.cat, { silent: true });
-}
-
-/** 小屏叠加上限时：选一个已有叠加项替换 */
-function openOverlayReplacePicker(id, max) {
-  const current = state.overlay.slice(0, max);
-  const anchor = document.getElementById("chartMetrics")?.querySelector(`[data-metric="${id}"]`) || document.getElementById("chartMetrics");
-  const pop = document.getElementById("popover");
-  if (!current.length || !pop || !anchor) {
-    toast(`小屏最多叠加 ${max} 项`, "error", 2200);
-    return;
-  }
-  ui.openPopover(pop, anchor, (node) => {
-    node.innerHTML = `<div class="popover-title">最多叠加 ${max} 项</div>
-      <div class="popover-note">选一项替换为「${esc(METRIC_LABEL[id])}」</div>
-      ${current
-        .map(
-          (m) =>
-            `<button class="popover-item" type="button" data-replace-overlay="${m}">替换「${esc(METRIC_LABEL[m])}」</button>`
-        )
-        .join("")}
-      <div class="popover-sep"></div>
-      <button class="popover-item" type="button" data-replace-overlay="">取消</button>`;
-    node.onclick = (e) => {
-      const btn = e.target.closest("[data-replace-overlay]");
-      if (!btn) return;
-      const old = btn.dataset.replaceOverlay;
-      ui.closePopover();
-      if (!old) return;
-      state.overlay = state.overlay.filter((m) => m !== old);
-      toggleOverlay(id, { max });
-      writeURL({ replace: true });
-      syncFocusUI();
-      renderCatChart(state.cat, { silent: true });
-    };
-  });
 }
 
 /** Top-N 切换按钮状态 */
@@ -1279,31 +1292,9 @@ async function renderFocusEtf(name) {
 }
 
 /** 聚焦态 UI：4 个指标按钮变多选 + 顶部「返回大类」入口 */
-function syncFocusUI() {
-  const on = isFocusMode();
-  const exit = document.getElementById("btnExitFocus");
-  if (exit) exit.hidden = !on;
 
-  // 小屏：最多 2 项叠加（分享链接可能带 3 项）
-  const max = isDesktop() ? Infinity : 2;
-  if (on && state.overlay.length > max) {
-    state.overlay = state.overlay.slice(0, max);
-    writeURL({ replace: true });
-  }
-  views.renderMetricSegs(on);
-  syncShowAllUI();
-  const log = document.getElementById("chartLog");
-  if (log && on) log.hidden = true;
-}
 
 /** 退出单系列聚焦，回到该大类合并视图 */
-function exitFocus() {
-  if (!state.sub) return;
-  clearFocus();
-  writeURL({ replace: true });
-  syncFocusUI();
-  if (state.view === "cat") renderCatChart(state.cat, { silent: true });
-}
 
 /* ==========================================================================
    区间变更 → 全站同步
@@ -1345,7 +1336,8 @@ function afterRangeChange(source) {
   if (state.view === "cat") {
     const payload = getChart(state.cat);
     if (payload) {
-      chart.renderMain(buildChartPayload(payload, state.cat));
+      const p = isFocusMode() ? buildFocusPayload(payload, state.cat, state.sub) : buildChartPayload(payload, state.cat);
+      chart.renderMain(p);
       document.getElementById("chartNoteRange").textContent = `当前区间 ${rangeTextForChart()}`;
     }
   }
@@ -1366,7 +1358,6 @@ function navigate(view, opts = {}) {
     const lostFocus = state.sub && (app.subs?.[state.sub]?.cat !== state.cat || opts.clearFocus);
     if (lostFocus || opts.clearFocus) {
       state.sub = null;
-      state.overlay = [];
     }
   }
   if (view === "cat" && !state.cat && app.cats.length) state.cat = app.cats[0].key;
@@ -1900,31 +1891,13 @@ function wireEvents() {
     if (metric) {
       const id = metric.dataset.metric;
       if (isFocusMode()) {
-        // 聚焦态：点主指标 = 循环切换主指标；点其它 = 叠加/取消叠加
-        if (id === state.metric) {
-          const order = METRICS.map((m) => m.id);
-          const next = order[(order.indexOf(state.metric) + 1) % order.length];
-          const wasOverlay = state.overlay.includes(next);
-          state.overlay = state.overlay.filter((m) => m !== next);
-          if (wasOverlay) {
-            state.overlay = state.overlay.filter((m) => m !== state.metric);
-            state.overlay.push(state.metric);
-          }
-          state.metric = next;
-          views.renderMetricSegs(true);
-          writeURL({ replace: true });
-          syncLogUI();
-          renderCatChart(state.cat, { silent: true });
-          return;
-        }
-        toggleOverlayFromUI(id);
+        // 聚焦态：四个指标完全平等，点一下选中、再点取消（至少留 1 个）
+        toggleMetricFromUI(id);
         return;
       }
       if (state.metric === id) return;
       state.metric = id;
       state.focused = null;
-      // 主指标不能同时出现在叠加里
-      if (state.overlay.includes(state.metric)) state.overlay = state.overlay.filter((m) => m !== state.metric);
       views.renderMetricSegs(false);
       writeURL({ replace: true });
       syncLogUI();
@@ -2433,7 +2406,6 @@ function resetTaxonomyState() {
   state.rangeInfo = { from: "—", to: "—", days: 0, fromIdx: -1, toIdx: -1, preset: state.preset, isCustom: false };
   state.cat = null;
   state.sub = null;
-  state.overlay = [];
   state.compare = [];
   state.focused = null;
   // 不销毁 ECharts 实例：切换期间旧图保持可见（只做变暗），新数据到齐后 setOption 覆盖，

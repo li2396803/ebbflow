@@ -411,6 +411,22 @@
 }
 
 /* 端点标签：画在绘图区右侧的 gutter 里，绝不压曲线 */
+.pane-title-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  overflow: hidden;
+}
+.pane-title {
+  position: absolute;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--ink-4);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
 .endlabel-layer .elab-lines {
   position: absolute;
   left: 0;

@@ -94,6 +94,7 @@ export const main = {
   lastPayload: null,
   firstRender: true,
   labelsLayer: null,
+  paneLayer: null,
   scheduled: false,
   brushOn: false,
 };
@@ -116,6 +117,13 @@ export async function initMain(el, hooks = {}) {
   layer.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:2;overflow:hidden";
   main.shell.append(layer);
   main.labelsLayer = layer;
+
+  // 分面标题层（左上角小字）
+  const paneLayer = document.createElement("div");
+  paneLayer.className = "pane-title-layer";
+  paneLayer.setAttribute("aria-hidden", "true");
+  main.shell.append(paneLayer);
+  main.paneLayer = paneLayer;
 
   main.ec.on("datazoom", () => {
     const [a, b] = readZoom();
@@ -249,6 +257,7 @@ function scheduleLabels() {
   main.scheduled = true;
   requestAnimationFrame(() => {
     main.scheduled = false;
+    paintPaneTitles();
     paintEndLabels();
   });
 }
@@ -319,7 +328,7 @@ function paintEndLabels() {
     it.y = placed[i];
   });
 
-  const left = Math.round(rect.x + rect.width + 8);
+  const left = Math.round(rect.x + rect.width + 8 + (p.labelGutterOffset || 0));
   const maxW = Math.max(56, Math.round((layer.clientWidth || left + 100) - left - 6));
   const html = shown
     .map(
@@ -451,7 +460,250 @@ function yAxisOption(a, index, t, p) {
   };
 }
 
+/** 给分面轴算「好看」的刻度边界（保证含 0，避免 ECharts 用数据端点当刻度） */
+function niceBounds(vals, split, includeZero = false) {
+  const fin = vals.filter((v) => Number.isFinite(+v)).map(Number);
+  if (!fin.length) return { min: 0, max: 1, interval: 1 };
+  let lo = Math.min(...fin);
+  let hi = Math.max(...fin);
+  if (includeZero) {
+    lo = Math.min(0, lo);
+    hi = Math.max(0, hi);
+  }
+  if (lo === hi) {
+    if (lo === 0) hi = 1;
+    else {
+      lo = Math.min(0, lo);
+      hi = Math.max(0, hi);
+    }
+  }
+  const rough = (hi - lo) / Math.max(1, split);
+  const mag = Math.pow(10, Math.floor(Math.log10(rough)));
+  const candidates = [1, 2, 2.5, 5, 10].map((k) => k * mag);
+  // 取「不小于 rough 的最小 nice 值」：刻度数不超 split+1，也避免数据端点当刻度
+  const step = candidates.find((c) => c >= rough - 1e-9) || candidates[candidates.length - 1];
+  return { min: Math.floor(lo / step) * step, max: Math.ceil(hi / step) * step, interval: step };
+}
+
+/** 分面标题（左上角小字） */
+function paintPaneTitles() {
+  const layer = main.paneLayer;
+  const p = main.lastPayload;
+  if (!layer) return;
+  if (!p || !p.titles || !p.titles.length || !main.ec || main.ec.isDisposed()) {
+    layer.innerHTML = "";
+    return;
+  }
+  const chart = main.ec;
+  const html = [];
+  for (const item of p.titles) {
+    const model = chart.getModel()?.getComponent("grid", item.pane);
+    const rect = model?.coordinateSystem?.getRect?.();
+    if (!rect) continue;
+    html.push(
+      `<span class="pane-title" style="left:${Math.round(rect.x)}px;top:${Math.round(rect.y) - 16}px">${esc(item.text)}</span>`
+    );
+  }
+  layer.innerHTML = html.join("");
+}
+
+/** 分面 tooltip：无论 hover 哪一栏，都列出当天全部已选指标 */
+function focusTooltip(p, params) {
+  const idx = params?.[0]?.dataIndex;
+  if (idx == null) return "";
+  const date = p.dates?.[idx] || "";
+  const rows = (p.series || []).map((s) => {
+    const v = s.values?.[idx];
+    const unit = s.unit || "";
+    const txt =
+      v == null || !Number.isFinite(+v)
+        ? "—"
+        : unit === "%"
+          ? `${(+v).toFixed(2)}${esc(unit)}`
+          : `${axisNum(v)}<span class="ec-tip-unit">${esc(unit)}</span>`;
+    const color = s.kind === "bar" ? (v >= 0 ? "var(--up)" : "var(--down)") : s.color;
+    return `<div class="ec-tip-row"><span class="ec-tip-name"><i class="ec-tip-dot" style="--c:${color}"></i>${esc(
+      s.name
+    )}</span><span class="ec-tip-val">${txt}</span></div>`;
+  });
+  return `<div class="ec-tip">
+    <div class="ec-tip-head"><span class="ec-tip-date">${esc(date)}</span><span class="ec-tip-sum">${esc(
+      p.footNote || ""
+    )}</span></div>
+    <div class="ec-tip-body">${rows.join("")}</div>
+  </div>`;
+}
+
+/** 聚焦态：多栏（small multiples）配置 */
+function focusOption(p) {
+  const t = tokens();
+  const mobile = !isDesktop();
+  const H = main.el?.clientHeight || 460;
+  const n = p.panes.length;
+  const gap = mobile ? 18 : 36;
+  const topPad = 22;
+  const bottomPad = mobile ? 30 : 58;
+  const usable = Math.max(110 * n, H - topPad - bottomPad - gap * (n - 1));
+  let top = topPad;
+  const grids = p.panes.map((pane, i) => {
+    const h = usable * (pane.fraction ?? 1 / n);
+    const g = { left: 10, right: p.gridRight, top: Math.round(top), height: Math.round(h), containLabel: true };
+    top += h + gap;
+    return g;
+  });
+  const allX = p.panes.map((_, i) => i);
+  const xAxes = p.panes.map((pane, i) => ({
+    type: "category",
+    gridIndex: i,
+    data: p.dates,
+    boundaryGap: true,
+    axisLine: { lineStyle: { color: t.line } },
+    axisTick: { show: i === n - 1, length: 4, lineStyle: { color: t.line } },
+    axisLabel: { show: i === n - 1, color: t.ink4, fontSize: AXIS_FONT, hideOverlap: true, margin: 8 },
+    splitLine: { show: false },
+    axisPointer: { label: { show: false } },
+  }));
+  const yAxes = p.yAxes.map((y, idx) => {
+    const paneH = grids[y.pane]?.height ?? 999;
+    // 紧凑刻度：≥1000 用 1.2k，其余整数；单位只在栏标题里写一次
+    const compact = (v) => {
+      const n = +v;
+      if (!Number.isFinite(n)) return `${v}`;
+      if (Math.abs(n) >= 1000) {
+        const k = n / 1000;
+        return `${(Math.abs(k) >= 10 ? k.toFixed(0) : k.toFixed(1)).replace(/\.0$/, "")}k`;
+      }
+      return `${Math.round(n)}`;
+    };
+    const color = p.series.find((x) => x.metricId === y.metric)?.color || tokens().ink4;
+    const [za, zb] = p.zoom || [0, p.dates.length - 1];
+    const vals = p.series
+      .filter((x) => x.metricId === y.metric)
+      .flatMap((x) => (x.values || []).slice(za, zb + 1));
+    const includeZero = y.kind === "flow" || y.kind === "pct";
+    const b = niceBounds(vals, paneH < 120 ? 2 : 4, includeZero);
+    return {
+      gridIndex: y.pane,
+      position: y.position,
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: {
+        color,
+        fontSize: AXIS_FONT,
+        margin: 6,
+        formatter: y.kind === "pct" ? (v) => `${compact(v)}%` : compact,
+      },
+      splitLine: { show: idx === 0 || y.position === "left", lineStyle: { color: t.grid, type: [3, 3] } },
+      // 副栏更矮：刻度少一点；主栏 4 段。边界用 nice 值，保证含 0 且不出现数据端点刻度
+      splitNumber: paneH < 120 ? 2 : 4,
+      scale: true,
+      min: b.min,
+      max: b.max,
+      interval: b.interval,
+    };
+  });
+  const series = p.series.map((s) => {
+    const base = {
+      name: s.name,
+      xAxisIndex: s.pane,
+      yAxisIndex: s.axis,
+      data: s.values,
+      animation: false,
+      unit: s.unit,
+      z: s.kind === "bar" ? 2 : 3,
+    };
+    if (s.kind === "bar") {
+      return {
+        ...base,
+        type: "bar",
+        barMaxWidth: mobile ? 10 : 16,
+        barCategoryGap: "30%",
+        itemStyle: {
+          color: (par) => (par.value >= 0 ? t.up : t.down),
+          opacity: 0.9,
+          borderRadius: [1, 1, 0, 0],
+        },
+        emphasis: { focus: "series", itemStyle: { opacity: 1 } },
+      };
+    }
+    return {
+      ...base,
+      type: "line",
+      showSymbol: false,
+      sampling: "lttb",
+      smooth: 0.12,
+      connectNulls: false,
+      lineStyle: { width: 1.8, color: s.color },
+      itemStyle: { color: s.color },
+      emphasis: { focus: "series", lineStyle: { width: 2.6 } },
+      ...(s.baseline
+        ? {
+            markLine: {
+              silent: true,
+              symbol: "none",
+              label: { show: false },
+              lineStyle: { color: t.lineStrong, width: 1 },
+              data: [{ yAxis: 0 }],
+            },
+          }
+        : {}),
+    };
+  });
+  const [a, b] = p.zoom;
+  const dz = [
+    {
+      type: "inside",
+      xAxisIndex: allX,
+      filterMode: "filter",
+      zoomOnMouseWheel: false,
+      moveOnMouseWheel: false,
+      moveOnMouseMove: false,
+      startValue: p.dates[a] ?? p.dates[0],
+      endValue: p.dates[b] ?? p.dates[p.dates.length - 1],
+    },
+  ];
+  if (!mobile) {
+    dz.push({
+      type: "slider",
+      xAxisIndex: allX,
+      filterMode: "filter",
+      height: 16,
+      bottom: 6,
+      startValue: p.dates[a] ?? p.dates[0],
+      endValue: p.dates[b] ?? p.dates[p.dates.length - 1],
+      brushSelect: false,
+      borderColor: "transparent",
+      backgroundColor: t.dark ? "rgba(255,255,255,0.03)" : "rgba(16,19,26,0.035)",
+      fillerColor: t.area,
+      handleSize: "100%",
+      handleStyle: { color: t.surface, borderColor: t.accent, borderWidth: 1.2, shadowBlur: 3, shadowColor: "rgba(0,0,0,.18)" },
+      moveHandleStyle: { color: t.lineStrong, opacity: 0.7 },
+      emphasis: { handleStyle: { borderColor: t.accent }, moveHandleStyle: { color: t.accent } },
+      dataBackground: { lineStyle: { color: t.lineStrong, opacity: 0.9, width: 1 }, areaStyle: { color: t.surface3, opacity: 0.9 } },
+    });
+  }
+  return {
+    animation: false,
+    grid: grids,
+    xAxis: xAxes,
+    yAxis: yAxes,
+    series,
+    dataZoom: dz,
+    axisPointer: { link: [{ xAxisIndex: "all" }], label: { show: false }, lineStyle: { color: t.lineStrong } },
+    tooltip: {
+      trigger: "axis",
+      appendToBody: true,
+      className: "ec-tip",
+      axisPointer: { type: "cross", lineStyle: { color: t.lineStrong }, crossStyle: { color: t.lineStrong } },
+      formatter: (params) => focusTooltip(p, params),
+    },
+    toolbox: { show: false },
+    legend: { show: false },
+  };
+}
+
 function baseOption(p) {
+  if (p.panes && p.panes.length) return focusOption(p);
   const t = tokens();
   const dates = p.dates;
   const showSlider = isDesktop() && !p.compare;
@@ -721,6 +973,18 @@ function tooltipHTML(params, p) {
 /** 渲染主图；p: { dates, series, mode, unit, zoom:[a,b], focused, compare, secondary, footNote, endLabels } */
 export function renderMain(p) {
   if (!main.ec) return;
+  // 移动端分面：每栏至少 110px，不够就把图表容器拉高（页面滚动，不压缩）
+  if (p?.panes?.length && !isDesktop() && main.el) {
+    const n = p.panes.length;
+    const fmin = Math.min(...p.panes.map((x) => x.fraction || 1 / n));
+    const need = Math.ceil(110 / fmin + 18 * (n - 1) + 52);
+    if (main.el.clientHeight < need) {
+      main.el.style.height = `${need}px`;
+      try {
+        main.ec.resize();
+      } catch (e) {}
+    }
+  }
   main.lastPayload = p;
   // 先收起 tooltip：避免 setOption 重建时 ECharts 内部仍在定位已移除的浮层（会抛 null.offsetWidth）
   try {

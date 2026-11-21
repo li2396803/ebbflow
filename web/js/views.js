@@ -166,28 +166,19 @@ export function renderRangeSegs() {
 
 export function renderMetricSegs(focusMode = false) {
   const host = document.getElementById("chartMetrics");
-  if (host) {
-    host.innerHTML = METRICS.map((m) => {
-      const primary = state.metric === m.id;
-      const overlaid = focusMode && state.overlay.includes(m.id);
-      const cls = ["seg-btn"];
-      if (primary) cls.push("is-primary");
-      if (overlaid) cls.push("is-overlay");
-      const title = focusMode
-        ? primary
-          ? "主指标（决定左轴单位）；再点一次循环切换到下一个指标"
-          : overlaid
-            ? "再点一次取消叠加"
-            : "点击叠加这个指标"
-        : "";
-      return `<button class="${cls.join(" ")}" type="button" data-metric="${m.id}" aria-pressed="${
-        primary || overlaid
-      }" ${title ? `title="${esc(title)}"` : ""}><span class="seg-mark" aria-hidden="true"></span>${m.label}</button>`;
-    }).join("");
-  }
-  const norm = document.getElementById("chartNorm");
-  if (norm) norm.hidden = state.metric !== "pct";
-  norm?.querySelectorAll("[data-norm]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.norm === state.norm)));
+  if (!host) return;
+  host.innerHTML = METRICS.map((m) => {
+    const selected = focusMode ? state.metricSel.includes(m.id) : state.metric === m.id;
+    const cls = ["seg-btn", selected ? (focusMode ? "is-selected" : "is-primary") : ""].filter(Boolean).join(" ");
+    const title = focusMode
+      ? selected
+        ? `取消「${m.label}」（至少保留 1 个指标）`
+        : `加入「${m.label}」`
+      : "";
+    return `<button class="${cls}" type="button" data-metric="${m.id}" aria-pressed="${selected}" ${
+      title ? `title="${esc(title)}"` : ""
+    }><span class="seg-mark" aria-hidden="true"></span>${m.label}</button>`;
+  }).join("");
 }
 
 /* ============================ 区间摘要 ============================ */
@@ -813,27 +804,23 @@ function renderCatSide(app, key) {
 /* ============================ 图表图例 ============================ */
 
 /** 聚焦态图例：主指标只展示；叠加项可点击单独开关（带单位） */
-export function renderFocusLegend(items, onToggle, onExit) {
+export function renderFocusLegend(items, onToggle) {
   const host = document.getElementById("chartLegend");
   if (!host) return;
   host.innerHTML = (items || [])
     .map((it) => {
       const dot = it.kind === "bar" ? "lc-dot lc-dot--flow" : "lc-dot";
       const val = it.value == null ? "" : `<span class="lc-val">${esc(cnum(it.value, 1))}</span>`;
-      const inner = `<span class="${dot}"${it.kind === "bar" ? "" : ` style="--lc:${toneColor(it.color, isDark())}"`}></span>
-        <span class="lc-name">${esc(it.label)}</span><span class="lc-unit">${esc(it.unit)}</span>${val}`;
-      return it.toggle
-        ? `<button class="legend-chip legend-chip--ov" type="button" data-overlay-toggle="${esc(it.id)}" aria-pressed="true" title="点击移除叠加">${inner}</button>`
-        : `<button class="legend-chip legend-chip--main" type="button" data-exit-focus="1" aria-current="true" title="主指标；点击恢复该大类全部小类">${inner}<span class="lc-hint">· 点此返回大类</span></button>`;
+      return `<button class="legend-chip legend-chip--ov" type="button" data-metric-toggle="${esc(it.id)}" aria-pressed="true"
+        title="点击取消「${esc(it.label)}」">
+        <span class="${dot}"${it.kind === "bar" ? "" : ` style="--lc:${toneColor(it.color, isDark())}"`}></span>
+        <span class="lc-name">${esc(it.label)}</span><span class="lc-unit">${esc(it.unit)}</span>${val}
+      </button>`;
     })
     .join("");
   host.onclick = (e) => {
-    const ov = e.target.closest("[data-overlay-toggle]");
-    if (ov) {
-      onToggle(ov.dataset.overlayToggle);
-      return;
-    }
-    if (e.target.closest("[data-exit-focus]")) onExit?.();
+    const b = e.target.closest("[data-metric-toggle]");
+    if (b) onToggle(b.dataset.metricToggle);
   };
 }
 

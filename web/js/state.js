@@ -16,8 +16,10 @@ export const METRICS = [
   { id: "pct", label: "变化率", unit: "%", short: "变化率" },
 ];
 
-/** 可叠加的指标（份额是主指标口径，不作为叠加项；主指标本身会被自动排除） */
-export const OVERLAY_METRICS = ["scale", "flow", "pct"];
+/** 聚焦态下四个指标完全平等：任意子集，顺序固定（分面顺序也按这个顺序） */
+export const METRIC_IDS = METRICS.map((m) => m.id);
+export const orderedSel = (list) => METRIC_IDS.filter((id) => (list || []).includes(id));
+export const overlayAllowed = () => METRIC_IDS.slice(); // 兼容旧引用
 
 export const PRESETS = [
   { id: "1m", label: "近1月", short: "1月", months: 1 },
@@ -40,12 +42,13 @@ export const state = {
   view: "overview", // overview | cat | watch
   cat: null,
   sub: null, // 抽屉打开的小类
-  metric: "shares", // shares | scale | flow | pct
+  metric: "shares", // 非聚焦态的单选指标
+  metricSel: ["shares"], // 聚焦态：选中的指标集合（≥1，顺序固定）
   norm: "win", // 变化率基准：win（区间首日）| all（全历史首日）
   preset: DEFAULT_PRESET,
   custom: null, // {from,to} 自定义区间（≤ 日历范围）
   compare: [], // 最多 2 个小类名
-  overlay: [],
+  overlay: [], // 旧字段，保留以兼容老链接（不再写入）
   showAll: false, // 单系列聚焦时叠加的指标：scale / flow / pct
   log: false, // 对数坐标（份额/规模）
   focused: null, // 图例聚焦的系列名
@@ -281,47 +284,43 @@ export function removeWatch(name) {
   }
 }
 
-/* ------------------------------- 单系列聚焦 + 指标叠加 ------------------------------- */
-export const overlayAllowed = (metric = state.metric) => OVERLAY_METRICS.filter((m) => m !== metric);
+/* ------------------------------- 单系列聚焦 + 指标选择 ------------------------------- */
+export const focusActive = () => !!(state.sub && state.view === "cat");
 
 /** 聚焦某个小类（同时用于图例聚焦与 URL 的 sub=） */
 export function setFocus(name, { silent = false } = {}) {
   if (!name) return;
   if (state.sub === name) return;
   state.sub = name;
-  // 换聚焦对象时叠加项保留（同一套指标语义没变），但主指标若是叠加项要剔除
-  state.overlay = state.overlay.filter((m) => m !== state.metric);
+  if (!state.metricSel.length) state.metricSel = [state.metric];
   if (!silent) emit("focus", name);
 }
 
 export function clearFocus({ silent = false } = {}) {
   state.sub = null;
-  state.overlay = [];
   if (!silent) emit("focus", null);
 }
 
-export function setOverlay(list, { silent = false } = {}) {
-  const allowed = overlayAllowed();
-  state.overlay = Array.from(new Set((list || []).filter((m) => allowed.includes(m))));
-  if (!silent) emit("overlay", state.overlay.slice());
+/** 规范化并写入聚焦态选中集合（至少 1 项，按固定顺序） */
+export function setMetricSel(list, { silent = false } = {}) {
+  const sel = orderedSel(list);
+  state.metricSel = sel.length ? sel : [state.metric];
+  if (!silent) emit("metricSel", state.metricSel.slice());
 }
 
-/** 返回 { changed, overlay, reason }，移动端上限由调用方判断 */
-export function toggleOverlay(metric, { max = Infinity } = {}) {
-  if (!OVERLAY_METRICS.includes(metric) || metric === state.metric) {
-    return { changed: false, overlay: state.overlay.slice(), reason: "invalid" };
-  }
-  const i = state.overlay.indexOf(metric);
-  if (i >= 0) {
-    state.overlay.splice(i, 1);
+/** 返回 { changed, sel, reason }：invalid / min（不能一个都不选）/ limit（小屏上限） */
+export function toggleMetricSel(id, { max = Infinity } = {}) {
+  if (!METRIC_IDS.includes(id)) return { changed: false, sel: state.metricSel.slice(), reason: "invalid" };
+  const has = state.metricSel.includes(id);
+  if (has) {
+    if (state.metricSel.length <= 1) return { changed: false, sel: state.metricSel.slice(), reason: "min" };
+    state.metricSel = state.metricSel.filter((m) => m !== id);
   } else {
-    if (state.overlay.length >= max) {
-      return { changed: false, overlay: state.overlay.slice(), reason: "limit" };
-    }
-    state.overlay.push(metric);
+    if (state.metricSel.length >= max) return { changed: false, sel: state.metricSel.slice(), reason: "limit" };
+    state.metricSel = orderedSel([...state.metricSel, id]);
   }
-  emit("overlay", state.overlay.slice());
-  return { changed: true, overlay: state.overlay.slice() };
+  emit("metricSel", state.metricSel.slice());
+  return { changed: true, sel: state.metricSel.slice() };
 }
 
 /* ------------------------------- 对比 ------------------------------- */
@@ -366,18 +365,23 @@ export function readURL() {
   const view = p.get("view");
   state.view = VALID_VIEWS.has(view) ? view : "overview";
   state.cat = p.get("cat") || null;
-  const m = p.get("metric") || p.get("m");
-  state.metric = METRICS.some((x) => x.id === m) ? m : "shares";
+  const mRaw = p.get("metric") || p.get("m") || "";
+  const ovRaw = p.get("overlay") || "";
+  let sel = mRaw
+    .split(",")
+    .map((x) => x.trim())
+    .filter((x) => METRIC_IDS.includes(x));
+  // 兼容旧链接：?metric=shares&overlay=flow,pct
+  if (ovRaw) sel = sel.concat(ovRaw.split(",").map((x) => x.trim()).filter((x) => METRIC_IDS.includes(x)));
+  state.metricSel = orderedSel(sel);
+  if (!state.metricSel.length) state.metricSel = ["shares"];
+  state.metric = state.metricSel[0];
+  state.overlay = [];
   state.norm = p.get("norm") === "all" ? "all" : "win";
   state.log = p.get("log") === "1";
   state.sub = p.get("sub") || null;
   const cmp = p.get("cmp");
   state.compare = cmp ? cmp.split("|").filter(Boolean).slice(0, MAX_COMPARE) : [];
-  const ov = (p.get("overlay") || "")
-    .split(",")
-    .map((x) => x.trim())
-    .filter((x) => OVERLAY_METRICS.includes(x));
-  state.overlay = Array.from(new Set(ov));
 
   const from = p.get("from");
   const to = p.get("to");
@@ -405,13 +409,18 @@ export function writeURL({ push = false, replace = true } = {}) {
   } else if (state.preset !== DEFAULT_PRESET) {
     p.set("r", state.preset);
   }
-  if (state.metric !== "shares") p.set("metric", state.metric);
+  if (state.sub && state.view === "cat") {
+    if (state.metricSel.join(",") !== "shares") p.set("metric", state.metricSel.join(","));
+  } else if (state.metric !== "shares") {
+    p.set("metric", state.metric);
+  }
   if (state.norm === "all") p.set("norm", "all");
   if (state.log) p.set("log", "1");
   if (state.sub) p.set("sub", state.sub);
-  if (state.sub && state.overlay.length) p.set("overlay", state.overlay.join(","));
   if (state.compare.length) p.set("cmp", state.compare.join("|"));
-  const url = location.pathname + (p.toString() ? "?" + p.toString() : "") + location.hash;
+  // metric 用逗号分隔更可读：URLSearchParams 会把 , 编码成 %2C，这里还原
+  const qs = p.toString().replace(/%2C/g, ",");
+  const url = location.pathname + (qs ? "?" + qs : "") + location.hash;
   if (url === location.pathname + location.search + location.hash) return;
   try {
     if (push) history.pushState({ t: "nav" }, "", url);
