@@ -87,9 +87,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: data/etf.db
-          key: etf-db-${{ github.run_id }}
+          key: etf-db-v3-${{ github.run_id }}
           restore-keys: |
-            etf-db-
+            etf-db-v3-
 
       - name: 报告缓存的数据库
         run: |
@@ -106,7 +106,7 @@ jobs:
         env:
           # 冷启动（无 DB 缓存）首跑要回补 5 年历史，放宽到两个阶段都够用；日常增量只用 ~15 次
           TUSHARE_RPM: "150"
-          TUSHARE_MAX_CALLS_PER_RUN: "2600"
+          TUSHARE_MAX_CALLS_PER_RUN: "4200"
           TUSHARE_DAILY_BUDGET: "6000"
         run: |
           set -o pipefail
@@ -238,7 +238,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: data/etf.db
-          key: etf-db-${{ github.run_id }}
+          key: etf-db-v3-${{ github.run_id }}
 
       - name: 上传更新日志（失败时）
         if: failure()
