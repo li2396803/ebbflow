@@ -82,7 +82,7 @@ jobs:
             npm install --no-audit --no-fund --package-lock=false
           fi
 
-            - name: 恢复 SQLite 缓存
+      - name: 恢复 SQLite 缓存
         id: db-restore
         uses: actions/cache/restore@v4
         with:
