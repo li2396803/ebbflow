@@ -33,7 +33,7 @@ export const PRESETS = [
   { id: "all", label: "全部", short: "全部" },
 ];
 
-export const DEFAULT_PRESET = "1m";
+export const DEFAULT_PRESET = "1y"; // 新访客默认看近一年
 const WATCH_KEY = "etf-watch";
 const maxCompare = () => (isDesktop() ? 8 : 4);
 
@@ -45,7 +45,7 @@ export const state = {
   sub: null, // 抽屉打开的小类
   metric: "shares", // 非聚焦态的单选指标
   metricSel: ["shares"], // 聚焦态：选中的指标集合（≥1，顺序=选择顺序）
-  focusLayout: "panes", // 聚焦布局：panes（分面，默认）| axes（叠加多轴）
+  focusLayout: "axes", // 聚焦布局：axes（叠加多轴，默认）| panes（分面）
   norm: "win", // 变化率基准：win（区间首日）| all（全历史首日）
   preset: DEFAULT_PRESET,
   custom: null, // {from,to} 自定义区间（≤ 日历范围）
@@ -65,7 +65,7 @@ export const state = {
   topSort: { in: { key: "delta", dir: -1 }, out: { key: "delta", dir: 1 } },
   watch: [],
   calendar: [], // 交易日（ISO 升序）
-  rangeInfo: { from: "—", to: "—", days: 0, fromIdx: -1, toIdx: -1, preset: "1m", isCustom: false },
+  rangeInfo: { from: "—", to: "—", days: 0, fromIdx: -1, toIdx: -1, preset: "1y", isCustom: false },
   ready: false,
 };
 
@@ -291,7 +291,7 @@ export function removeWatch(name) {
 /* ------------------------------- 单系列聚焦 + 指标选择 ------------------------------- */
 const FOCUS_LAYOUT_KEY = "ebbflow-focus-layout";
 
-/** 聚焦布局：panes（默认）/ axes；记住上次选择 */
+/** 聚焦布局：axes（默认，多轴叠加）/ panes（分面）；记住上次选择 */
 export function setFocusLayout(layout, { silent = false } = {}) {
   const next = layout === "axes" ? "axes" : "panes";
   if (state.focusLayout === next) return next;
@@ -425,9 +425,9 @@ export function readURL() {
   if (layout === "panes" || layout === "axes") state.focusLayout = layout;
   else {
     try {
-      state.focusLayout = localStorage.getItem(FOCUS_LAYOUT_KEY) === "axes" ? "axes" : "panes";
+      state.focusLayout = localStorage.getItem(FOCUS_LAYOUT_KEY) === "panes" ? "panes" : "axes";
     } catch (e) {
-      state.focusLayout = "panes";
+      state.focusLayout = "axes";
     }
   }
   state.overlay = [];
