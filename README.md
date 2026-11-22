@@ -3,12 +3,14 @@
 <h1 align="center">Ebbflow</h1>
 <p align="center"><b>ETF 细分行业资金流向</b>：沪深全市场 ETF 的份额、规模与净流入看板</p>
 
-潮水一天涨落两次，ETF 的钱一天进出一次 —— 只是没人把它画成曲线。
+潮有两次涨落，日复一日；资有几番进出，朝来暮往。
+海以潮汐写时间，市以资金写暗流。
 
-**Ebbflow** 每天把沪深两市全部 ETF 的份额、净值、行情抓下来，落进本机 SQLite，
-按行业与主题归堆，生成一条条资金流向曲线。打开就能看，也可以离线看。
+**Ebbflow** 取自 *ebb & flow*：ebb 是退潮，flow 是涨潮，合在一起就是潮水的起落。
+钱在 ETF 里也是这样进出——申购涌进来，赎回退回去，日复一日；把这份起落画成曲线，名字便由此而来。
 
-数据来自上交所与 Tushare Pro。仅供研究与技术学习，不构成投资建议。
+它每天把沪深两市全部 ETF 的份额、净值、行情抓下来，落进本机 SQLite，按行业与主题归堆；
+打开就能看，也可以离线看。数据来自上交所与 Tushare Pro，仅供研究与技术学习，不构成投资建议。
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522.5-brightgreen.svg)](package.json)
