@@ -12,7 +12,10 @@ if (process.env.SKIP_VITE !== "1") {
   try {
     execFileSync("npx", ["vite", "build", "--logLevel", "warn"], { stdio: "inherit" });
   } catch (e) {
-    console.error("前端构建失败，回退到 web/ 源码目录继续构站");
+    // 默认失败即中止：静默回退会让线上发布「未打包版」，很难被发现
+    console.error("前端构建失败：", e?.message || e);
+    if (process.env.ALLOW_NO_VITE !== "1") process.exit(1);
+    console.error("ALLOW_NO_VITE=1：回退到 web/ 源码目录继续构站");
   }
 }
 

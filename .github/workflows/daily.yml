@@ -138,6 +138,14 @@ jobs:
             }
           ' 2>&1 | tee "$RUNNER_TEMP/update.log"
 
+      - name: 校验前端产物
+        shell: bash
+        run: |
+          set -e
+          ls site/assets/index-*.js >/dev/null || { echo "::error::前端产物缺失：vite 构建没有生效"; exit 1; }
+          test -f site/sw.js || { echo "::error::缺少 site/sw.js"; exit 1; }
+          echo "前端产物就绪：$(ls site/assets | wc -l) 个文件"
+
       - name: 跑数据校验测试
         run: npm test
 
