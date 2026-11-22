@@ -8,22 +8,8 @@
    · data/archive/*：cache-first（历史快照不可变）
    · assets/*：cache-first（文件名带内容哈希）
    ========================================================================== */
-const BUILD = "e006648ffd86";
-const PRECACHE = [
-  "./",
-  "./index.html",
-  "./manifest.webmanifest",
-  "assets/echarts-CuWbhTCt.js",
-  "assets/favicon-32-ZsoecZyu.png",
-  "assets/favicon-DC2ug5o6.svg",
-  "assets/icon-192.png",
-  "assets/icon-512.png",
-  "assets/icon-maskable-512.png",
-  "assets/index-xc3p1b2J.js",
-  "assets/parse-worker-Cf78Uxl7.js",
-  "assets/style-BBcpdhvS.css",
-  "assets/vendor-echarts-BcWCC1BA.js"
-];
+const BUILD = "__BUILD__";
+const PRECACHE = __PRECACHE_ARRAY__;
 
 const SHELL_CACHE = `ebbflow-shell-${BUILD}`;
 const DATA_CACHE = `ebbflow-data-${BUILD}`;
