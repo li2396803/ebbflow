@@ -323,10 +323,10 @@ check("web/index.html 保留构站占位符（__SIGNATURE__ / __REPO__ / __LICEN
 
 // 5) site/ 入库白名单
 check(
-  "site/ 入库文件只在白名单内（index.html、css/*、js/*、echarts.min.js）",
+  "site/ 入库文件只在白名单内（index.html、assets/*、sw.js、manifest、css/js/echarts 兼容）",
   () => {
-    const allowed = new Set(["site/index.html", "site/echarts.min.js"]);
-    const allowedPrefix = ["site/css/", "site/js/", "site/assets/"]; // 前端源码构建产物
+    const allowed = new Set(["site/index.html", "site/echarts.min.js", "site/sw.js", "site/manifest.webmanifest"]);
+    const allowedPrefix = ["site/css/", "site/js/", "site/assets/"]; // 构建产物（assets 含哈希文件名）
     const tracked = gitPaths(["ls-files", "-z", "site"]);
     const extra = tracked.filter((p) => !allowed.has(p) && !allowedPrefix.some((pre) => p.startsWith(pre)));
     if (extra.length) {
