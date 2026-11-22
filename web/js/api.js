@@ -19,10 +19,15 @@ export function setTaxonomy(taxonomy) {
 }
 export const taxonomyBase = () => TAX_BASE;
 
-/** 只有本机/文件协议才可能跑着本地服务；静态托管时直接跳过探测，避免控制台 404 噪音 */
+/**
+ * 本地服务探测：默认端口 5188（node server.mjs）才探测，静态托管（Pages）直接跳过，
+ * 避免每次打开站点都产生一次 /api/status 404。特殊端口可用 ?api=1 强制探测。
+ */
 function mayHaveService() {
-  const h = location.hostname;
-  return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "" || location.protocol === "file:";
+  try {
+    if (new URLSearchParams(location.search).has("api")) return true;
+  } catch {}
+  return location.port === "5188";
 }
 
 const cache = new Map(); // key -> data
@@ -50,6 +55,70 @@ const RETRY_DELAY = 300;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/* --------------------------------------------------------------------------
+   JSON 解析：大文件交给 Worker，主线程不长任务
+   -------------------------------------------------------------------------- */
+let parseWorker = null;
+let parseSeq = 0;
+const parsePending = new Map();
+const PARSE_TIMEOUT = 5000;
+const PARSE_WORKER_THRESHOLD = 64 * 1024; // 64KB 以下直接解析，省掉 postMessage 往返
+
+function failParseWorker(reason) {
+  for (const [id, entry] of parsePending) {
+    clearTimeout(entry.timer);
+    entry.reject(new Error(reason));
+    parsePending.delete(id);
+  }
+  if (parseWorker) {
+    parseWorker.terminate();
+    parseWorker = null;
+  }
+}
+
+function getParseWorker() {
+  if (parseWorker) return parseWorker;
+  if (typeof Worker === "undefined") return null;
+  try {
+    parseWorker = new Worker(new URL("./parse-worker.js", import.meta.url), { type: "module" });
+    parseWorker.onmessage = (event) => {
+      const { id, ok, data, error } = event.data || {};
+      const entry = parsePending.get(id);
+      if (!entry) return;
+      parsePending.delete(id);
+      clearTimeout(entry.timer);
+      if (ok) entry.resolve(data);
+      else entry.reject(new Error(error || "JSON 解析失败"));
+    };
+    parseWorker.onerror = () => failParseWorker("parse worker error");
+  } catch (e) {
+    parseWorker = null;
+  }
+  return parseWorker;
+}
+
+/** 解析 JSON 文本：优先 Worker，失败/超时回退主线程 */
+async function parseJSONText(text) {
+  if (typeof text !== "string") return text;
+  if (text.length < PARSE_WORKER_THRESHOLD) return JSON.parse(text);
+  const worker = getParseWorker();
+  if (!worker) return JSON.parse(text);
+  const id = ++parseSeq;
+  try {
+    return await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        parsePending.delete(id);
+        failParseWorker("parse timeout");
+        reject(new Error("parse timeout"));
+      }, PARSE_TIMEOUT);
+      parsePending.set(id, { resolve, reject, timer });
+      worker.postMessage({ id, text });
+    });
+  } catch (e) {
+    return JSON.parse(text);
+  }
+}
+
 /** 网络错误/超时重试一次（300ms 退避）；HTTP 4xx 不重试（没意义） */
 async function getJSON(url, { timeout = TIMEOUT } = {}) {
   const ctrl = new AbortController();
@@ -67,12 +136,12 @@ async function getJSON(url, { timeout = TIMEOUT } = {}) {
       // 有些静态服务器会把 404 页面以 200 返回 text/html，这里识别并当作失败
       const text = await res.text();
       try {
-        return JSON.parse(text);
+        return await parseJSONText(text);
       } catch (e) {
         throw new Error("返回内容不是 JSON");
       }
     }
-    return await res.json();
+    return await parseJSONText(await res.text());
   } finally {
     clearTimeout(timer);
   }

@@ -1,3 +1,4 @@
+// @ts-check
 /* ==========================================================================
    chart：ECharts 编排（主图 / 市场图 / 迷你图 / 端点标签）
    --------------------------------------------------------------------------
@@ -428,10 +429,12 @@ function showEndLabelList(items, left, rect) {
   box.innerHTML = `<div class="elab-list-head">端点数值 · 点一行看明细</div><div class="elab-list-body">${rows}</div>`;
   layer.append(box);
   box.addEventListener("click", (e) => {
-    const row = e.target.closest("[data-pick-series]");
+    const row = /** @type {HTMLElement} */ (e.target).closest("[data-pick-series]");
     if (!row) return;
     box.remove();
-    document.dispatchEvent(new CustomEvent("etf:pick-series", { detail: { name: row.dataset.pickSeries } }));
+    document.dispatchEvent(
+      new CustomEvent("etf:pick-series", { detail: { name: /** @type {HTMLElement} */ (row).dataset.pickSeries } })
+    );
   });
   const closeOnce = (ev) => {
     if (box.contains(ev.target)) return;
@@ -679,6 +682,7 @@ function axesFocusOption(p) {
       ...baseline,
     };
   });
+  /** @type {any[]} */
   const dz = [
     {
       type: "inside",
@@ -717,7 +721,7 @@ function axesFocusOption(p) {
     xAxis,
     yAxis: yAxes,
     series,
-    dataZoom: dz,
+    dataZoom: /** @type {any} */ (dz),
     axisPointer: { label: { show: false }, lineStyle: { color: t.lineStrong } },
     tooltip: {
       trigger: "axis",
@@ -859,6 +863,7 @@ function panesFocusOption(p) {
       ...baseline,
     };
   });
+  /** @type {any[]} */
   const dz = [
     {
       type: "inside",
@@ -897,7 +902,7 @@ function panesFocusOption(p) {
     xAxis: xAxes,
     yAxis: yAxes,
     series,
-    dataZoom: dz,
+    dataZoom: /** @type {any} */ (dz),
     axisPointer: { link: [{ xAxisIndex: "all" }], label: { show: false }, lineStyle: { color: t.lineStrong } },
     tooltip: {
       trigger: "axis",
@@ -1002,6 +1007,7 @@ function baseOption(p) {
   });
 
   const endIdx = b ?? dates.length - 1;
+  /** @type {any[]} */
   const zoomCfg = [
     {
       type: "inside",

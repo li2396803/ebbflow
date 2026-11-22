@@ -1,3 +1,4 @@
+// @ts-check
 /* ==========================================================================
    ui：浮层管理（modal / drawer / popover）、toast、命令面板、焦点管理
    ========================================================================== */
@@ -18,6 +19,7 @@ export function toast(msg, kind = "info", ms = 2600) {
     node.dataset.leaving = "1";
     setTimeout(() => node.remove(), 220);
   }, ms);
+  return node;
 }
 
 /* ==========================================================================
@@ -44,14 +46,21 @@ function lockScroll(on) {
 }
 
 /**
+ * @typedef {object} OverlayOpt
+ * @property {() => void} [onClose] 关闭回调
+ * @property {string} [initialFocus] 打开后聚焦的选择器
+ * @property {string} [className] 预留
+ */
+
+/**
  * @param {HTMLElement} mask
  * @param {HTMLElement} panel
- * @param {object} opt { onClose, initialFocus, className }
+ * @param {OverlayOpt} [opt]
  */
 export function openOverlay(mask, panel, opt = {}) {
   if (!mask || !panel) return;
   if (stack.some((s) => s.panel === panel)) return;
-  const prevFocus = document.activeElement;
+  const prevFocus = /** @type {HTMLElement|null} */ (document.activeElement);
   mask.hidden = false;
   panel.hidden = false;
   // 强制 reflow 后加 data-open，触发过渡
@@ -86,7 +95,7 @@ export function openOverlay(mask, panel, opt = {}) {
       panel.querySelector("input,button,[tabindex='0']") ||
       panel;
     try {
-      target.focus({ preventScroll: true });
+      /** @type {HTMLElement} */ (target).focus({ preventScroll: true });
     } catch (e) {}
   }, 30);
   return entry;
@@ -204,7 +213,9 @@ export function createPalette({ maskSel = "#paletteMask", inputSel = "#paletteIn
   if (!mask || !input || !list) return null;
 
   let mode = "search"; // search | compare
+  /** @type {(q: string, mode: string) => {groups: any[], hint?: string}} */
   let provider = () => ({ groups: [] });
+  /** @type {(it: any, mode: string) => boolean|void} */
   let onPick = () => {};
   let flat = [];
   let active = 0;

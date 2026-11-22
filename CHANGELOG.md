@@ -2,6 +2,48 @@
 
 本文件记录对仓库结构、数据口径、命令有影响的变化。日常数据更新（`chore(data): 自动更新站点数据`）不记录。
 
+## v3.9.0 — 前端架构升级：Vite 构建、ECharts 按需、PWA 与渐进增强
+
+依赖不再是零（用户批准）：新增 `vite`、`typescript`、`echarts@5.5.0`（与线上副本同版本）。
+
+### 构建
+
+- **Vite 构建**：ES2019 目标、`base: "./"`（Pages 子路径可用）、产物内容哈希、ECharts 独立 chunk。
+  应用 JS 从 8 个请求合并为 1 个（336KB → 51KB gzip），CSS 4 → 1。
+- **ECharts 按需构建**：`web/js/vendor-echarts.js` 只注册 line/bar 与用到的组件，
+  1.0MB → 568KB 原始、330KB → **175KB**（brotli）。
+- `chart.js` 改为动态 `import()` 加载瘦身版，失败回退注入 `echarts.min.js`。
+- 构建后给 ECharts chunk 注入 `modulepreload`，并清理 `site/assets` 里过期哈希文件（此前会导致重复下载 190KB）。
+
+### PWA
+
+- `web/public/sw.js`：应用壳预缓存 13 项、`data/*.json` stale-while-revalidate、`data/archive/*` cache-first、
+  旧 cache 自动清理；`skipWaiting` 仅在用户点击「新版本已就绪」后触发。
+- `manifest.webmanifest` + 192/512/maskable 图标；本地默认不注册（`?sw=1` 启用）。
+- 离线时顶部徽标显示「离线（缓存）」，恢复联网自动还原。
+
+### 渐进增强
+
+- **View Transitions** 包裹视图切换（`prefers-reduced-motion` 时跳过）。
+- **Speculation Rules**：同源内链 prerender/prefetch。
+- **Web Worker** 解析大于 64KB 的 JSON（`subs.json` 约 950KB），失败或超时 5s 回退主线程。
+- 长表格 `content-visibility: auto`。
+
+### 类型
+
+- `jsconfig.json` + `globals.d.ts`；`util / ui / chart / views / main` 五个模块开启 `// @ts-check` 并补 JSDoc，`npm run typecheck` 0 error。
+
+### 实测（1.6 Mbps / 150 ms RTT）
+
+| 指标 | v3.8 | v3.9 |
+|---|---|---|
+| 首屏首个图表 | 3.03 s | **1.79 s** |
+| 复访首个图表 | 0.62 s | **0.45 s** |
+| ECharts 传输 | 330 KB | **175 KB** |
+| 应用 JS 请求数 | 8 | **1** |
+
+---
+
 ## v3.8.0 — 大类配色、走势满格、对比预选、加载再优化
 
 ### 界面

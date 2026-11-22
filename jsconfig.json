@@ -12,6 +12,6 @@
     "resolveJsonModule": true,
     "types": []
   },
-  "include": ["web/js/**/*.js", "server/**/*.mjs", "lib/**/*.mjs", "scripts/**/*.mjs"],
+  "include": ["web/js/**/*.js", "web/js/**/*.d.ts", "server/**/*.mjs", "lib/**/*.mjs", "scripts/**/*.mjs"],
   "exclude": ["node_modules", "web/dist", "site", "web/_shots", "web/_mock"]
 }

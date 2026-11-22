@@ -3027,3 +3027,28 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
     background: #fff;
   }
 }
+
+
+/* ============================ 14. 渐进增强 ============================ */
+/* View Transitions：总览 / 大类 / 自选 切换时的轻量交叉淡入（不支持则完全无感） */
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 160ms;
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
+  }
+  html[data-motion="off"]::view-transition-old(root),
+  html[data-motion="off"]::view-transition-new(root) {
+    animation: none;
+  }
+}
+
+/* 长表格：视口外行跳过布局/绘制，降低首次开销（Chromium / Safari 18+） */
+@supports (content-visibility: auto) {
+  #tblAll tbody tr,
+  #tblEtf tbody tr,
+  #tblFocusEtf tbody tr {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 40px;
+  }
+}

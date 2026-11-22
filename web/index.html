@@ -9,6 +9,10 @@
 <meta name="theme-color" content="#0a0b0e" media="(prefers-color-scheme: dark)">
 <title>Ebbflow · ETF 细分行业资金流向</title>
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="application-name" content="Ebbflow">
+<meta name="apple-mobile-web-app-title" content="Ebbflow">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="icon" href="assets/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="assets/favicon-180.png">
 <!--__SIGNATURE__-->
@@ -28,11 +32,29 @@
   } catch (e) {}
 })();
 </script>
+<script type="speculationrules">
+{
+  "prerender": [
+    {
+      "source": "document",
+      "where": { "and": [ { "href_matches": "/*" }, { "not": { "href_matches": "/data/*" } } ] },
+      "eagerness": "moderate"
+    }
+  ],
+  "prefetch": [
+    {
+      "source": "document",
+      "where": { "and": [ { "href_matches": "/*" }, { "not": { "href_matches": "/data/*" } } ] },
+      "eagerness": "moderate"
+    }
+  ]
+}
+</script>
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/base.css">
 <link rel="stylesheet" href="css/app.css">
 <link rel="stylesheet" href="css/charts.css">
-<link rel="preload" as="fetch" href="data/market.json">
+<link rel="preload" as="fetch" href="data/market.json" crossorigin>
 <!-- echarts 由 js/chart.js 在真正需要画图时注入：不阻塞首屏文本与 KPI -->
 </head>
 <body>

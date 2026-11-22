@@ -43,3 +43,4 @@ site/charts/
 # 前端自测用的 mock 与截图
 web/_mock/
 web/_shots/
+web/dist/

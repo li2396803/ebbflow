@@ -1,3 +1,4 @@
+// @ts-check
 /* ==========================================================================
    main：启动、路由、事件编排、主题、身份标识
    --------------------------------------------------------------------------
@@ -40,11 +41,28 @@ import {
   range,
   indexOfDate,
 } from "./state.js";
-import { cnum, debounce, download, esc, fmtPct, fmtSigned, isDesktop, skeletonRows, toCSV, toTSV, toneColor, isDark } from "./util.js";
+import {
+  cnum,
+  debounce,
+  download,
+  esc,
+  fmtPct,
+  fmtSigned,
+  isDesktop,
+  skeletonRows,
+  toCSV,
+  toTSV,
+  toneColor,
+  isDark,
+  withViewTransition,
+} from "./util.js";
 import * as detail from "./detail.js";
 import { initDetail, openDetail, initAllSubs, openAllSubs, initQuality } from "./detail.js";
 import { toast } from "./ui.js";
 import { COMPARE_COLORS } from "./util.js";
+
+// 是否显式要求在本机启用 Service Worker（写 URL 前捕获，避免被 writeURL 清掉查询参数）
+const SW_FORCED = new URLSearchParams(location.search).has("sw");
 
 const app = {
   meta: null,
@@ -325,13 +343,35 @@ function openSettings() {
 /* ==========================================================================
    数据徽标 / 页脚 / 元信息
    ========================================================================== */
+let badgeMode = "loading";
 function setDataBadge(mode, text) {
   const badge = document.getElementById("dataBadge");
   const txt = document.getElementById("dataBadgeTxt");
   if (!badge || !txt) return;
-  badge.dataset.mode = mode;
-  txt.textContent = text;
-  badge.title = mode === "static" ? "当前为静态数据（site/data/*.json）" : mode === "live" ? "当前连接本地服务（127.0.0.1:5188）" : text;
+  badgeMode = mode;
+  const offline = mode !== "offline" && navigator.onLine === false;
+  const showMode = offline ? "offline" : mode;
+  const showText = offline ? "离线（缓存）" : text;
+  badge.dataset.mode = showMode;
+  txt.textContent = showText;
+  badge.title =
+    showMode === "offline"
+      ? "当前离线，显示 Service Worker 缓存的数据"
+      : showMode === "static"
+        ? "当前为静态数据（site/data/*.json）"
+        : showMode === "live"
+          ? "当前连接本地服务（127.0.0.1:5188）"
+          : text;
+}
+
+/** 断网/恢复时刷新徽标（复用数据源徽标组件） */
+function syncOfflineBadge() {
+  if (navigator.onLine === false) {
+    setDataBadge("offline", "离线（缓存）");
+    return;
+  }
+  const mode = badgeMode === "offline" ? (api.net.mode === "live" ? "live" : "static") : badgeMode;
+  setDataBadge(mode, mode === "live" ? "本地服务" : "静态数据");
 }
 
 function applyMeta() {
@@ -1338,7 +1378,7 @@ function syncFocusLayoutUI(on = isFocusMode()) {
   const show = on && state.metricSel.length >= 2;
   el.hidden = !show;
   el.querySelectorAll("[data-layout]").forEach((b) => {
-    b.setAttribute("aria-pressed", String(b.dataset.layout === state.focusLayout));
+    b.setAttribute("aria-pressed", String(/** @type {HTMLElement} */ (b).dataset.layout === state.focusLayout));
   });
 }
 
@@ -1458,7 +1498,7 @@ function navigate(view, opts = {}) {
     // 先切视图再拉数据，loading 覆盖层接管反馈
   }
   writeURL({ push: true });
-  renderView();
+  withViewTransition(() => renderView());
   window.scrollTo({ top: 0, behavior: "instant" in window ? "instant" : "auto" });
 }
 
@@ -1738,7 +1778,7 @@ async function openCompareModal() {
   if (sub) sub.textContent = `勾选 2–${limit} 个细分行业，归一化到区间起点对比${isDesktop() ? "" : "（移动端最多 4 个）"}`;
 
   const renderList = () => {
-    const q = (document.getElementById("cmpSearch")?.value || "").trim().toLowerCase();
+    const q = (/** @type {HTMLInputElement|null} */ (document.getElementById("cmpSearch"))?.value || "").trim().toLowerCase();
     const items = [];
     for (const [name, entry] of Object.entries(app.subs || {})) {
       if (q) {
@@ -1772,7 +1812,9 @@ async function openCompareModal() {
 
   renderList();
   list.onchange = (e) => {
-    const cb = e.target.closest("[data-cmp-name]");
+    const cb = /** @type {HTMLInputElement|null} */ (
+      /** @type {HTMLElement} */ (e.target).closest("[data-cmp-name]")
+    );
     if (!cb) return;
     const name = cb.dataset.cmpName;
     if (cb.checked) {
@@ -1789,7 +1831,7 @@ async function openCompareModal() {
   };
   const search = document.getElementById("cmpSearch");
   if (search) {
-    search.value = "";
+    /** @type {HTMLInputElement} */ (search).value = "";
     search.oninput = renderList;
   }
   const close = () => ui.closeOverlay(mask.querySelector(".modal"));
@@ -1867,7 +1909,7 @@ function exportTableCsv(kind) {
     const cells = [];
     tr.querySelectorAll("th,td").forEach((td) => {
       if (td.querySelector("svg")) return;
-      const txt = td.innerText.trim().replace(/\s+/g, " ");
+      const txt = /** @type {HTMLElement} */ (td).innerText.trim().replace(/\s+/g, " ");
       if (txt) cells.push(txt);
     });
     if (cells.length) rows.push(cells);
@@ -1886,7 +1928,7 @@ async function copyTable(kind) {
     const cells = [];
     tr.querySelectorAll("th,td").forEach((td) => {
       if (td.querySelector("svg")) return;
-      cells.push(td.innerText.trim().replace(/\s+/g, " "));
+      cells.push(/** @type {HTMLElement} */ (td).innerText.trim().replace(/\s+/g, " "));
     });
     if (cells.length) rows.push(cells);
   });
@@ -2048,7 +2090,7 @@ function blockIfLoading(closest) {
 function wireEvents() {
   // 全局点击委托
   document.addEventListener("click", (e) => {
-    const t = e.target;
+    const t = /** @type {HTMLElement} */ (e.target);
     const closest = (sel) => t.closest?.(sel);
     if (blockIfLoading(closest)) return;
 
@@ -2062,7 +2104,6 @@ function wireEvents() {
       const name = unwatch.dataset.unwatch;
       toggleWatch(name);
       toast(`已取消自选：${name}`, "info", 1600);
-      views.renderView?.(app);
       if (state.view === "watch") views.renderWatch(app);
       if (state.view === "overview") views.renderOverviewWatch(app);
       views.syncNavActive(app);
@@ -2323,7 +2364,7 @@ function wireEvents() {
     afterRangeChange("reset");
   });
   document.getElementById("btnBrush")?.addEventListener("click", (e) => {
-    const btn = e.currentTarget;
+    const btn = /** @type {HTMLElement} */ (e.currentTarget);
     const on = btn.getAttribute("aria-pressed") !== "true";
     btn.setAttribute("aria-pressed", String(on));
     chart.setBrushMode(on);
@@ -2337,7 +2378,7 @@ function wireEvents() {
 
   // 端点标签「查看全部」→ 打开该小类明细抽屉
   document.addEventListener("etf:pick-series", (e) => {
-    const name = e.detail?.name;
+    const name = /** @type {CustomEvent} */ (e).detail?.name;
     if (name) openDetail(name);
   });
 
@@ -2398,10 +2439,10 @@ function wireEvents() {
   // 表格行键盘可达
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
-    const tr = e.target.closest?.("tr[data-sub]");
+    const tr = /** @type {HTMLElement} */ (e.target).closest?.("tr[data-sub]");
     if (!tr) return;
     e.preventDefault();
-    openDetail(tr.dataset.sub);
+    openDetail(/** @type {HTMLElement} */ (tr).dataset.sub);
   });
 }
 
@@ -2530,6 +2571,17 @@ async function boot() {
   views.renderRangeSegs();
   wireEvents();
 
+  // 离线态：徽标显示「离线（缓存）」，恢复后自动还原
+  window.addEventListener("offline", () => {
+    syncOfflineBadge();
+    toast("已离线：显示缓存数据", "info", 2600);
+  });
+  window.addEventListener("online", () => {
+    syncOfflineBadge();
+    toast("网络已恢复", "ok", 1800);
+  });
+  if (navigator.onLine === false) syncOfflineBadge();
+
   initDetail(app, {
     ensureSubs,
     onOpen: (name) => {
@@ -2587,6 +2639,10 @@ async function boot() {
       .then(() => chart.repaintAll())
       .catch(() => {})
       .finally(() => scheduleDeferredData());
+
+    // PWA：load 之后再注册，避免和首屏抢带宽；localhost 默认不注册（?sw=1 才启用）
+    if (document.readyState === "complete") setTimeout(registerServiceWorker, 600);
+    else window.addEventListener("load", () => setTimeout(registerServiceWorker, 600), { once: true });
   } catch (e) {
     /* fatal 已在 loadTaxonomyData 里处理 */
   }
@@ -2699,9 +2755,59 @@ async function switchTaxonomy(next, { silent = false } = {}) {
 function syncTaxonomyUI() {
   document.documentElement.setAttribute("data-taxonomy", state.taxonomy);
   document.querySelectorAll("[data-tax]").forEach((btn) => {
-    const on = btn.dataset.tax === state.taxonomy;
+    const on = /** @type {HTMLElement} */ (btn).dataset.tax === state.taxonomy;
     btn.setAttribute("aria-pressed", String(on));
     if (btn.classList.contains("popover-item")) btn.setAttribute("aria-checked", String(on));
+  });
+}
+
+/* ==========================================================================
+   Service Worker：应用壳离线缓存
+   ========================================================================== */
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  const host = location.hostname;
+  const local = host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "";
+  const forced = SW_FORCED;
+  // 本地默认不注册（避免开发期缓存干扰），?sw=1 显式启用
+  if (local && !forced) return;
+  navigator.serviceWorker
+    .register("sw.js", { scope: "./" })
+    .then((reg) => {
+      /** @type {any} */ (window).__ebbflowSW = reg;
+      if (reg.waiting) offerSWRefresh(reg);
+      reg.addEventListener("updatefound", () => {
+        const installing = reg.installing;
+        if (!installing) return;
+        installing.addEventListener("statechange", () => {
+          if (installing.state === "installed" && navigator.serviceWorker.controller) offerSWRefresh(reg);
+        });
+      });
+    })
+    .catch(() => {
+      /* 注册失败静默：离线增强不可用，不影响主流程 */
+    });
+}
+
+/** 有新版本等待接管：用户点击 toast 才 skipWaiting（避免刷新时被旧页面抢占） */
+let swOfferShown = false;
+function offerSWRefresh(reg) {
+  if (swOfferShown) return;
+  swOfferShown = true;
+  const node = toast("新版本已就绪，点此刷新", "info", 9000);
+  if (!node) return;
+  node.style.cursor = "pointer";
+  node.addEventListener("click", () => {
+    reg.waiting?.postMessage({ type: "SKIP_WAITING" });
+    let done = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (done) return;
+      done = true;
+      location.reload();
+    });
+    setTimeout(() => {
+      if (!done) location.reload();
+    }, 1500);
   });
 }
 

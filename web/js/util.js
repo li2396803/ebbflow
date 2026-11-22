@@ -37,6 +37,29 @@ export const html = (strings, ...vals) =>
   strings.reduce((out, s, i) => out + s + (i < vals.length ? (vals[i] == null ? "" : String(vals[i])) : ""), "");
 
 export const isDesktop = () => window.matchMedia("(min-width: 769px)").matches;
+/**
+ * 视图切换动画：支持 View Transitions 且未开启「减少动效」时包一层。
+ * 不支持 / 用户要求减少动效 → 直接执行，完全无感。
+ * @param {() => void} update
+ */
+export function withViewTransition(update) {
+  const canTransition =
+    typeof document !== "undefined" &&
+    /** @type {any} */ (document).startViewTransition &&
+    !prefersReducedMotion() &&
+    document.documentElement.getAttribute("data-motion") !== "off";
+  if (!canTransition) {
+    update();
+    return null;
+  }
+  try {
+    return /** @type {any} */ (document).startViewTransition(() => update());
+  } catch (e) {
+    update();
+    return null;
+  }
+}
+
 export const prefersReducedMotion = () =>
   window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
   document.documentElement.getAttribute("data-motion") === "off";

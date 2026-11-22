@@ -75,7 +75,7 @@ jobs:
 
       - name: 安装依赖
         run: |
-          # 本项目 dependencies / devDependencies 均为空：有 lockfile 就 npm ci，没有就用 install 且不生成 lockfile
+          # 有 lockfile 时安装依赖（前端构建需要 vite / echarts；数据类脚本本身零依赖）
           if [ -f package-lock.json ]; then
             npm ci --no-audit --no-fund
           else

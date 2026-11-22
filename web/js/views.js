@@ -1,3 +1,4 @@
+// @ts-check
 /* ==========================================================================
    views：总览 / 大类 / 自选 三个主视图的渲染
    --------------------------------------------------------------------------
@@ -121,7 +122,7 @@ export function renderCatNav(app) {
 
 export function syncNavActive(app) {
   document.querySelectorAll("[data-nav]").forEach((n) => {
-    const v = n.dataset.nav;
+    const v = /** @type {HTMLElement} */ (n).dataset.nav;
     const active = v === state.view;
     n.classList.toggle("is-active", active);
     if (n.classList.contains("nav-item")) {
@@ -130,21 +131,21 @@ export function syncNavActive(app) {
     }
   });
   document.querySelectorAll(".tabbar-item[data-nav]").forEach((n) => {
-    if (n.dataset.nav === state.view) n.setAttribute("aria-current", "page");
+    if (/** @type {HTMLElement} */ (n).dataset.nav === state.view) n.setAttribute("aria-current", "page");
     else n.removeAttribute("aria-current");
   });
   document.querySelectorAll(".cat-nav").forEach((n) => {
-    n.classList.toggle("is-active", n.dataset.catgroup === state.cat && state.view === "cat");
+    n.classList.toggle("is-active", /** @type {HTMLElement} */ (n).dataset.catgroup === state.cat && state.view === "cat");
   });
   document.querySelectorAll(".sub-link").forEach((n) => {
-    const active = !!state.sub && n.dataset.navsub === state.sub;
+    const active = !!state.sub && /** @type {HTMLElement} */ (n).dataset.navsub === state.sub;
     n.classList.toggle("is-active", active);
     if (active) n.setAttribute("aria-current", "true");
     else n.removeAttribute("aria-current");
   });
   // 当前聚焦的小类所在大类保持展开
   if (state.sub) {
-    const group = [...document.querySelectorAll(".cat-nav")].find((g) => g.dataset.catgroup === state.cat);
+    const group = /** @type {HTMLElement[]} */ ([...document.querySelectorAll(".cat-nav")]).find((g) => g.dataset.catgroup === state.cat);
     if (group) {
       group.dataset.open = "1";
       group.querySelector(".cat-btn")?.setAttribute("aria-expanded", "true");
@@ -357,7 +358,7 @@ function renderMarketBlock(app) {
   const legend = document.getElementById("mktLegend");
   const seg = document.getElementById("mktMetric");
   if (seg) {
-    seg.querySelectorAll("[data-m]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.m === state.marketMetric)));
+    seg.querySelectorAll("[data-m]").forEach((b) => b.setAttribute("aria-pressed", String(/** @type {HTMLElement} */ (b).dataset.m === state.marketMetric)));
   }
   if (!mkt) {
     if (loading) loading.hidden = true;
@@ -398,7 +399,8 @@ function renderMarketBlock(app) {
   }
   const note = document.getElementById("mktNote");
   if (note) {
-    const szLast = ms.sz[key]?.at?.(-1);
+    const szArr = ms.sz[key];
+    const szLast = Array.isArray(szArr) ? szArr[szArr.length - 1] : undefined;
     const stale = key === "scale" && (!szLast || szLast === 0);
     note.innerHTML = `${mkt.note ? esc(mkt.note) : ""}${
       stale ? `<span class="chip chip--warn" style="margin-left:8px">深市规模待补齐</span>` : ""
@@ -515,7 +517,7 @@ function topRows(app, dir, n = 8) {
   return list;
 }
 
-function renderTopTables(app) {
+export function renderTopTables(app) {
   for (const [id, dir] of [["tblTopIn", "in"], ["tblTopOut", "out"]]) {
     const tbl = document.getElementById(id);
     if (!tbl) continue;
@@ -531,7 +533,7 @@ function renderTopTables(app) {
     }
     const sort = state.topSort[dir] || { key: "delta", dir: dir === "in" ? -1 : 1 };
     tbl.querySelectorAll("thead th[data-sort-key]").forEach((th) => {
-      if (th.dataset.sortKey === sort.key) th.setAttribute("aria-sort", sort.dir > 0 ? "ascending" : "descending");
+      if (/** @type {HTMLElement} */ (th).dataset.sortKey === sort.key) th.setAttribute("aria-sort", sort.dir > 0 ? "ascending" : "descending");
       else th.removeAttribute("aria-sort");
     });
     tbody.innerHTML = rows
@@ -804,7 +806,7 @@ function renderCatTable(app, key) {
     more.setAttribute("aria-expanded", String(expanded));
   }
   tbl.querySelectorAll("thead th[data-sort-key]").forEach((th) => {
-    const k = th.dataset.sortKey;
+    const k = /** @type {HTMLElement} */ (th).dataset.sortKey;
     if (k === sortKey) th.setAttribute("aria-sort", dir > 0 ? "ascending" : "descending");
     else th.removeAttribute("aria-sort");
   });
@@ -866,8 +868,8 @@ export function renderFocusLegend(items, onToggle) {
     })
     .join("");
   host.onclick = (e) => {
-    const b = e.target.closest("[data-metric-toggle]");
-    if (b) onToggle(b.dataset.metricToggle);
+    const b = /** @type {HTMLElement} */ (e.target).closest("[data-metric-toggle]");
+    if (b) onToggle(/** @type {HTMLElement} */ (b).dataset.metricToggle);
   };
 }
 
