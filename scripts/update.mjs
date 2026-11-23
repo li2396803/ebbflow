@@ -8,7 +8,7 @@ import { openDb, putShares, recordRun, metaSet, metaGet, dbStats, tradingDates }
 import { fetchSseDay, fetchSzseSnapshot, candidateDates, mapLimit } from "../lib/sources.mjs";
 import { shareOnDate, navOnDate, hasToken, bindBudget, callStats } from "../lib/tushare.mjs";
 import { rebuild, refreshFunds, exportSeriesJson, ingestExchangeRange, ingestTushareRange, ingestTushareNav, ingestQuotes, detectShareEvents, etfCodes } from "../lib/pipeline.mjs";
-import { putEvents, markDaySource } from "../lib/db.mjs";
+import { putEvents, markDaySource, fillFundNames } from "../lib/db.mjs";
 import { putNav } from "../lib/db.mjs";
 import { buildSite } from "../lib/build/site.mjs";
 import { loadUniverse } from "../lib/universe.mjs";
@@ -166,10 +166,12 @@ async function run({ quiet = false, lookback = 15 } = {}) {
   const from = new Date(new Date(end + "T00:00:00Z").getTime() - lookback * 86400000).toISOString().slice(0, 10);
   const days = candidateDates(from, end);
   let sseDays = 0;
+  const sseNames = new Map();
   await mapLimit(days, 4, async (d) => {
     try {
       const r = await fetchSseDay(d);
       if (!r) return;
+      for (const [c, nm] of Object.entries(r.names ?? {})) if (!sseNames.has(c)) sseNames.set(c, nm);
       putShares(db, d, Object.fromEntries(Object.entries(r.shares).map(([c, w]) => [c, { wan: w, src: "sse" }])));
       sseDays++;
     } catch (e) {
@@ -177,6 +179,14 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     }
   });
   if (!quiet) log(`上交所补到 ${sseDays} 个交易日`);
+  if (sseNames.size) {
+    try {
+      const r = fillFundNames(db, sseNames, "sse");
+      if (!quiet && r.filled) log(`沪市名称补缺：${r.filled} 只（名录未收录的新代码）`);
+    } catch (e) {
+      warn.push("沪市名称写入失败");
+    }
+  }
 
   // 2.1) 深交所：官方接口只给「最新报告日」一档，正好够日常增量（历史由 Tushare 回补）
   //      实测深交所比上交所更早放出当日数据（21:30 已有，上交所仍需更晚），所以这里单独抓。
@@ -189,6 +199,17 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     if (snap.date && n > 100 && snap.date >= from && snap.date >= knownLatest) {
       putShares(db, snap.date, Object.fromEntries(Object.entries(snap.shares).map(([c, w]) => [c, { wan: w, src: "szse" }])));
       markDaySource(db, snap.date, "szse");
+      if (snap.names) {
+        try {
+          const r = fillFundNames(db, new Map(Object.entries(snap.names)), "szse");
+          if (!quiet && r.filled) log(`深市名称补缺：${r.filled} 只（名录未收录的新代码）`);
+        } catch {}
+      }
+      // 深交所自带上市日期：补上 Tushare 名录还没覆盖的新基金（用于"上市首日不计净申购"）
+      if (snap.listDates) {
+        const upd = db.prepare("UPDATE fund SET list_date=? WHERE code=? AND (list_date IS NULL OR list_date='')");
+        for (const [c, d] of Object.entries(snap.listDates)) upd.run(d, c);
+      }
       szseInfo = { date: snap.date, count: n };
       if (!quiet) log(`深交所快照 ${snap.date}：${n} 只`);
     } else if (!quiet) {
@@ -239,7 +260,7 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     warn.push("折算检测失败：" + String(e.message || e).slice(0, 60));
   }
 
-  // 3) 基金名录（每周一次）
+  // 3) 基金名录（每周一次；名称以这份为准，交易所只补空缺）
   const lastFunds = metaGet(db, "fundsAt", null);
   if (!lastFunds || Date.now() - new Date(lastFunds).getTime() > 7 * 86400000) {
     try {

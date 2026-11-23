@@ -16,7 +16,7 @@ on:
     #   · 上交所：T+1 日 08:00 前后发布当日份额 → 主抓放在北京 08:00（周二~周六 = UTC 00:00）
     #   · 深交所：当日约 21:00 就有最新快照 → 晚间先预取，第二天早上正好被沪市数据“激活”
     # 更新幂等，多跑只会覆盖同样的值，不会重复计数。
-    - cron: "0 0 * * 2-6"    # 周二~周六 08:00（北京）：上交所发布后主抓
+    - cron: "0 0 * * 1-6"    # 周一~周六 08:00（北京）：上交所发布后主抓（周一这次专门接周五的数据）
     - cron: "0 14 * * 1-5"   # 周一~周五 22:00（北京）：深交所当日快照预取
   workflow_dispatch:
     inputs:
@@ -194,6 +194,11 @@ jobs:
           echo "── git diff --stat ──"
           git diff --stat
 
+      - name: 记录数据发布时间（probe）
+        shell: bash
+        continue-on-error: true
+        run: node scripts/probe-publish.mjs
+
       - name: 三源交叉校验（保持 quality.json 新鲜）
         if: success() && github.ref == 'refs/heads/master'
         continue-on-error: true
@@ -211,7 +216,7 @@ jobs:
           BR="${GITHUB_REF_NAME}"
           git config user.name "etf-flow bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add site data/series.json data/quality.json
+          git add site data/series.json data/quality.json data/publish-log.json
           if git diff --cached --quiet; then
             echo "没有需要提交的数据变化"
             exit 0

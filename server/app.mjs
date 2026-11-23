@@ -276,6 +276,52 @@ export function createApp({ port = 5188, host = "127.0.0.1", autoRefresh = true,
         if (b) return sendRaw(res, 200, b);
         return json(res, 200, (await payloadsFallback()).quality);
       }
+      if (p === "/api/quote") {
+        // 按需实时报价：深市走交易所官方接口（逐只）；沪市官方实时接口不对公网开放，回落最近收盘价
+        const codes = String(url.searchParams.get("codes") || "")
+          .split(",")
+          .map((x) => x.trim())
+          .filter((x) => /^\d{6}$/.test(x))
+          .slice(0, 40);
+        if (!codes.length) return json(res, 400, { error: "codes 必填（最多 40 个 6 位代码）" });
+        const out = {};
+        const sz = codes.filter((c) => !/^[56]/.test(c));
+        const sh = codes.filter((c) => /^[56]/.test(c));
+        await Promise.all(
+          sz.map(async (code) => {
+            try {
+              const r = await fetch(`http://www.szse.cn/api/market/ssjjhq/getTimeData?marketId=1&code=${code}`, {
+                headers: { "User-Agent": "Mozilla/5.0", Referer: "https://www.szse.cn/" },
+              });
+              const j = await r.json();
+              const d = j?.data;
+              if (!d || d.close == null) return;
+              out[code] = {
+                code,
+                name: d.name || "",
+                price: Number(d.close) || Number(d.now) || null,
+                amount: d.amount != null ? Number(d.amount) : null,
+                at: j.datetime || null,
+                market: "SZ",
+                realtime: true,
+              };
+            } catch {}
+          })
+        );
+        if (sh.length) {
+          try {
+            const meta = (await readJson("meta")) ?? null;
+            const last = meta?.lastTradeDate ?? null;
+            const qdb = await getDb();
+            for (const code of sh) {
+              const q = last ? qdb.prepare("SELECT date, close, amount FROM quote WHERE code=? AND date=?").get(code, last) : null;
+              if (!q) continue;
+              out[code] = { code, price: q.close ?? null, amount: q.amount ?? null, at: q.date, market: "SH", realtime: false };
+            }
+          } catch {}
+        }
+        return json(res, 200, { at: new Date().toISOString(), quotes: out });
+      }
       if (p.startsWith("/api/sub/")) {
         const name = decodeURIComponent(p.slice("/api/sub/".length));
         const subs = (await readJson("subs")) ?? (await payloadsFallback()).subs;
