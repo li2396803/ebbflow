@@ -29,7 +29,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { isMain } from "../lib/cli.mjs";
 import { CATS, SUB } from "../lib/taxonomy.mjs";
 import { call } from "../lib/tushare.mjs";
 
@@ -1294,7 +1295,7 @@ function unassignedReason(row, fp) {
 const tally = (arr) => arr.reduce((a, t) => ((a[t] = (a[t] || 0) + 1), a), {});
 const sortObj = (o) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)));
 
-const IS_MAIN = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const IS_MAIN = isMain(import.meta.url);
 if (IS_MAIN) {
   (FLAG.v2 ? runV2() : main()).catch((e) => {
     console.error(e?.stack || String(e));

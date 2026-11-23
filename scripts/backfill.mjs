@@ -18,6 +18,7 @@ import { bindBudget, callStats } from "../lib/tushare.mjs";
 import { fetchSseDay, candidateDates, mapLimit as mapLimitSse } from "../lib/sources.mjs";
 import { shareHistory, mapLimit as mapLimitTs } from "../lib/tushare.mjs";
 import { coverageReport, coverageLine, validateSeries } from "../lib/validate.mjs";
+import { isMain } from "../lib/cli.mjs";
 
 const DEFAULT_FROM = "2021-11-22";
 const BATCH = 40; // 每批基金数：按天聚合后一次性 putShares，减少事务数
@@ -266,7 +267,7 @@ bindBudget(db);
   return { ok, stats: all, err };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   let args;
   try {
     args = parseArgs(process.argv.slice(2));

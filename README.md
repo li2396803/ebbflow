@@ -36,6 +36,8 @@
 
 前提：Node.js ≥ 22.5（需要内置 `node:sqlite`）。
 
+Windows：命令用 `npm.cmd` / `npx.cmd`，构建前端前先 `npm install`；定时任务与常见报错见 [`docs/WINDOWS.md`](docs/WINDOWS.md)。
+
 ```bash
 git clone https://github.com/li2396803/ebbflow.git
 cd ebbflow
@@ -137,7 +139,7 @@ npm run backfill -- --source ts --from 2021-11-22
 npm run verify:origin -- --json out.json # 默认写 data/validation-origin.json
 ```
 
-本机常驻与定时任务用 `bin/` 下的脚本：
+本机常驻与定时任务用 `bin/` 下的脚本（macOS/Linux；Windows 用任务计划程序，见 [`docs/WINDOWS.md`](docs/WINDOWS.md)）：
 
 | 脚本 | 作用 |
 | --- | --- |

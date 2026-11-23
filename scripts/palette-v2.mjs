@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isMain } from "../lib/cli.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const FILE = path.join(ROOT, "data", "classification-v2.json");
@@ -99,7 +100,7 @@ export function report(cls, colors) {
   return rows;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   const dry = process.argv.includes("--dry-run");
   const cls = JSON.parse(fs.readFileSync(FILE, "utf8"));
   const colors = assign(cls);

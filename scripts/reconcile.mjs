@@ -19,6 +19,7 @@ import { openDb, allDates, shareRows, clearReconcile, putReconcile, recordRun } 
 import { shareOnDate } from "../lib/tushare.mjs";
 import * as dbApi from "../lib/db.mjs";
 import { loadUniverse } from "../lib/universe.mjs";
+import { isMain } from "../lib/cli.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export const QUALITY_FILE = path.join(ROOT, "data", "quality.json");
@@ -426,7 +427,7 @@ export async function reconcile(args = parseArgs([])) {
   return { code, quality, written };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
     log("用法: node scripts/reconcile.mjs [--days 30] [--date YYYY-MM-DD] [--quiet] [--no-write] [--out file]");

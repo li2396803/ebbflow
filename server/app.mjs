@@ -87,13 +87,18 @@ async function sendFile(req, res, file, { cacheControl = "public, max-age=600", 
 }
 
 async function readData(name, dir = DATA_DIR) {
-  const f = path.join(dir, name + ".json");
+  // 限制在目标目录内：/api/legacy/../xxx 这类请求不能读到目录外的 JSON
+  const base = path.resolve(dir);
+  const f = path.resolve(base, name + ".json");
+  const rel = path.relative(base, f);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return null;
+  const key = `${base}|${name}`; // 不同目录同名文件（data/meta 与 legacy/meta）不能共用缓存
   try {
     const st = await fs.promises.stat(f);
-    const hit = fileCache.get(name);
+    const hit = fileCache.get(key);
     if (hit && hit.mtimeMs === st.mtimeMs) return hit.buf;
     const buf = await fs.promises.readFile(f);
-    fileCache.set(name, { mtimeMs: st.mtimeMs, buf });
+    fileCache.set(key, { mtimeMs: st.mtimeMs, buf });
     return buf;
   } catch {
     return null;
@@ -158,7 +163,17 @@ export function createApp({ port = 5188, host = "127.0.0.1", autoRefresh = true,
         child.on("error", (e) => resolve({ code: -1, last: String(e.message), out }));
       });
       if (r.code !== 0) throw new Error(r.last || `update 退出码 ${r.code}`);
-      const mark = JSON.parse(fs.readFileSync(path.join(ROOT, "data", "lastrun.json"), "utf8"));
+      // 子进程正常退出不代表真的更新过：被锁跳过时不会有 lastrun.json，
+      // 以前这里直接 readFileSync 会抛 ENOENT，把「跳过」显示成「失败」。
+      const markFile = path.join(ROOT, "data", "lastrun.json");
+      if (!fs.existsSync(markFile)) {
+        const why = /已跳过[:：]\s*(.+)/.exec(r.out || "")?.[1]?.trim();
+        lastRefresh = { at: new Date().toISOString(), ms: Date.now() - t0, result: { skipped: why || "更新未产生结果" } };
+        lastError = null;
+        log(`[refresh] ${reason} → 跳过：${why || "更新未产生 lastrun.json"}`);
+        return { skipped: why || "no-result" };
+      }
+      const mark = JSON.parse(fs.readFileSync(markFile, "utf8"));
       lastRefresh = { at: new Date().toISOString(), ms: Date.now() - t0, result: { last: mark.lastTradeDate } };
       lastError = null;
       await invalidate();
@@ -282,7 +297,11 @@ export function createApp({ port = 5188, host = "127.0.0.1", autoRefresh = true,
       }
       let rel = p === "/" ? "/index.html" : p;
       const file = path.normalize(path.join(SITE, rel));
-      if (!file.startsWith(SITE)) return json(res, 403, { error: "forbidden" });
+      // 用 path.relative 判断包含关系：Windows 下大小写/分隔符不同，字符串 startsWith 不可靠
+      const relToSite = path.relative(SITE, file);
+      if (!relToSite || relToSite.startsWith("..") || path.isAbsolute(relToSite)) {
+        return json(res, 403, { error: "forbidden" });
+      }
       if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) {
         if (rel === "/index.html") {
           res.writeHead(503, { "Content-Type": MIME[".html"] });

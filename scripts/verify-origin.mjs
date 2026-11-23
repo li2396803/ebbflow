@@ -9,8 +9,9 @@ import path from "node:path";
 import { openDb, tradingDates, shareRows, daySources } from "../lib/db.mjs";
 import { SUB as BASE_SUB, BOND_CAT } from "../lib/taxonomy.mjs";
 import { parseChunk } from "../tools/parse-chunks.mjs";
+import { projectRoot } from "../lib/cli.mjs";
 
-const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname));
+const ROOT = projectRoot(import.meta.url);
 const DIR = path.join(ROOT, "tools", "original-charts");
 const outJsonIdx = process.argv.indexOf("--json");
 const outFile = outJsonIdx > 0 ? process.argv[outJsonIdx + 1] : path.join(ROOT, "data", "validation-origin.json");

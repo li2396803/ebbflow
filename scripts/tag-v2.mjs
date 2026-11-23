@@ -11,6 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isMain } from "../lib/cli.mjs";
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export const V2_FILE = path.join(ROOT, "data", "classification-v2.json");
@@ -133,7 +134,7 @@ export function main({ dryRun = false } = {}) {
   return { codes: Object.keys(tags).length, dims, bytes: dryRun ? 0 : fs.statSync(OUT_FILE).size };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   const r = main({ dryRun: process.argv.includes("--dry-run") });
   console.log(`[tag] ${r.codes} 只 ETF 打标，维度分布：${JSON.stringify(r.dims)}${r.bytes ? `，写出 ${r.bytes} B` : "（dry-run）"}`);
 }

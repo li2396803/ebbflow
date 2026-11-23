@@ -3,14 +3,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { openDb, dbStats, putSeries, metaSet } from "../lib/db.mjs";
-import { execFileSync } from "node:child_process";
+import { projectRoot, readJsonFile, runLocalBin } from "../lib/cli.mjs";
 import { buildSite } from "../lib/build/site.mjs";
 
-const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname));
+const ROOT = projectRoot(import.meta.url);
 // 前端构建：把 web/ 打成带哈希的产物（SKIP_VITE=1 可跳过，只重建数据）
 if (process.env.SKIP_VITE !== "1") {
   try {
-    execFileSync("npx", ["vite", "build", "--logLevel", "warn"], { stdio: "inherit" });
+    runLocalBin(ROOT, "vite", ["build", "--logLevel", "warn"]);
   } catch (e) {
     // 默认失败即中止：静默回退会让线上发布「未打包版」，很难被发现
     console.error("前端构建失败：", e?.message || e);
@@ -23,7 +23,7 @@ const db = openDb();
 let s = dbStats(db);
 
 if (!s.series && fs.existsSync(path.join(ROOT, "data", "series.json"))) {
-  const legacy = JSON.parse(fs.readFileSync(path.join(ROOT, "data", "series.json"), "utf8"));
+  const legacy = readJsonFile(path.join(ROOT, "data", "series.json"));
   const rows = [];
   for (const [sub, vals] of Object.entries(legacy.subs)) {
     for (let i = 0; i < legacy.dates.length; i++) if (vals[i] != null) rows.push([sub, legacy.dates[i], vals[i]]);

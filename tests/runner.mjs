@@ -12,6 +12,7 @@ import "./cases/rules.mjs";
 import "./cases/series.mjs";
 import "./cases/range.mjs";
 import "./cases/reconcile.mjs";
+import "./cases/platform.mjs";
 
 export * from "./framework.mjs";
 

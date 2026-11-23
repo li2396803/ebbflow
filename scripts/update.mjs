@@ -12,31 +12,74 @@ import { putEvents } from "../lib/db.mjs";
 import { putNav } from "../lib/db.mjs";
 import { buildSite } from "../lib/build/site.mjs";
 import { loadUniverse } from "../lib/universe.mjs";
+import { isMain, projectRoot } from "../lib/cli.mjs";
 
 const UNIVERSE = loadUniverse();
 const SUB = UNIVERSE.SUB;
 const CATS = UNIVERSE.CATS;
 
-const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname));
+const ROOT = projectRoot(import.meta.url);
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const LOCK = path.join(ROOT, "data", ".update.lock");
 
-function acquire() {
+const LOCK_PID = path.join(LOCK, "pid");
+
+/** 进程是否还活着（EPERM 说明存在但无权限 → 当作活着） */
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
-    fs.mkdirSync(LOCK);
+    process.kill(pid, 0);
     return true;
-  } catch {
-    try {
-      if (Date.now() - fs.statSync(LOCK).mtimeMs > 15 * 60 * 1000) {
-        fs.rmSync(LOCK, { recursive: true, force: true });
-        fs.mkdirSync(LOCK);
-        return true;
-      }
-    } catch {}
-    return false;
+  } catch (e) {
+    return e.code === "EPERM";
   }
 }
-const release = () => fs.rmSync(LOCK, { recursive: true, force: true });
+
+/**
+ * 抢更新锁。除了超时兜底，还看锁里记的 pid 是否还活着——
+ * 被 Ctrl-C / SIGPIPE 杀掉的上一次运行会留下锁目录，以前要白等 15 分钟且没有任何提示。
+ * @returns {{ok: boolean, reason?: string, holder?: number}}
+ */
+function acquire() {
+  const tryCreate = () => {
+    fs.mkdirSync(LOCK);
+    try { fs.writeFileSync(LOCK_PID, String(process.pid)); } catch {}
+  };
+  try {
+    tryCreate();
+    return { ok: true };
+  } catch {
+    let holder = null;
+    let ageMs = 0;
+    // 两件事分开读：缺 pid 文件（旧格式/被中断）不该让「锁年龄」也算不出来
+    try { holder = Number(fs.readFileSync(LOCK_PID, "utf8").trim()) || null; } catch {}
+    try { ageMs = Date.now() - fs.statSync(LOCK).mtimeMs; } catch { ageMs = 0; }
+
+    const dead = holder ? !pidAlive(holder) : false;
+    // 没有 pid 文件的是旧格式锁：只要不是刚刚创建（可能正被写），就按残留处理
+    const legacyStale = !holder && ageMs > 2 * 60 * 1000;
+    const stale = ageMs > 15 * 60 * 1000 || legacyStale;
+    if (dead || stale) {
+      fs.rmSync(LOCK, { recursive: true, force: true });
+      try {
+        tryCreate();
+        log(`清理残留锁（${dead ? `持有进程 ${holder} 已不存在` : "超过 15 分钟"}）后继续`);
+        return { ok: true };
+      } catch {
+        return { ok: false, reason: "另一个更新刚好抢先启动", holder };
+      }
+    }
+    return { ok: false, reason: `另一个更新正在进行中（pid=${holder ?? "未知"}）`, holder };
+  }
+}
+const release = () => {
+  // Windows 下杀软/索引可能短暂占用目录句柄，rmSync 会抛 EPERM；释放失败不应盖住更新结果
+  try {
+    fs.rmSync(LOCK, { recursive: true, force: true });
+  } catch (e) {
+    console.warn(`[lock] 释放失败（可手动删除 ${LOCK}）：${e?.message || e}`);
+  }
+};
 
 /** 历史是否完整：交易日数、标的数（沪深全覆盖）、净值行数三个维度都要够 */
 function historyComplete(db) {
@@ -203,7 +246,8 @@ async function run({ quiet = false, lookback = 15 } = {}) {
 }
 
 export async function update(opts = {}) {
-  if (!acquire()) return { skipped: "locked" };
+  const lock = acquire();
+  if (!lock.ok) return { skipped: lock.reason || "locked", holder: lock.holder ?? null };
   try {
     return await run(opts);
   } finally {
@@ -211,11 +255,19 @@ export async function update(opts = {}) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   const li = process.argv.indexOf("--lookback");
   const lookback = li > 0 ? Number(process.argv[li + 1]) : Number(process.env.LOOKBACK || 15);
-  update({ lookback }).catch((e) => {
-    console.error("更新失败:", e);
-    process.exit(1);
-  });
+  update({ lookback })
+    .then((r) => {
+      // 被锁跳过时必须显式说明，否则用户只看到「退出码 0、什么都没发生」
+      if (r?.skipped) {
+        log(`已跳过：${r.skipped}`);
+        process.exitCode = 0;
+      }
+    })
+    .catch((e) => {
+      console.error("更新失败:", e);
+      process.exit(1);
+    });
 }
