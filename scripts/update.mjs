@@ -5,10 +5,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { openDb, putShares, recordRun, metaSet, metaGet, dbStats, tradingDates } from "../lib/db.mjs";
-import { fetchSseDay, candidateDates, mapLimit } from "../lib/sources.mjs";
+import { fetchSseDay, fetchSzseSnapshot, candidateDates, mapLimit } from "../lib/sources.mjs";
 import { shareOnDate, navOnDate, hasToken, bindBudget, callStats } from "../lib/tushare.mjs";
 import { rebuild, refreshFunds, exportSeriesJson, ingestExchangeRange, ingestTushareRange, ingestTushareNav, ingestQuotes, detectShareEvents, etfCodes } from "../lib/pipeline.mjs";
-import { putEvents } from "../lib/db.mjs";
+import { putEvents, markDaySource } from "../lib/db.mjs";
 import { putNav } from "../lib/db.mjs";
 import { buildSite } from "../lib/build/site.mjs";
 import { loadUniverse } from "../lib/universe.mjs";
@@ -177,6 +177,26 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     }
   });
   if (!quiet) log(`上交所补到 ${sseDays} 个交易日`);
+
+  // 2.1) 深交所：官方接口只给「最新报告日」一档，正好够日常增量（历史由 Tushare 回补）
+  //      实测深交所比上交所更早放出当日数据（21:30 已有，上交所仍需更晚），所以这里单独抓。
+  let szseInfo = null;
+  try {
+    const snap = await fetchSzseSnapshot();
+    const n = Object.keys(snap.shares).length;
+    // 报告日要落在本次窗口内，且不能比已知最新交易日还旧，避免把陈旧快照写回去
+    const knownLatest = tradingDates(db).at(-1) ?? "";
+    if (snap.date && n > 100 && snap.date >= from && snap.date >= knownLatest) {
+      putShares(db, snap.date, Object.fromEntries(Object.entries(snap.shares).map(([c, w]) => [c, { wan: w, src: "szse" }])));
+      markDaySource(db, snap.date, "szse");
+      szseInfo = { date: snap.date, count: n };
+      if (!quiet) log(`深交所快照 ${snap.date}：${n} 只`);
+    } else if (!quiet) {
+      log(`深交所快照跳过（报告日 ${snap.date || "未知"}，${n} 只）`);
+    }
+  } catch (e) {
+    warn.push("深交所快照失败：" + String(e.message || e).slice(0, 60));
+  }
 
 
   // 2.5) 兜底：SQLite 里的派生序列若还不完整，用仓库自带的 data/series.json 补上（只补缺的日期）
