@@ -214,6 +214,7 @@ reg add HKLM\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t 
 
 - UNC 路径（`\\server\share\...`）：Node 能读写，但 SQLite 在 SMB 上的锁语义不可靠，
   请把项目放在本地盘。
+- Windows 保留名（`CON`、`PRN`、`AUX`、`NUL`、`COM1`…）不能做目录名；项目自身不使用这些名字。
 
 ---
 
@@ -233,6 +234,8 @@ npm.cmd test
 npm.cmd run lint
 $env:SKIP_VITE="1"; npm.cmd run build
 ```
+
+测试的临时库在 `%TEMP%\ebbflow-tests`；若清理失败（文件锁），关掉相关进程后手动删除即可。
 
 三条都应通过；`npm.cmd run build` 之后再执行 `npm.cmd start`，
 打开 <http://127.0.0.1:5188> 应能看到页面与数据。

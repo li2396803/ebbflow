@@ -19,7 +19,7 @@ export function parseIndexTaxonomy(file) {
   return JSON.parse(m[1]);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if ((await import("../lib/cli.mjs")).isMain(import.meta.url)) {
   const dir = process.argv[2] || "tools/original-charts";
   for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".js"))) {
     const D = parseChunk(path.join(dir, f));

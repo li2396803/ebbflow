@@ -49,6 +49,7 @@ test("空库：payload 生成不抛异常，且标记 initialized=false", async 
     assertEq(p.market, null, "空库不产出市场聚合");
   } finally {
     db.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    // Windows 上 close 后可能短暂占用 -wal/-shm，清理失败不影响用例结论
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
   }
 });

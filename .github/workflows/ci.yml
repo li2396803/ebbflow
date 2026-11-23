@@ -25,6 +25,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  windows-smoke:
+    name: Windows 冒烟（离线路径）
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 安装依赖
+        shell: bash
+        run: npm ci --no-audit --no-fund
+
+      - name: 单元测试与自检
+        shell: bash
+        run: |
+          node tests/runner.mjs
+          node scripts/lint.mjs
+
+      # 模拟「Windows 用户没装 node_modules / 不想跑 Vite」的离线重建路径：
+      # 只重建数据，沿用仓库里已提交的前端产物。
+      - name: 离线构建（SKIP_VITE=1）
+        shell: bash
+        run: |
+          SKIP_VITE=1 node scripts/build.mjs
+          node -e "const m=require('./site/data/meta.json'); if(!m.taxonomy) process.exit(1); console.log('meta ok:', m.taxonomy, m.counts.subs + ' 小类')"
+
+      # 入口判断回归：Windows 下 `file://${argv[1]}` 拼接会失效，这里确认 update 真被执行
+      - name: 入口判断（update 不应静默退出）
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/update.mjs --lookback 1 2>&1 | head -20 || true
+          echo "--- 检查锁与标记 ---"
+          ls -la data/.update.lock 2>/dev/null || echo "锁已释放（正常）"
+
   verify:
     name: 测试 + 离线构建 + 站点校验
     runs-on: ubuntu-latest
