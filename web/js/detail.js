@@ -4,6 +4,7 @@
 
 import { cnum, download, esc, fmtPct, fmtSigned, skeletonRows, toCSV, toneColor, isDark, emptyState } from "./util.js";
 import { flowEstimate, catLabelOf } from "./views.js";
+import { attachQuotes } from "./quote.js";
 import { rankOf, state } from "./state.js";
 import { closeOverlay, openOverlay, toast } from "./ui.js";
 import { createMiniChart } from "./chart.js";
@@ -81,7 +82,7 @@ export function renderInlineEtfTable(app, subName, host) {
   const sortHead = (key, label, extra = "", numeric = true) =>
     `<th scope="col" data-isort="${key}" class="${extra}" aria-sort="${
       st.key === key ? (st.dir > 0 ? "ascending" : "descending") : "none"
-    }" data-type="${numeric ? "num" : "text"}"><button type="button">${label}<span class="sort-ico"></span></button></th>`;
+    }" data-type="${numeric ? "num" : "text"}"><button type="button"><span class="th-label">${label}</span><span class="sort-ico"></span></button></th>`;
 
   host.innerHTML = `
     <div class="etf-inline">
@@ -114,6 +115,9 @@ export function renderInlineEtfTable(app, subName, host) {
         </table>
       </div>
     </div>`;
+
+  // 按需实时报价：只取当前页可见代码（最多 40 个），失败静默保持静态收盘价
+  attachQuotes(host.querySelector("#tblFocusEtf"), view.map((r) => r.code));
 
   host.onclick = (e) => {
     const th = e.target.closest("th[data-isort]");
@@ -311,7 +315,7 @@ function renderDetail(app, name, s, entry) {
               <th scope="col" data-esort="name" aria-sort="none"><button type="button">名称<span class="sort-ico"></span></button></th>
               <th scope="col" data-esort="shares" class="num" aria-sort="none"><button type="button">份额<span class="sort-ico"></span></button></th>
               <th scope="col" data-esort="delta" class="num" aria-sort="none"><button type="button">区间变化<span class="sort-ico"></span></button></th>
-              <th scope="col" data-esort="price" class="num col-price" aria-sort="none"><button type="button">收盘价<span class="sort-ico"></span></button></th>
+              <th scope="col" data-esort="price" class="num col-price" aria-sort="none"><button type="button"><span class="th-label">收盘价</span><span class="sort-ico"></span></button></th>
               <th scope="col" data-esort="premium" class="num" aria-sort="none"><button type="button">折溢价<span class="sort-ico"></span></button><span class="th-info" tabindex="0" role="note" title="折溢价 =（收盘价 − 单位净值）/ 单位净值；>0 溢价、<0 折价" aria-label="折溢价 =（收盘价 − 单位净值）/ 单位净值">i</span></th>
               <th scope="col" data-esort="amount" class="num" aria-sort="none"><button type="button">成交额<span class="sort-ico"></span></button><span class="th-info" tabindex="0" role="note" title="成交额（亿元），鼠标悬停单元格可看换手率（成交额 / 规模）" aria-label="成交额（亿元），悬停可看换手率">i</span></th>
               <th scope="col" data-esort="nav" class="num etf-nav" aria-sort="none"><button type="button">净值<span class="sort-ico"></span></button></th>
@@ -429,7 +433,7 @@ export function etfRowHTML(r, totalScale, app) {
     </td>
     <td class="num">${esc(cnum(r.shares, 1))}</td>
     <td class="num ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "flat"}">${esc(fmtSigned(r.delta, 1))}</td>
-    <td class="num col-price">${r.price != null ? esc(cnum(r.price, 3)) : "—"}</td>
+    <td class="num col-price" data-code="${esc(r.code)}">${r.price != null ? esc(cnum(r.price, 3)) : "—"}</td>
     <td class="num ${premCls}${premStrong}" title="（收盘价 − 单位净值）/ 单位净值${prem != null ? ` = ${prem.toFixed(2)}%` : ""}">${prem != null ? esc(fmtSigned(prem, 2)) + "%" : "—"}</td>
     <td class="num" title="${esc(turnover)}">${r.amount != null ? esc(cnum(r.amount, 1)) : "—"}</td>
     <td class="num etf-nav">${r.nav != null ? esc(cnum(r.nav, 3)) : "—"}</td>
@@ -459,6 +463,8 @@ function renderEtfTable(rows, totalScale) {
   }
   const app = drawerHooks.app;
   tbody.innerHTML = sorted.map((r) => etfRowHTML(r, totalScale, app)).join("");
+  // 抽屉表：成分通常 ≤40；失败静默，保留静态收盘价
+  attachQuotes(document.getElementById("tblEtf"), sorted.slice(0, 40).map((r) => r.code));
   document.querySelectorAll("#tblEtf th[data-esort]").forEach((th) => {
     if (th.dataset.esort === key) th.setAttribute("aria-sort", dir > 0 ? "ascending" : "descending");
     else th.removeAttribute("aria-sort");

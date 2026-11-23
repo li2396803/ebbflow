@@ -220,6 +220,27 @@ async function run({ quiet = false, lookback = 15 } = {}) {
   }
 
 
+  // 2.2) 哨兵：交易所接口「坏了」和「今天没数据」表现一样——都是 200 + 空结果。
+  //      判据：交易所对某日返回 0 行，而 Tushare 同日有大量数据 → 是接口变了，不是市场没开。
+  //      命中就用 Tushare 补上，别让站点空一天，同时留下警告。
+  if (hasToken() && sseDays === 0 && days.length) {
+    let suspect = null;
+    for (const d of [...days].reverse().slice(0, 3)) {
+      try {
+        const r = await shareOnDate(d);
+        const n = r ? Object.keys(r).length : 0;
+        if (n >= 800) { suspect = { date: d, rows: r }; break; }
+      } catch {}
+    }
+    if (suspect) {
+      const { date: d, rows } = suspect;
+      putShares(db, d, Object.fromEntries(Object.entries(rows).map(([c, w]) => [c, { wan: w, src: "ts" }])));
+      markDaySource(db, d, "ts");
+      warn.push(`交易所接口疑似异常：${d} 上交所返回 0 行，Tushare 有 ${Object.keys(rows).length} 只，已用 Tushare 兜底`);
+      if (!quiet) log(`⚠ 上交所接口疑似异常（${d} 返回空但 Tushare 有数据），已兜底`);
+    }
+  }
+
   // 2.5) 兜底：SQLite 里的派生序列若还不完整，用仓库自带的 data/series.json 补上（只补缺的日期）
   try {
     const have = db.prepare("SELECT COUNT(DISTINCT date) n FROM series").get()?.n ?? 0;

@@ -3052,3 +3052,69 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
     contain-intrinsic-size: auto 40px;
   }
 }
+
+
+/* ============================ 15. 实时报价（可选增强） ============================ */
+.dt .th-label {
+  white-space: nowrap;
+}
+.q-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+  padding: 0 4px;
+  height: 14px;
+  border-radius: 7px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ink-3);
+  background: var(--surface-3);
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.q-badge--live {
+  color: var(--accent);
+  background: var(--accent-soft, rgba(75, 87, 214, 0.1));
+}
+.q-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+.q-tag {
+  margin-left: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ink-4);
+  white-space: nowrap;
+}
+.q-tag--live {
+  color: var(--accent);
+}
+.q-tag--live::before {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-right: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: 1px;
+}
+.q-tag--close {
+  color: var(--ink-4);
+  font-weight: 500;
+}
+.q-val {
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 768px) {
+  .q-tag {
+    display: none;
+  }
+}
