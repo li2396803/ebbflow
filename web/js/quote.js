@@ -36,7 +36,11 @@ export function quoteEnabled() {
   const meta = metaEnabled();
   if (meta === false) return false;
   if (meta === true) return true;
-  if (sessionStorage.getItem(OFF_KEY) === "1") return false;
+  try {
+    if (sessionStorage.getItem(OFF_KEY) === "1") return false;
+  } catch {
+    /* file:// 等场景可能禁用 storage：按未禁用处理 */
+  }
   return location.port === "5188";
 }
 
