@@ -2,6 +2,32 @@
 
 本文件记录对仓库结构、数据口径、命令有影响的变化。日常数据更新（`chore(data): 自动更新站点数据`）不记录。
 
+## v3.9.2 — Windows 兼容性修复（首次启动 / 更新静默退出 / 离线构建）
+
+来自一份 Windows 11 用户的 Bug 报告，四个根因都是平台假设：
+
+1. **入口判断在 Windows 永远为假**：`import.meta.url === "file://" + process.argv[1]`，
+   Windows 的 `F:\…\update.mjs` 与 `file:///F:/…/update.mjs` 永不相等，
+   于是 `npm run update` **静默退出 0**、不写 `data/lastrun.json`，服务随后读标记文件报 `ENOENT`。
+   统一改用 `lib/cli.mjs` 的 `isMain()`（`pathToFileURL(resolve(argv[1]))`），覆盖 build / update / backfill / reconcile / verify-origin。
+2. **项目根目录**：`new URL(import.meta.url).pathname` 在 Windows 得到 `/F:/…`，改用 `projectRoot()`（`fileURLToPath`）。
+3. **前端构建**：`execFileSync("npx", …)` 在 Windows 找不到 `npx`（需 `npx.cmd`）。
+   改用 `runLocalBin()`：优先 `node_modules/.bin/vite(.cmd)`，回退 `npx(.cmd)`，Windows 自动 `shell: true`，含空格路径加引号。
+4. **空库接口 500**：`lib/payloads.mjs` 从空日期数组取末值，把 `undefined` 绑定给 SQLite。
+   已加空库短路与 `covered()` 防护，`meta` 新增 `initialized` 标记。
+
+顺带修的：
+
+- `SKIP_VITE=1` 现在是真正的「只重建数据」：不碰前端产物、不触发布局断言（离线构建场景）。
+- 更新锁记录 PID：持有进程已死或旧格式锁会自动清理；被锁跳过时**显式打印原因**，不再静默 0 退出。
+- 服务端在跳过更新时不再读不存在的 `lastrun.json`（此前把「跳过」误报成「失败」）。
+- 静态目录包含判断改用 `path.relative`，`readData()` 增加目录逃逸校验（此前 `/api/legacy/../..` 可读到仓库文件）。
+- `.env` 与若干 JSON 读取容忍 UTF-8 BOM。
+- 新增 `docs/WINDOWS.md`（前置、三步开始、后台运行、任务计划程序、10 条报错对照、平台差异）。
+- CI 新增 **windows-smoke** job：`npm ci` + 测试 + lint + `SKIP_VITE=1` 离线构建 + 入口判断回归。
+
+---
+
 ## v3.9.1 — 默认视角调整
 
 - **默认区间改为「近一年」**：新访客第一眼看到 243 个交易日，而不是 24 个，趋势更完整。
