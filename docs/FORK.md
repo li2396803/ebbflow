@@ -26,7 +26,7 @@
 
 1. 打开 <https://github.com/li2396803/ebbflow>。
 2. 右上角 **Fork** → 选择自己的账号 → **Create fork**。
-3. 建议同时把 fork 的 **default branch** 保持为 `master`（`daily.yml` 的部署条件写的是 `refs/heads/master`）。
+3. 建议同时把 fork 的 **default branch** 保持为 `master`（`update.yml` 的部署条件写的是 `refs/heads/master`）。
 
 拿到仓库后**先不要**急着开 Pages —— 没有数据和构建产物，Pages 只会显示 404。
 
@@ -90,31 +90,31 @@ Fork 出来的仓库，工作流默认是**关闭**的：
 1. 打开 fork 的 **Actions** 标签页。
 2. 如果看到「Workflows aren't being run on this forked repository」，点 **I understand my workflows, go ahead and enable them**。
 3. 左侧应出现三条工作流：
-   - **Daily data update**（`daily.yml`）—— 定时更新 + 测试 + 提交 + 发布 Pages
+   - **Daily data update**（`update.yml`）—— 定时更新 + 测试 + 提交 + 发布 Pages
    - **CI**（`ci.yml`）—— push/PR 跑测试与构建
    - **Pages**（`pages.yml`）—— 手动部署（可选通道）
 
 补充：
 
-- 如果你是 **public fork**，`daily.yml` 里的 `permissions: contents: write` 足够它自己提交数据；
+- 如果你是 **public fork**，`update.yml` 里的 `permissions: contents: write` 足够它自己提交数据；
   如果你给 `master` 开了分支保护，需要允许 Actions 推送，否则提交步骤会失败。
 - 定时任务在整点/半点附近会排队，**实际触发可能比 16:30 晚几分钟到几十分钟**，属正常现象。
 - 仓库长期无活动时，GitHub 可能暂停定时工作流；在 Actions 页面点一次 **Enable workflow** 即可恢复。
 
 ### 如果定时任务根本不触发（本仓库实测遇到过）
 
-现象：`daily.yml` 里写了 `schedule`，Actions 页面显示 active，但**从来没有任何一次 `schedule` 触发的运行**，
+现象：`update.yml` 里写了 `schedule`，Actions 页面显示 active，但**从来没有任何一次 `schedule` 触发的运行**，
 手动 `workflow_dispatch` 却一切正常。本仓库就出现过这种情况，用一个每 5 分钟的探针工作流复核过：
 探针同样不触发，说明不是 cron 写错，而是 GitHub 没有向该仓库派发 `schedule` 事件。
 
 排查顺序：
 
-1. 确认默认分支上的 workflow 确实带 `schedule`（`git show origin/master:.github/workflows/daily.yml | head -20`）；
+1. 确认默认分支上的 workflow 确实带 `schedule`（`git show origin/master:.github/workflows/update.yml | head -20`）；
 2. Actions 页面确认工作流是 **active**（不是 disabled）；
 3. 用探针隔离：临时加一个 `cron: "*/5 * * * *"` 的最小工作流，等 10 分钟看它是否运行；
    **探针也不跑 ⇒ 是仓库级问题，不是你的 cron**；
 4. 仓库改名、转移、长期无活动后，调度器偶尔会失效。可尝试在 Actions 页面 **Disable workflow → Enable workflow**，
-   或改一次 workflow 文件名（`daily.yml` → `update.yml`）重新注册。
+   或改一次 workflow 文件名（`update.yml` → `update.yml`）重新注册。
 
 仍然不触发的兜底方案（任选其一）：
 
@@ -125,7 +125,7 @@ Fork 出来的仓库，工作流默认是**关闭**的：
   curl -X POST \
     -H "Authorization: Bearer <FINE_GRAINED_PAT>" \
     -H "Accept: application/vnd.github+json" \
-    https://api.github.com/repos/<owner>/<repo>/actions/workflows/daily.yml/dispatches \
+    https://api.github.com/repos/<owner>/<repo>/actions/workflows/update.yml/dispatches \
     -d '{"ref":"master"}'
   ```
   PAT 只需 `Actions: write` 权限（fine-grained），不要给仓库其它权限。
@@ -180,7 +180,7 @@ Fork 出来的仓库，工作流默认是**关闭**的：
 
 说明：
 
-- `daily.yml` 在构建完成后**直接**把这次的 `site/` 发布到 Pages，不需要把 `site/data/` 提交进 git。
+- `update.yml` 在构建完成后**直接**把这次的 `site/` 发布到 Pages，不需要把 `site/data/` 提交进 git。
 - 首次部署后 DNS/证书可能要等一两分钟；`Settings → Pages` 会显示 “Your site is live at …”。
 - 如果 404：先确认 Pages 的 Source 是 **GitHub Actions**，再确认 `deploy` job 成功，最后看
   `Settings → Environments → github-pages` 是否在等审批。
@@ -237,7 +237,7 @@ bin/status.sh                        # 一屏看进程 / 自启 / 库规模 / �
 
 - 仓库状态：`gh api` 实测为 public、MIT、`homepage = https://li2396803.github.io/ebbflow/`，
   站点返回 HTTP 200（2026-11-21）。
-- 工作流行为：逐行对照 `.github/workflows/daily.yml`、`ci.yml`、`pages.yml`；
+- 工作流行为：逐行对照 `.github/workflows/update.yml`、`ci.yml`、`pages.yml`；
   secret 名、`::error::` 缺密钥即失败的逻辑、超时、`refs/heads/master` 条件均来自源码。
 - 数据源口径（两源、深市由 Tushare 承担）：依据维护者 2026-11-21 的变更说明。
 - 第 2 步的 token 验证命令：结构与本仓库 `lib/tushare.mjs` 的导出一致，**未用真实 token 实跑**（本机不打印密钥）。

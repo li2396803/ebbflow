@@ -209,7 +209,7 @@ HTTP/JSON 契约见 [`API.md`](API.md)，本地开发指引见 [`DEVELOPING.md`]
 ### 4.9 `site/data/` 是产物，不入库
 
 - 载荷可由「库 + 构建脚本」确定性重建；入库只会让 git 历史每天膨胀几 MB。
-- 所以 `daily.yml` 构建完直接发布 Pages，不依赖入库的 `site/data/`；
+- 所以 `update.yml` 构建完直接发布 Pages，不依赖入库的 `site/data/`；
   本地用 `npm run build`（无库时用 `data/series.json` 冷启动）。
 - `data/series.json` 是例外：**冷启动底座 + 回归基线**，必须入库（`scripts/lint.mjs` 检查 ≥ 1000 个交易日）。
 
@@ -242,7 +242,7 @@ HTTP/JSON 契约见 [`API.md`](API.md)，本地开发指引见 [`DEVELOPING.md`]
 
 | 触发 | 位置 | 做什么 |
 | --- | --- | --- |
-| 每个工作日 UTC 08:30（≈ 北京 16:30） | `.github/workflows/daily.yml` | 恢复 SQLite 缓存/种子 → 增量更新（份额+净值+行情+事件）→ `npm test` → 交叉校验（容错）→ 提交 `site/` 与 `data/*.json` → 发布 Pages |
+| 工作日 UTC 13:30（≈ 北京 21:30）+ 次日 00:30 兜底 | `.github/workflows/update.yml` | 恢复 SQLite 缓存/种子 → 增量更新（份额+净值+行情+事件）→ `npm test` → 交叉校验（容错）→ 提交 `site/` 与 `data/*.json` → 发布 Pages |
 | push 任意分支 / PR | `.github/workflows/ci.yml` | `npm test` → 有 DB 时离线 `npm run build` → 校验 `site/data/meta.json` |
 | 手动 | `.github/workflows/pages.yml` | 先构建再部署（独立通道） |
 | 手动 / 登录自启（macOS） | `launchd/` + `bin/*.sh` | 本机定时更新与服务常驻 |
@@ -287,7 +287,7 @@ HTTP/JSON 契约见 [`API.md`](API.md)，本地开发指引见 [`DEVELOPING.md`]
 ## 本文的核对状态
 
 - 模块职责、表结构、载荷与产物：对照 `lib/*.mjs`、`lib/build/site.mjs`、`server/app.mjs` 源码逐条核对（2026-11-21）。
-- 数据源两源、深市由 Tushare、缺密钥即失败：对照 `scripts/update.mjs`、`.github/workflows/daily.yml`。
+- 数据源两源、深市由 Tushare、缺密钥即失败：对照 `scripts/update.mjs`、`.github/workflows/update.yml`。
 - v3.8.0 的三处修复（`isBondCat` 统一、`fund.list_date` 迁移、`update` 接行情/事件）已在源码确认（提交 `d23203a`）。
 - 两套口径规模（7/72/1903、10/88/1614）：`loadUniverse()` 实测。
 - 自动化行为：对照三个 workflow 与 `bin/*.sh`；**未实际触发** GitHub Actions。

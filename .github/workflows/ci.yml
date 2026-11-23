@@ -6,7 +6,7 @@
 #   3. 校验 site/data/meta.json       —— 文件存在且 lastTradeDate 非空
 #   4. site/ 与重建结果不一致        —— 只告警，不失败（数据可能本来就过期了）
 #
-# data/etf.db 不进 git，所以第 2 步依赖 daily.yml 存下来的 actions/cache。
+# data/etf.db 不进 git，所以第 2 步依赖 update.yml 存下来的 actions/cache。
 # 缓存是空的（例如刚 fork / 缓存过期）时自动跳过重建，只做第 3 步的静态校验，不会莫名变红。
 name: CI
 

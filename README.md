@@ -14,7 +14,7 @@
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522.5-brightgreen.svg)](package.json)
-[![Daily Data](https://github.com/li2396803/ebbflow/actions/workflows/daily.yml/badge.svg)](https://github.com/li2396803/ebbflow/actions/workflows/daily.yml)
+[![Daily Data](https://github.com/li2396803/ebbflow/actions/workflows/update.yml/badge.svg)](https://github.com/li2396803/ebbflow/actions/workflows/update.yml)
 [![站点](https://img.shields.io/badge/online-li2396803.github.io%2Febbflow-4b57d6.svg)](https://li2396803.github.io/ebbflow/)
 [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
 
@@ -188,7 +188,7 @@ ebbflow/
 
 | 通道 | 触发 | 做什么 |
 | --- | --- | --- |
-| GitHub Actions `daily.yml` | 每工作日 16:30（北京时间） | 校验密钥 → 增量更新 → 测试 → 提交数据快照 → 发布 Pages |
+| GitHub Actions `update.yml` | 每工作日 21:30（北京时间）+ 次日 08:30 兜底 | 校验密钥 → 增量更新 → 测试 → 提交数据快照 → 发布 Pages |
 | GitHub Actions `ci.yml` | push / PR | 测试、离线构建、校验站点产物 |
 | GitHub Actions `pages.yml` | 手动 | 单独部署一次站点 |
 | 本机 launchd | 登录自启 + 每工作日 16:10 | 起服务、跑增量更新，日志写入 `.run/` |

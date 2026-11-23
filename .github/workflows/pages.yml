@@ -1,6 +1,6 @@
 # 手动把站点发布到 GitHub Pages
 #
-# 日常发布不需要这个工作流：daily.yml 每天构建完会直接部署（needs: update → deploy）。
+# 日常发布不需要这个工作流：update.yml 每天构建完会直接部署（needs: update → deploy）。
 # 这里用于「改了前端 / 想立刻重发一次」的场景：Actions → Deploy site to GitHub Pages → Run workflow。
 #
 # 站点地址：https://li2396803.github.io/ebbflow/
