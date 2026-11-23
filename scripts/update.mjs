@@ -162,7 +162,10 @@ async function run({ quiet = false, lookback = 15 } = {}) {
   }
 
   // 2) 上交所：最近 lookback 天逐日（沪市官方口径，优先于 Tushare）
-  const end = anchor ?? new Date().toISOString().slice(0, 10);
+  // 注意：窗口上界必须取「今天（北京）」，不能取 Tushare 的 anchor ——
+  // Tushare 当天数据往往晚上才齐，anchor 会停在旧日期，导致交易所那边永远看不到新的一天。
+  const bjNow = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+  const end = [anchor ?? bjNow, bjNow].sort().pop();
   const from = new Date(new Date(end + "T00:00:00Z").getTime() - lookback * 86400000).toISOString().slice(0, 10);
   const days = candidateDates(from, end);
   let sseDays = 0;
@@ -173,6 +176,7 @@ async function run({ quiet = false, lookback = 15 } = {}) {
       if (!r) return;
       for (const [c, nm] of Object.entries(r.names ?? {})) if (!sseNames.has(c)) sseNames.set(c, nm);
       putShares(db, d, Object.fromEntries(Object.entries(r.shares).map(([c, w]) => [c, { wan: w, src: "sse" }])));
+      markDaySource(db, d, "sse"); // 交易日轴依赖这个标志，漏了会让新的一天永远进不了轴
       sseDays++;
     } catch (e) {
       warn.push(`上交所 ${d} 失败`);
