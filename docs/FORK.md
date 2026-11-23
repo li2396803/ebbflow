@@ -101,6 +101,35 @@ Fork 出来的仓库，工作流默认是**关闭**的：
 - 定时任务在整点/半点附近会排队，**实际触发可能比 16:30 晚几分钟到几十分钟**，属正常现象。
 - 仓库长期无活动时，GitHub 可能暂停定时工作流；在 Actions 页面点一次 **Enable workflow** 即可恢复。
 
+### 如果定时任务根本不触发（本仓库实测遇到过）
+
+现象：`daily.yml` 里写了 `schedule`，Actions 页面显示 active，但**从来没有任何一次 `schedule` 触发的运行**，
+手动 `workflow_dispatch` 却一切正常。本仓库就出现过这种情况，用一个每 5 分钟的探针工作流复核过：
+探针同样不触发，说明不是 cron 写错，而是 GitHub 没有向该仓库派发 `schedule` 事件。
+
+排查顺序：
+
+1. 确认默认分支上的 workflow 确实带 `schedule`（`git show origin/master:.github/workflows/daily.yml | head -20`）；
+2. Actions 页面确认工作流是 **active**（不是 disabled）；
+3. 用探针隔离：临时加一个 `cron: "*/5 * * * *"` 的最小工作流，等 10 分钟看它是否运行；
+   **探针也不跑 ⇒ 是仓库级问题，不是你的 cron**；
+4. 仓库改名、转移、长期无活动后，调度器偶尔会失效。可尝试在 Actions 页面 **Disable workflow → Enable workflow**，
+   或改一次 workflow 文件名（`daily.yml` → `update.yml`）重新注册。
+
+仍然不触发的兜底方案（任选其一）：
+
+- **本机定时**：用 `bin/install-autostart.sh`（macOS launchd）或 `docs/WINDOWS.md` 里的任务计划程序，
+  每天收盘后在本机跑 `npm run update` 并推送；
+- **外部 cron 回调**：用任意免费定时服务（如 cron-job.org）在工作日 16:35 调一次 GitHub API：
+  ```bash
+  curl -X POST \
+    -H "Authorization: Bearer <FINE_GRAINED_PAT>" \
+    -H "Accept: application/vnd.github+json" \
+    https://api.github.com/repos/<owner>/<repo>/actions/workflows/daily.yml/dispatches \
+    -d '{"ref":"master"}'
+  ```
+  PAT 只需 `Actions: write` 权限（fine-grained），不要给仓库其它权限。
+
 ---
 
 ## 5. 手动跑一次，确认整条链路通
