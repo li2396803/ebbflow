@@ -264,9 +264,9 @@ async function run({ quiet = false, lookback = 15 } = {}) {
   const tSzse0 = Date.now();
   // 2.1) 深交所：官方接口只给「最新报告日」一档，正好够日常增量（历史由 Tushare 回补）
   //      实测深交所比上交所更早放出当日数据（21:30 已有，上交所仍需更晚），所以这里单独抓。
-  // 深交所快照：55 页 × 20 行的翻页在 GitHub runner 上会被限流（实测单页可通、连发即 ETIMEDOUT，
-  // 之后整段 IP 冷却）。深市份额已由 Tushare 全市场一次覆盖，所以云端默认跳过（SZSE=0），
-  // 本地/手动仍可 `SZSE=1` 验证接口。
+  // 深交所快照：能否成功取决于抽到的 runner IP（实测同一分钟内有的 IP 通、有的第 1 页就 ETIMEDOUT，
+  // 与请求频率无关，慢速/并发/换 UA/换协议栈都无解）。所以策略是「低成本试一次」：
+  // 8 秒预算内成功就拿到官方深市数据，失败只损失 8 秒，深市由 Tushare 全市场覆盖。
   let szseInfo = null;
   if (process.env.SZSE !== "0") {
   // 先试快照；失败或报告日不对，再按日期查历史接口（同一份数据的另一个入口，runner 上偶发网络失败时很关键）
@@ -303,7 +303,7 @@ async function run({ quiet = false, lookback = 15 } = {}) {
       } catch {}
     }
   }
-  } // SZSE !== "0"
+  } // SZSE !== "0"（本地可用 SZSE=0 强制跳过）
 
 
   const szseMs = Date.now() - tSzse0;
