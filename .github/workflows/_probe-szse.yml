@@ -4,31 +4,20 @@ permissions: { contents: read }
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     steps:
-      - uses: actions/setup-node@v4
-        with: { node-version: "22" }
-      - name: 慢速滴灌（3 秒/页，55 页）
+      - name: 单页多形态 + 冷却重试
         run: |
-          node --input-type=module -e '
-            const UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36";
-            const H={"User-Agent":UA,Referer:"https://www.szse.cn/"};
-            const base="https://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1105&TABKEY=tab1&PAGENO=";
-            const gap = 3000;
-            let ok=0, rows=0, dead=null;
-            for (let p=1; p<=55; p++) {
-              const t0=Date.now();
-              try {
-                const r = await fetch(base+p,{headers:H, signal: AbortSignal.timeout(15000)});
-                const j = await r.json();
-                rows += (j?.[0]?.data||[]).length; ok++;
-                if (p % 5 === 0 || p === 1) console.log(`page ${p} ok 累计${rows}行 ${Date.now()-t0}ms`);
-              } catch(e) {
-                dead = `page ${p}: ${e.cause?.code||e.name||e.message}`;
-                console.log(`FAIL ${dead} 已成功 ${ok} 页`);
-                break;
-              }
-              await new Promise(s=>setTimeout(s,gap));
-            }
-            console.log(`结果：成功 ${ok}/55 页，${rows} 行` + (dead?`，中断于 ${dead}`:"，全部成功"));
-          '
+          set +e
+          UA='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36'
+          for u in \
+            "https://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1105&TABKEY=tab1&PAGENO=1" \
+            "http://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1105&TABKEY=tab1&PAGENO=1" \
+            "https://www.szse.cn/api/report/ShowReport/data?CATALOGID=scsj_fund_jjgm&SHOWTYPE=JSON&TABKEY=tab1&jjlb=ETF&txtStart=2026-11-24&txtEnd=2026-11-24&tab1PAGENO=1"; do
+            code=$(timeout 20 curl -s -o /tmp/x -w '%{http_code} %{time_total}s %{size_download}B' -H "User-Agent: $UA" -H 'Referer: https://www.szse.cn/' "$u")
+            echo "$(echo $u | cut -c1-42)... → $code"
+          done
+          echo "=== 60 秒后重试第一页 ==="
+          sleep 60
+          code=$(timeout 30 curl -s -o /tmp/x -w '%{http_code} %{time_total}s %{size_download}B' -H "User-Agent: $UA" -H 'Referer: https://www.szse.cn/' "https://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1105&TABKEY=tab1&PAGENO=1")
+          echo "冷却后 → $code"
