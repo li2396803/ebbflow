@@ -961,27 +961,29 @@ function buildChartPayload(payload, catKey) {
       footNote = state.norm === "all" ? "相对全历史首日的变化率" : "相对区间首日的变化率";
       unit = "%";
     } else if (metric === "flow") {
-      footNote = "每日净申购（亿元/日；一级市场申赎 × 当日净值）";
+      footNote = "每日净申购（亿元/日；一级市场申赎 × 当日净值）· 第二列为当日流量占该小类规模的比例";
     }
     if (others.length) {
       footNote = `${footNote ? footNote + " · " : ""}只画规模 Top ${list.length}，其余 ${others.length} 个合并为「其他」`;
     }
 
-    // tooltip 第二列
+    // tooltip 第二列：按「鼠标所在那天」逐日给出，不能只取窗口末值（否则会与当日主值错位）
     const map = {};
     for (const s of list) {
       if (metric === "pct") {
-        const v = lastNonNull(s.scale || [], a, b);
-        map[s.name] = v;
+        map[s.name] = s.scale || []; // 当日规模（亿元）
       } else if (metric === "flow") {
-        const arr = s.flow || [];
-        const totalAbs = arr.slice(a, b + 1).reduce((acc, v) => acc + (v == null ? 0 : Math.abs(v)), 0) || 1;
-        const lastV = lastNonNull(arr, a, b);
-        map[s.name] = lastV == null ? null : (Math.abs(lastV) / totalAbs) * 100;
+        // 当日流量 / 该小类当日规模（带符号，%）：申赎强度
+        const flowArr = s.flow || [];
+        const scaleArr = s.scale || [];
+        map[s.name] = flowArr.map((v, i) => {
+          const sv = scaleArr[i];
+          return v != null && sv ? (v / sv) * 100 : null;
+        });
       } else {
-        const f = firstNonNull(s[metric] || [], a, b);
-        const l = lastNonNull(s[metric] || [], a, b);
-        map[s.name] = f && l != null ? ((l - f) / Math.abs(f)) * 100 : null;
+        const arr = s[metric] || [];
+        const base = firstNonNull(arr, a, b);
+        map[s.name] = arr.map((v) => (v != null && base ? ((v - base) / Math.abs(base)) * 100 : null));
       }
     }
     secondary = { type: metric === "flow" ? "pct" : metric === "pct" ? "value" : "pct", map };

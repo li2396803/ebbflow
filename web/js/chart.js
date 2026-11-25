@@ -1262,6 +1262,8 @@ function tooltipHTML(params, p) {
   const fmtVal = (r) =>
     r.unit === "%" ? fmtPct(r.value, 2) : r.type === "bar" ? cnum(r.value, 2) : cnum(r.value, 1);
 
+  const tipIdx = arr[0]?.dataIndex ?? 0;
+  const pickVal = (m) => (Array.isArray(m) ? m[tipIdx] : m);
   const body = shown
     .map((r) => {
       const active = p.focused === r.name ? " is-active" : "";
@@ -1269,13 +1271,13 @@ function tooltipHTML(params, p) {
       let rightCls = "";
       if (p.secondary && p.series.length > 1) {
         if (p.secondary.type === "pct") {
-          const v = p.secondary.map?.[r.name];
+          const v = pickVal(p.secondary.map?.[r.name]);
           if (Number.isFinite(v)) {
             right = fmtPct(v, 1);
             rightCls = v > 0 ? "up" : v < 0 ? "down" : "";
           }
         } else if (p.secondary.type === "value") {
-          const v = p.secondary.map?.[r.name];
+          const v = pickVal(p.secondary.map?.[r.name]);
           if (Number.isFinite(v)) right = cnum(v, Math.abs(v) >= 100 ? 0 : 1);
         }
       }
