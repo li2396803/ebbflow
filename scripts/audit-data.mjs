@@ -84,7 +84,7 @@ function checkDb() {
       "A. 有数据但进不了轴的日子（覆盖残缺）",
       stranded.length === 0,
       stranded.length ? stranded.slice(0, 10).map((d) => `${d}：${ax.excluded.find((x) => x.date === d)?.reason}`) : ["无"],
-      { severity: "warn" }
+      { severity: "info" }
     );
 
     // B1: 唯一性 + 来源重叠
