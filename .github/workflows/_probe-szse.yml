@@ -1,0 +1,34 @@
+name: probe szse
+on: { workflow_dispatch: {} }
+permissions: { contents: read }
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: 慢速滴灌（3 秒/页，55 页）
+        run: |
+          node --input-type=module -e '
+            const UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36";
+            const H={"User-Agent":UA,Referer:"https://www.szse.cn/"};
+            const base="https://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1105&TABKEY=tab1&PAGENO=";
+            const gap = 3000;
+            let ok=0, rows=0, dead=null;
+            for (let p=1; p<=55; p++) {
+              const t0=Date.now();
+              try {
+                const r = await fetch(base+p,{headers:H, signal: AbortSignal.timeout(15000)});
+                const j = await r.json();
+                rows += (j?.[0]?.data||[]).length; ok++;
+                if (p % 5 === 0 || p === 1) console.log(`page ${p} ok 累计${rows}行 ${Date.now()-t0}ms`);
+              } catch(e) {
+                dead = `page ${p}: ${e.cause?.code||e.name||e.message}`;
+                console.log(`FAIL ${dead} 已成功 ${ok} 页`);
+                break;
+              }
+              await new Promise(s=>setTimeout(s,gap));
+            }
+            console.log(`结果：成功 ${ok}/55 页，${rows} 行` + (dead?`，中断于 ${dead}`:"，全部成功"));
+          '
