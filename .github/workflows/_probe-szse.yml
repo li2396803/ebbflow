@@ -9,26 +9,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "22" }
-      - name: 用项目自身的 fetchSzseSnapshot
+      - name: 不加 ipv4first（对照）
         run: |
           node --input-type=module -e '
             import { fetchSzseSnapshot } from "./lib/sources.mjs";
-            const t0 = Date.now();
-            try {
-              const r = await fetchSzseSnapshot();
-              console.log("成功 date=", r.date, "只数=", Object.keys(r.shares).length, "行=", r.count, "用时=", Date.now()-t0, "ms");
-            } catch (e) {
-              console.log("失败", e.message, "| cause:", e.cause?.code || e.cause?.errno || "-", "| 用时=", Date.now()-t0, "ms");
-            }
+            const t0=Date.now();
+            try { const r=await fetchSzseSnapshot(); console.log("对照 ok", Object.keys(r.shares).length, Date.now()-t0, "ms"); }
+            catch(e){ console.log("对照 失败", e.cause?.code||e.message, Date.now()-t0, "ms"); }
           '
-      - name: 再试一次（看是否间歇性）
+      - name: 加 ipv4first（实验组）
         if: always()
         run: |
           node --input-type=module -e '
-            import { fetchSzseSnapshot } from "./lib/sources.mjs";
+            import dns from "node:dns";
+            dns.setDefaultResultOrder("ipv4first");
+            const { fetchSzseSnapshot } = await import("./lib/sources.mjs");
             for (let i=1;i<=2;i++){
               const t0=Date.now();
-              try { const r=await fetchSzseSnapshot(); console.log(`第${i}次 ok`, Object.keys(r.shares).length, "只", Date.now()-t0, "ms"); }
-              catch(e){ console.log(`第${i}次 失败`, e.message, "| cause:", e.cause?.code||"-", Date.now()-t0, "ms"); }
+              try { const r=await fetchSzseSnapshot(); console.log(`ipv4first 第${i}次 ok`, r.date, Object.keys(r.shares).length, "只", Date.now()-t0, "ms"); }
+              catch(e){ console.log(`ipv4first 第${i}次 失败`, e.cause?.code||e.message, Date.now()-t0, "ms"); }
             }
           '
