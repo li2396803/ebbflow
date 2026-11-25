@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { openDb, putShares, recordRun, metaSet, metaGet, dbStats, tradingDates } from "../lib/db.mjs";
-import { fetchSseDay, fetchSzseSnapshot, candidateDates, mapLimit } from "../lib/sources.mjs";
+import { fetchSseDay, fetchSzseSnapshot, fetchSzseHistory, candidateDates, mapLimit } from "../lib/sources.mjs";
 import { shareOnDate, navOnDate, hasToken, bindBudget, callStats } from "../lib/tushare.mjs";
 import { rebuild, refreshFunds, exportSeriesJson, ingestExchangeRange, ingestTushareRange, ingestTushareNav, ingestQuotes, detectShareEvents, etfCodes } from "../lib/pipeline.mjs";
 import { putEvents, markDaySource, fillFundNames } from "../lib/db.mjs";
@@ -183,6 +183,48 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     }
   });
   if (!quiet) log(`上交所补到 ${sseDays} 个交易日`);
+
+  // 2.05) 完整性闸门：某天只有沪市、没有深市（或深市只剩零星几只）时，不能让它进时间轴。
+  //       否则会出现「大盘宽基一天掉 18%」这种假暴跌——数据缺失被当成资金流出。
+  {
+    const cov = db.prepare(
+      "SELECT f.market m, COUNT(*) n FROM share s JOIN fund f ON f.code=s.code WHERE s.date=? GROUP BY f.market"
+    );
+    for (const d of days) {
+      const rows = cov.all(d);
+      const sh = rows.find((r) => r.m === "SH")?.n ?? 0;
+      const sz = rows.find((r) => r.m === "SZ")?.n ?? 0;
+      if (sh < 300) continue; // 这天还没有沪市数据，交给下一次运行
+      if (sz >= 300) continue; // 两市都齐，正常
+      // 自愈：缺口日先把 Tushare 全天补进来（1 次请求、最稳；交易所数据一旦某天没抓到就补不回来），
+      // 再退而求其次试深交所历史接口。
+      try {
+        const m = await shareOnDate(d);
+        if (m.size >= 500) {
+          putShares(db, d, Object.fromEntries([...m].map(([c, w]) => [c, { wan: w, src: "ts" }])));
+          markDaySource(db, d, "ts");
+          const after = db.prepare(
+            "SELECT COUNT(*) n FROM share s JOIN fund f ON f.code=s.code WHERE s.date=? AND f.market='SZ'"
+          ).get(d)?.n ?? 0;
+          if (after >= 300) {
+            if (!quiet) log(`深市缺口已用 Tushare 补齐 ${d}：SZ ${after} 只`);
+            continue;
+          }
+        }
+      } catch {}
+      try {
+        const r = await fetchSzseHistory(d);
+        if (r && Object.keys(r.shares).length >= 300) { szseWrite(r.date, r.shares, "历史补"); continue; }
+      } catch {}
+      const had = db.prepare("SELECT has_sse FROM dayinfo WHERE date=?").get(d)?.has_sse;
+      if (had) {
+        db.prepare("UPDATE dayinfo SET has_sse=0 WHERE date=?").run(d);
+        warn.push(`${d} 深市只有 ${sz} 只（应为 1000+），暂不纳入时间轴，等深交所数据补齐`);
+        if (!quiet) log(`⚠ ${d} 深市仅 ${sz} 只，暂不纳入时间轴`);
+      }
+    }
+  }
+
   if (sseNames.size) {
     try {
       const r = fillFundNames(db, sseNames, "sse");
@@ -195,14 +237,23 @@ async function run({ quiet = false, lookback = 15 } = {}) {
   // 2.1) 深交所：官方接口只给「最新报告日」一档，正好够日常增量（历史由 Tushare 回补）
   //      实测深交所比上交所更早放出当日数据（21:30 已有，上交所仍需更晚），所以这里单独抓。
   let szseInfo = null;
+  // 先试快照；失败或报告日不对，再按日期查历史接口（同一份数据的另一个入口，runner 上偶发网络失败时很关键）
+  const szseWrite = (date, shares, tag) => {
+    if (!date || !shares) return null;
+    const n = Object.keys(shares).length;
+    if (n < 100) return null;
+    putShares(db, date, Object.fromEntries(Object.entries(shares).map(([c, w]) => [c, { wan: w, src: "szse" }])));
+    markDaySource(db, date, "szse");
+    if (!quiet) log(`深交所${tag} ${date}：${n} 只`);
+    return { date, count: n };
+  };
   try {
     const snap = await fetchSzseSnapshot();
     const n = Object.keys(snap.shares).length;
     // 报告日要落在本次窗口内，且不能比已知最新交易日还旧，避免把陈旧快照写回去
     const knownLatest = tradingDates(db).at(-1) ?? "";
     if (snap.date && n > 100 && snap.date >= from && snap.date >= knownLatest) {
-      putShares(db, snap.date, Object.fromEntries(Object.entries(snap.shares).map(([c, w]) => [c, { wan: w, src: "szse" }])));
-      markDaySource(db, snap.date, "szse");
+      szseWrite(snap.date, snap.shares, "快照");
       if (snap.names) {
         try {
           const r = fillFundNames(db, new Map(Object.entries(snap.names)), "szse");
@@ -221,6 +272,13 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     }
   } catch (e) {
     warn.push("深交所快照失败：" + String(e.message || e).slice(0, 60));
+    // 兜底：按日期走历史接口，把当天（以及昨天）补上
+    for (const d of [end, ...days.slice(-3).reverse()]) {
+      try {
+        const r = await fetchSzseHistory(d);
+        if (r && szseWrite(r.date, r.shares, "历史")) break;
+      } catch {}
+    }
   }
 
 
