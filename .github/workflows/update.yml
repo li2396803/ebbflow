@@ -124,6 +124,10 @@ jobs:
       # 失败（含被锁跳过）必须让 job 失败，绝不能"什么都没更新"却继续往下提交。
       - name: 增量更新数据
         env:
+          # 深交所 55 页翻页在 runner 上必被限流（单页可通、连发即 ETIMEDOUT）；
+          # 深市份额由 Tushare 全市场一次覆盖，故云端跳过。本地可 SZSE=1 验证接口。
+          SZSE: "0"
+        env:
           # 冷启动（无 DB 缓存）首跑要回补 5 年历史，放宽到两个阶段都够用；日常增量只用 ~15 次
           TUSHARE_RPM: "150"
           TUSHARE_MAX_CALLS_PER_RUN: "4200"
