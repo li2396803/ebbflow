@@ -1,0 +1,39 @@
+name: probe szse
+on: { workflow_dispatch: {} }
+permissions: { contents: read }
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: 多方案探测
+        run: |
+          set -x
+          URL='https://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1105&TABKEY=tab1&PAGENO=1'
+          echo "=== 1) 裸 curl ==="
+          timeout 20 curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" "$URL" || echo "curl 失败"
+          echo "=== 2) curl + UA/Referer ==="
+          timeout 20 curl -s -o /tmp/a.json -w "%{http_code} %{size_download}B %{time_total}s\n" \
+            -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' \
+            -H 'Referer: https://www.szse.cn/' -H 'Accept: application/json' "$URL" || echo "curl 失败"
+          head -c 120 /tmp/a.json 2>/dev/null; echo
+          echo "=== 3) node fetch ==="
+          node -e '
+            fetch("https://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1105&TABKEY=tab1&PAGENO=1",{headers:{"User-Agent":"Mozilla/5.0","Referer":"https://www.szse.cn/"}})
+              .then(r=>r.text()).then(t=>console.log("ok", t.length)).catch(e=>console.log("err", e.message, e.cause?.code||""))
+          ' || true
+          echo "=== 4) node http1 手动 ==="
+          node -e '
+            const https=require("https");
+            const req=https.request("https://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1105&TABKEY=tab1&PAGENO=1",
+              {headers:{"User-Agent":"Mozilla/5.0","Referer":"https://www.szse.cn/"},timeout:15000,family:4},r=>{
+                let n=0; r.on("data",c=>n+=c.length); r.on("end",()=>console.log("ok",r.statusCode,n));
+              });
+            req.on("timeout",()=>{console.log("timeout");req.destroy();});
+            req.on("error",e=>console.log("err",e.code||e.message));
+            req.end();
+          ' || true
+          echo "=== 5) DNS ==="
+          getent hosts www.szse.cn || nslookup www.szse.cn 2>/dev/null | tail -4 || true
