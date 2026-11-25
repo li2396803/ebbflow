@@ -3,19 +3,20 @@
    state：唯一状态源（视图 / 大类 / 区间 / 指标 / 自选 / URL）
    --------------------------------------------------------------------------
    · 区间是全局的：图表缩放、框选、表格、KPI 全部由它派生
-   · URL 是区间的持久化：?view=cat&cat=3_科技&from=…&to=…&m=shares
+   · URL 是区间的持久化：?view=cat&cat=3_科技&from=…&to=…&m=scale
    · 自选只存 localStorage，不做任何网络上报
    ========================================================================== */
 
 import { addMonths, clamp, isDesktop } from "./util.js";
+import { coverageOf, effectiveIndex } from "./coverage.js";
 
 /* ------------------------------- 常量 ------------------------------- */
 export const METRICS = [
-  { id: "shares", label: "份额", unit: "亿份", short: "份额" },
   { id: "scale", label: "规模", unit: "亿元", short: "规模" },
-  { id: "flow", label: "份额净申购", unit: "亿元", short: "份额净申购" },
+  { id: "flow", label: "净申购", unit: "亿元/日", short: "净申购" },
   { id: "pct", label: "变化率", unit: "%", short: "变化率" },
 ];
+export const DEFAULT_METRIC = "scale";
 
 /** 聚焦态下四个指标完全平等：任意子集，顺序固定（分面顺序也按这个顺序） */
 export const METRIC_IDS = METRICS.map((m) => m.id);
@@ -43,8 +44,8 @@ export const state = {
   view: "overview", // overview | cat | watch
   cat: null,
   sub: null, // 抽屉打开的小类
-  metric: "shares", // 非聚焦态的单选指标
-  metricSel: ["shares"], // 聚焦态：选中的指标集合（≥1，顺序=选择顺序）
+  metric: "scale", // 非聚焦态的单选指标：scale | flow | pct
+  metricSel: ["scale"], // 聚焦态：选中的指标集合（≥1，顺序=选择顺序）
   focusLayout: "axes", // 聚焦布局：axes（叠加多轴，默认）| panes（分面）
   norm: "win", // 变化率基准：win（区间首日）| all（全历史首日）
   preset: DEFAULT_PRESET,
@@ -56,13 +57,13 @@ export const state = {
   showAll: false, // 单系列聚焦时叠加的指标：scale / flow / pct
   log: false, // 对数坐标（份额/规模）
   focused: null, // 图例聚焦的系列名
-  marketMetric: "scale", // 市场图指标：scale | shares
-  allMetric: "shares", // 全部小类表：shares | scale
+  marketMetric: "scale", // 市场图指标：scale（v4 起只有规模）
+  allMetric: "scale", // 全部小类表：scale（v4 起只有规模）
   allSign: "all", // all | in | out
   allQuery: "",
   allSort: { key: "delta", dir: -1 },
   catSort: { key: "pct", dir: -1 },
-  topSort: { in: { key: "delta", dir: -1 }, out: { key: "delta", dir: 1 } },
+  topSort: { in: { key: "flow", dir: -1 }, out: { key: "flow", dir: 1 } },
   watch: [],
   calendar: [], // 交易日（ISO 升序）
   rangeInfo: { from: "—", to: "—", days: 0, fromIdx: -1, toIdx: -1, preset: "1y", isCustom: false },
@@ -411,14 +412,15 @@ export function readURL() {
   const view = p.get("view");
   state.view = VALID_VIEWS.has(view) ? view : "overview";
   state.cat = p.get("cat") || null;
-  const mRaw = p.get("metric") || p.get("m") || "";
+  const mRaw = p.get("m") || p.get("metric") || "";
   const ovRaw = p.get("overlay") || "";
-  let sel = mRaw
-    .split(",")
-    .map((x) => x.trim())
-    .filter((x) => METRIC_IDS.includes(x));
-  // 兼容旧链接：?metric=shares&overlay=flow,pct
-  if (ovRaw) sel = sel.concat(ovRaw.split(",").map((x) => x.trim()).filter((x) => METRIC_IDS.includes(x)));
+  const rawList = mRaw.split(",").map((x) => x.trim()).filter(Boolean);
+  if (ovRaw) rawList.push(...ovRaw.split(",").map((x) => x.trim()).filter(Boolean));
+  // v4 迁移：份额已下线 → 规模（只提示一次）
+  if (rawList.includes("shares")) state.shareMigrationNotice = true;
+  const mapped = rawList.map((x) => (x === "shares" ? "scale" : x));
+  let sel = mapped.filter((x) => METRIC_IDS.includes(x));
+  sel = Array.from(new Set(sel));
   setMetricSel(sel, { silent: true });
   state.metric = state.metricSel[0];
   const layout = p.get("layout");
@@ -469,10 +471,10 @@ export function writeURL({ push = false, replace = true } = {}) {
     p.set("r", state.preset);
   }
   if (state.sub && state.view === "cat") {
-    if (state.metricSel.join(",") !== "shares") p.set("metric", state.metricSel.join(","));
+    if (state.metricSel.join(",") !== DEFAULT_METRIC) p.set("m", state.metricSel.join(","));
     if (state.focusLayout === "axes") p.set("layout", "axes");
-  } else if (state.metric !== "shares") {
-    p.set("metric", state.metric);
+  } else if (state.metric !== DEFAULT_METRIC) {
+    p.set("m", state.metric);
   }
   if (state.norm === "all") p.set("norm", "all");
   if (state.log) p.set("log", "1");
@@ -492,10 +494,28 @@ export function writeURL({ push = false, replace = true } = {}) {
 
 /* ------------------------------- 派生：区间统计 ------------------------------- */
 /**
- * 从 subs.json 计算任意区间的小类/大类统计（份额口径）。
+ * 从 subs.json 计算任意区间的小类/大类统计（规模口径 + 区间净申购）。
  * 返回的 series 已裁剪到区间内，供 sparkline 与迷你图使用。
  */
-export function computeStats(subsPayload, r = range()) {
+/** 区间净申购（亿元）：优先 flowSeries 求和；旧数据退回快照 flow */
+function flowInRange(entry, fromIdx, toIdx, fallbackArr) {
+  const arr = entry && entry.flowSeries && entry.flowSeries.length ? entry.flowSeries : fallbackArr;
+  if (Array.isArray(arr) && arr.length && fromIdx >= 0) {
+    let sum = 0;
+    let any = false;
+    for (let i = fromIdx; i <= Math.min(toIdx, arr.length - 1); i += 1) {
+      const v = arr[i];
+      if (v != null && Number.isFinite(+v)) {
+        sum += +v;
+        any = true;
+      }
+    }
+    if (any) return +sum.toFixed(2);
+  }
+  return entry && entry.flow != null && Number.isFinite(+entry.flow) ? entry.flow : null;
+}
+
+export function computeStats(subsPayload, r = range(), chartOf = null) {
   const dates = state.calendar;
   const out = { subs: [], byName: new Map(), cats: [], byCat: new Map(), from: r.from, to: r.to, days: r.days, fromIdx: r.fromIdx, toIdx: r.toIdx };
   if (!subsPayload || r.fromIdx < 0) return out;
@@ -503,9 +523,12 @@ export function computeStats(subsPayload, r = range()) {
   const catAcc = new Map();
 
   for (const [name, entry] of Object.entries(subsPayload)) {
-    const srcDates = Array.isArray(entry.dates) && entry.dates.length ? entry.dates : dates;
-    const values = entry.values || [];
-    if (!values.length) continue;
+    // v4：规模序列唯一来源 = charts-<cat>.json（subs 里只有 flowSeries/coverage）
+    const chart = typeof chartOf === "function" ? chartOf(name) : null;
+    const chartSeries = chart?.series?.find((x) => x.name === name) || null;
+    const values = chartSeries?.scale;
+    if (!Array.isArray(values) || !values.length) continue; // charts 未加载：等补齐后再算
+    const srcDates = Array.isArray(chart?.dates) && chart.dates.length ? chart.dates : dates;
 
     // 不同来源的 dates 可能不等长：建立 date → value 的映射后按全局日历取
     let at;
@@ -543,6 +566,19 @@ export function computeStats(subsPayload, r = range()) {
       const v = at(i);
       series.push(v == null || !Number.isFinite(+v) ? null : +v);
     }
+
+    // v4：端点落在低覆盖日时向前取最近达标日（只影响端点，不改数）
+    const coverage = coverageOf(entry);
+    let firstIdxEff = firstIdx;
+    let lastIdxEff = lastIdx;
+    if (coverage) {
+      firstIdxEff = effectiveIndex(coverage, r.fromIdx);
+      lastIdxEff = effectiveIndex(coverage, r.toIdx);
+      const fv = at(firstIdxEff);
+      const lv = at(lastIdxEff);
+      if (fv != null && Number.isFinite(+fv)) first = +fv;
+      if (lv != null && Number.isFinite(+lv)) last = +lv;
+    }
     const delta = last - first;
     const pct = first !== 0 ? (delta / Math.abs(first)) * 100 : null;
     const rec = {
@@ -554,10 +590,12 @@ export function computeStats(subsPayload, r = range()) {
       delta,
       pct,
       series,
-      firstIdx,
-      lastIdx,
+      firstIdx: firstIdxEff,
+      lastIdx: lastIdxEff,
       scale: entry.scale ?? null,
-      flow: entry.flow ?? null,
+      flow: flowInRange(entry, r.fromIdx, r.toIdx, chartSeries?.flow),
+      coverage,
+      lowCoverage: coverage ? effectiveIndex(coverage, r.fromIdx) !== r.fromIdx || effectiveIndex(coverage, r.toIdx) !== r.toIdx : false,
       etfCount: entry.etfs?.length || 0,
       navCoverage: entry.navCoverage || null,
     };
@@ -608,9 +646,8 @@ export function rankOf(stats, name, key = "pct") {
 
 /** 市场合计的区间变化（用 market.json 的 total 序列） */
 export function marketRangeStats(market, r = range()) {
-  if (!market?.total?.shares || r.fromIdx < 0) return null;
+  if (!market?.total?.scale || r.fromIdx < 0) return null;
   const slice = (arr) => (Array.isArray(arr) ? arr.slice(r.fromIdx, r.toIdx + 1) : []);
-  const shares = slice(market.total.shares);
   const scale = slice(market.total.scale);
   const pick = (arr) => {
     const first = arr.find((v) => v != null && Number.isFinite(+v));
@@ -624,13 +661,11 @@ export function marketRangeStats(market, r = range()) {
     if (first == null || last == null) return { first: null, last: null, delta: null, pct: null };
     return { first: +first, last, delta: last - +first, pct: +first ? ((last - +first) / Math.abs(+first)) * 100 : null };
   };
-  const sh = pick(shares);
   const sc = pick(scale);
   return {
-    shares: { ...sh, series: shares },
     scale: { ...sc, series: scale },
-    sh: { shares: slice(market.sh?.shares), scale: slice(market.sh?.scale) },
-    sz: { shares: slice(market.sz?.shares), scale: slice(market.sz?.scale) },
+    sh: { scale: slice(market.sh?.scale) },
+    sz: { scale: slice(market.sz?.scale) },
     dates: state.calendar.slice(r.fromIdx, r.toIdx + 1),
   };
 }

@@ -24,6 +24,22 @@
 
 ---
 
+## v4.0.0 变更（重要）
+
+| 字段 | 状态 | 说明 |
+| --- | --- | --- |
+| `subs[name].values` | **已下线**（恒为 `null`，附 `valuesDeprecated: true`） | 旧的「份额（亿份）」序列；份额不再对外展示（不可跨标的相加） |
+| `subs[name].flowSeries` | 新增 | 逐日净申购（亿元/日），区间求和用 |
+| `subs[name].coverage` | 新增 | 逐日覆盖率（0..1，有数据成分数/成分总数），<0.6 为低覆盖 |
+| `subs[name].scaleSeries` | **不下发**（`scaleSeriesSource: "charts"`） | 规模序列统一从 `charts-<cat>.json` 的 `series[].scale` 取，避免重复传输 |
+| `subs[name].currentScale` | 新增 | 末日内部分额值对应的规模（亿元） |
+| `subs[name].etfRangesFile` | 新增 | 指向 `etf-ranges/<cat>.json`，内含每只 ETF 的预设区间精确指标 |
+| `charts-<cat>.json` | 口径变更 | `series[]` 由 `name,color,shares` 改为 `name,color,scale,flow`，`unit: "亿元"` |
+| `tables` | 口径变更 | 排行改按「区间规模变化额」，`pct` 为规模变化率，类目行为 Σ 小类规模 |
+
+口径定义见 [METRICS.md](METRICS.md)；`docs/METRICS.md` §5 是实现说明（覆盖率同源、区间净申购含期初当天、月末对齐、缺值写 null）。
+
+
 ## 1. 表总览
 
 | 表 | 角色 | 粒度（主键） | 写入者 | 更新频率 |

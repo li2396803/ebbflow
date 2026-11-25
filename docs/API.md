@@ -564,3 +564,15 @@ node -e 'const m=require("./site/data/meta.json");console.log(m.taxonomy,m.lastT
 - 债券 ×100：v3.8.0 修复后用 `site/data/subs.json` 复测，bond 与非 bond 的「小类值 / 成分合计」比值均为 1.00。
 - `quote` 字段单位：用 `close × vol / 10 ≈ amount`（误差 0.4%）确认 `vol` 为「手」、`amount` 为「千元」。
 - 未实跑：`/api/refresh`（会触发联网更新）、`/api/status` 的运行时字段（示例为结构说明）。
+
+## v4.0.0 契约变更
+
+- `GET /api/subs` 与 `site/data/subs.json`：
+  - 新增 `flowSeries`（亿元/日）、`coverage`（0..1）、`currentScale`；
+  - **不再下发** `scaleSeries`（改从 `charts-<cat>.json` 的 `series[].scale` 取）；
+  - `values` 恒为 `null` 并带 `valuesDeprecated: true`（份额已下线）。
+- `GET /api/charts/:cat` 与 `site/data/charts-<cat>.json`：`series[]` 为 `name,color,scale,flow`，`unit: "亿元"`。
+- 新增 `site/data/etf-ranges/<cat>.json`：
+  `{ cat, periods: ["1m","3m","6m","1y","3y","5y"], unit, subs: { 小类: { period: { code: { chgPct, flow, scaleEnd } } } } }`
+- `GET /api/tables`：排行改为区间规模变化额，`pct` 为规模变化率。
+

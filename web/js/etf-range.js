@@ -1,24 +1,43 @@
 // @ts-check
 /* ==========================================================================
-   etf-range：让成分 ETF 表的指标跟随「当前区间」
+   etf-range：成分 ETF 表的区间指标（v4）
    --------------------------------------------------------------------------
-   数据现状（subs.json / charts-*.json）：
-   · 小类级有逐日的份额（subs.values）、规模（charts.series[].scale）与
-     份额净申购（charts.series[].flow）
-   · ETF 级只有最新快照（shares/scale/flow/...），没有逐日序列
-   因此按约定做「小类级 × ETF 最新权重」估算，并在表头标注「近似」：
-   · 区间份额变化 % = 小类期初/期末份额变化（同一小类内各 ETF 相同）
-   · 区间净申购 = 小类区间 flow 求和 × 该 ETF 最新份额权重
-   · 期末规模   = 小类期末规模 × 该 ETF 最新份额权重
-   · 折溢价     = 仅当区间终点=最新交易日时用快照值，否则留空（不编造）
+   · 优先使用后端下发的精确值 etfRanges[preset][code] = {chgPct, flow, scaleEnd}
+   · 自定义区间或数据包没有 etfRanges 时，回退「小类级 × ETF 规模权重」估算，
+     并在表头保留「近似」标注（绝不冒充满分数据）
+   · 期初/期末 = 当前区间首尾交易日；端点落在低覆盖日（coverage<0.6）时向前
+     取最近达标日，并在 tooltip 注明
    ========================================================================== */
 import { load } from "./api.js";
 import { state } from "./state.js";
+import { coverageOf, effectiveIndex } from "./coverage.js";
 
 /** @type {Map<string, Promise<any>>} */
 const loading = new Map();
+/** @type {Map<string, Promise<any>>} */
+const rangeLoading = new Map();
 
-/** 读取某大类的 charts 载荷：优先内存缓存（app.chartData），其次 data/charts-*.json */
+/** etfRanges 按大类分片懒加载：etf-ranges/<cat>.json */
+async function loadEtfRanges(app, cat) {
+  if (!cat) return null;
+  if (app?.etfRanges?.has?.(cat)) return app.etfRanges.get(cat);
+  if (rangeLoading.has(cat)) return rangeLoading.get(cat);
+  const p = load(`etf-ranges/${cat}`)
+    .then((data) => {
+      try {
+        app?.etfRanges?.set?.(cat, data);
+      } catch {}
+      rangeLoading.delete(cat);
+      return data;
+    })
+    .catch(() => {
+      rangeLoading.delete(cat);
+      return null;
+    });
+  rangeLoading.set(cat, p);
+  return p;
+}
+
 async function ensureChart(app, cat) {
   if (!cat) return null;
   if (app?.chartData?.has?.(cat)) return app.chartData.get(cat);
@@ -41,7 +60,6 @@ async function ensureChart(app, cat) {
 
 const clampIdx = (i, len) => Math.max(0, Math.min(len - 1, Number.isFinite(i) ? i : 0));
 
-/** 区间内求和（跳过 null） */
 function sumRange(arr, i0, i1) {
   if (!Array.isArray(arr) || !arr.length) return null;
   let sum = 0;
@@ -56,8 +74,22 @@ function sumRange(arr, i0, i1) {
   return any ? sum : null;
 }
 
+/** 本次区间能用的精确值表（仅预设区间；自定义区间返回 null） */
+function exactMap(entry, subName, shard) {
+  if (!entry || state.custom) return null;
+  const preset = state.preset;
+  if (!preset) return null;
+  const map =
+    (entry.etfRanges && entry.etfRanges[preset]) ||
+    (shard && shard[preset]) ||
+    (shard && shard.subs && shard.subs[subName] && shard.subs[subName][preset]) ||
+    null;
+  if (!map || typeof map !== "object") return null;
+  return Object.keys(map).length ? map : null;
+}
+
 /**
- * 计算区间上下文（供表格 decorate 使用）
+ * 区间上下文
  * @param {any} app
  * @param {string} subName
  * @param {any[]} rows
@@ -65,31 +97,46 @@ function sumRange(arr, i0, i1) {
 export async function rangeContext(app, subName, rows) {
   const entry = app?.subs?.[subName];
   if (!entry) return null;
-  const vals = Array.isArray(entry.values) ? entry.values : [];
-  const r = /** @type {any} */ (state.rangeInfo || {});
-  const i0 = clampIdx(r.fromIdx ?? 0, vals.length);
-  const i1 = clampIdx(r.toIdx ?? vals.length - 1, vals.length);
-  const first = vals[i0];
-  const last = vals[i1];
-  const pct = first != null && last != null && first !== 0 ? ((last - first) / first) * 100 : null;
-
   const chart = await ensureChart(app, entry.cat);
   const series = chart?.series?.find((s) => s.name === subName) || null;
-  const flowSum = sumRange(series?.flow, i0, i1);
-  const scaleEnd = series?.scale ? series.scale[i1] : null;
-
-  const totalShares = (rows || []).reduce((acc, x) => acc + (Number.isFinite(x?.shares) ? x.shares : 0), 0);
-  const latestIdx = vals.length - 1;
+  // 规模序列唯一来源 = charts-<cat>.json（subs.scaleSeries 已置 null）
+  const scale = (series && series.scale) || [];
+  const flowArr = Array.isArray(entry.flowSeries) && entry.flowSeries.length ? entry.flowSeries : series?.flow;
+  const coverage = coverageOf(entry) || coverageOf(series);
+  const r = /** @type {any} */ (state.rangeInfo || {});
+  const i0 = clampIdx(r.fromIdx ?? 0, scale.length);
+  const i1 = clampIdx(r.toIdx ?? scale.length - 1, scale.length);
+  const eff0 = coverage ? effectiveIndex(coverage, i0) : i0;
+  const eff1 = coverage ? effectiveIndex(coverage, i1) : i1;
+  const startScale = scale[eff0];
+  const endScale = scale[eff1];
+  const scalePct =
+    startScale != null && endScale != null && Number.isFinite(+startScale) && Number.isFinite(+endScale) && +startScale !== 0
+      ? ((endScale - startScale) / Math.abs(startScale)) * 100
+      : null;
+  const flowSum = sumRange(flowArr, i0, i1);
+  const totalScale = (rows || []).reduce((acc, x) => acc + (Number.isFinite(x?.scale) ? x.scale : 0), 0);
+  const latestIdx = scale.length - 1;
+  const shard = await loadEtfRanges(app, entry.cat);
+  const exact = exactMap(entry, subName, shard);
   return {
-    pct,
+    mode: exact ? "exact" : "approx",
+    exact,
+    preset: state.preset,
+    scalePct,
     flowSum,
-    scaleEnd,
-    totalShares,
+    scaleEnd: endScale,
+    totalScale,
+    coverage,
     atLatest: i1 >= latestIdx,
     i0,
     i1,
+    eff0,
+    eff1,
+    endpointsAdjusted: eff0 !== i0 || eff1 !== i1,
     from: r.from,
     to: r.to,
+    dates: entry.dates || state.calendar,
   };
 }
 
@@ -99,20 +146,36 @@ export async function rangeContext(app, subName, rows) {
  * @param {any} ctx
  */
 export function decorateRows(rows, ctx) {
-  const total = ctx?.totalShares || 0;
+  const total = ctx?.totalScale || 0;
   return (rows || []).map((r) => {
-    const w = total > 0 && Number.isFinite(r?.shares) ? r.shares / total : null;
+    const w = total > 0 && Number.isFinite(r?.scale) ? r.scale / total : null;
+    const ex = ctx?.mode === "exact" && ctx.exact ? ctx.exact[r.code] : null;
+    const pctRange = ex && ex.chgPct != null ? +ex.chgPct : ctx?.mode === "approx" ? ctx?.scalePct ?? null : null;
+    const flowRange =
+      ex && ex.flow != null ? +ex.flow : ctx?.mode === "approx" && w != null && ctx?.flowSum != null ? ctx.flowSum * w : null;
+    const scaleEnd =
+      ex && ex.scaleEnd != null ? +ex.scaleEnd : ctx?.mode === "approx" && w != null && ctx?.scaleEnd != null ? ctx.scaleEnd * w : null;
     return {
       ...r,
       weightPct: w != null ? w * 100 : null,
-      pctRange: ctx?.pct ?? null,
-      flowRange: w != null && ctx?.flowSum != null ? ctx.flowSum * w : null,
-      scaleEnd: w != null && ctx?.scaleEnd != null ? ctx.scaleEnd * w : null,
-      // 只有区间终点=最新交易日时，快照里的折溢价才是「期末值」
+      pctRange,
+      flowRange,
+      scaleEnd,
       premiumEnd: ctx?.atLatest && r?.premium != null ? r.premium : null,
+      approx: ctx?.mode !== "exact",
+      endpointNote: endpointNote(ctx),
     };
   });
 }
 
-/** 表头「近似」角标（小类级 × 权重估算） */
-export const APPROX_TIP = "小类级日序列 × 该 ETF 最新份额权重估算（ETF 级逐日数据未提供）";
+export const APPROX_TIP = "小类级规模日序列 × 该 ETF 当前规模权重估算（自定义区间无精确值）";
+
+/** 端点回退说明（供 tooltip） */
+export function endpointNote(ctx) {
+  if (!ctx || !ctx.endpointsAdjusted) return "";
+  const dates = ctx.dates || [];
+  const parts = [];
+  if (ctx.eff0 !== ctx.i0) parts.push(`期初回退至 ${dates[ctx.eff0] || "—"}`);
+  if (ctx.eff1 !== ctx.i1) parts.push(`期末回退至 ${dates[ctx.eff1] || "—"}`);
+  return parts.join("；");
+}

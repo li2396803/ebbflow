@@ -13,6 +13,7 @@ import "./cases/series.mjs";
 import "./cases/range.mjs";
 import "./cases/reconcile.mjs";
 import "./cases/invariants.mjs";
+import "./cases/metrics.mjs";
 import "./cases/platform.mjs";
 import "./cases/exchange.mjs";
 

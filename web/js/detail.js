@@ -5,7 +5,7 @@
 import { cnum, download, esc, fmtPct, fmtSigned, skeletonRows, toCSV, toneColor, isDark, emptyState } from "./util.js";
 import { flowEstimate, catLabelOf } from "./views.js";
 import { attachQuotes, quoteEnabled } from "./quote.js";
-import { rangeContext, decorateRows, APPROX_TIP } from "./etf-range.js";
+import { rangeContext, decorateRows, endpointNote, APPROX_TIP } from "./etf-range.js";
 import { rankOf, state } from "./state.js";
 import { closeOverlay, openOverlay, toast } from "./ui.js";
 import { createMiniChart } from "./chart.js";
@@ -65,7 +65,7 @@ const SORT_LABEL = {
   code: "代码",
   name: "名称",
   price: "最新价",
-  pctRange: "区间份额变化",
+  pctRange: "区间规模变化",
   flowRange: "区间净申购",
   scaleEnd: "期末规模",
   premiumEnd: "折溢价",
@@ -102,6 +102,7 @@ export function renderInlineEtfTable(app, subName, host) {
     const pages = paged ? Math.ceil(sorted.length / 50) : 1;
     st.page = Math.min(st.page, pages - 1);
     const view = paged ? sorted.slice(st.page * 50, st.page * 50 + 50) : sorted;
+    const approx = ctx?.mode !== "exact";
     const sortHead = (key, label, extra = "", numeric = true, note = "") =>
       `<th scope="col" data-isort="${key}" class="${extra}" aria-sort="${
         st.key === key ? (st.dir > 0 ? "ascending" : "descending") : "none"
@@ -130,9 +131,9 @@ export function renderInlineEtfTable(app, subName, host) {
             ${sortHead("code", "代码", "t-2xs", false)}
             ${sortHead("name", "名称", "", false)}
             ${sortHead("price", quoteEnabled() ? "最新价" : "收盘价", "num col-price")}
-            ${sortHead("pctRange", "区间份额变化", "num", true, "近似")}
-            ${sortHead("flowRange", "区间净申购", "num", true, "近似")}
-            ${sortHead("scaleEnd", "期末规模", "num", true, "近似")}
+            ${sortHead("pctRange", "区间规模变化", "num", true, approx ? "近似" : "")}
+            ${sortHead("flowRange", "区间净申购", "num", true, approx ? "近似" : "")}
+            ${sortHead("scaleEnd", "期末规模", "num", true, approx ? "近似" : "")}
             <th scope="col" class="num" title="区间终点为最新交易日时取快照，否则留空">折溢价</th>
             <th scope="col" class="num">占本类</th>
           </tr></thead>
@@ -163,7 +164,7 @@ export function renderInlineEtfTable(app, subName, host) {
       }
       if (/** @type {HTMLElement} */ (e.target).closest("[data-icsv]")) {
         const csv = toCSV([
-          ["代码", "名称", "市场", "最新价(元)", "区间份额变化(%)", "区间净申购(亿元)", "期末规模(亿元)", "折溢价(%)", "占本类(%)"],
+          ["代码", "名称", "市场", "最新价(元)", "区间规模变化(%)", "区间净申购(亿元)", "期末规模(亿元)", "折溢价(%)", "占本类(%)"],
           ...sorted.map((r) => [
             r.code,
             r.name,
@@ -309,12 +310,12 @@ function renderDetail(app, name, s, entry) {
         }</span>
       </div>
       <dl class="kpi-mini">
-        <div><dt>最新份额</dt><dd class="num">${esc(cnum(s?.last, 1))}<span class="unit">亿份</span></dd></div>
-        <div><dt>规模（估算）</dt><dd class="num">${s?.scale != null ? esc(cnum(s.scale, 1)) : "—"}<span class="unit">亿元</span></dd></div>
+        <div><dt>最新规模</dt><dd class="num">${esc(cnum(s?.last, 1))}<span class="unit">亿元</span></dd></div>
+        <div><dt>区间起点规模</dt><dd class="num">${esc(cnum(s?.first, 1))}<span class="unit">亿元</span></dd></div>
         <div><dt>区间变化</dt><dd class="num ${s?.pct > 0 ? "up" : s?.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s?.pct, 2))}</dd></div>
-        <div><dt>区间份额净申购${app.chartData?.has(s?.cat || entry?.cat) ? "" : "（估算）"}</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>
+        <div><dt>区间净申购${app.chartData?.has(s?.cat || entry?.cat) ? "" : "（估算）"}</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>
       </dl>
-      <p class="t-2xs dim" style="margin-top:2px">份额变化 ${esc(fmtSigned(s?.delta, 1))} 亿份 ｜ 成分 ETF ${rows.length} 只${
+      <p class="t-2xs dim" style="margin-top:2px">规模变化 ${esc(fmtSigned(s?.delta, 1))} 亿元 ｜ 成分 ETF ${rows.length} 只${
         nav ? ` ｜ 净值覆盖 ${nav.hit}/${nav.total}` : ""
       }</p>
     </section>
@@ -346,9 +347,9 @@ function renderDetail(app, name, s, entry) {
               <th scope="col" data-esort="code" aria-sort="none"><button type="button"><span class="th-label">代码</span><span class="sort-ico"></span></button></th>
               <th scope="col" data-esort="name" aria-sort="none"><button type="button"><span class="th-label">名称</span><span class="sort-ico"></span></button></th>
               <th scope="col" data-esort="price" class="num col-price" aria-sort="none"><button type="button"><span class="th-label">最新价</span><span class="sort-ico"></span></button></th>
-              <th scope="col" data-esort="pctRange" class="num" aria-sort="none"><button type="button"><span class="th-label">区间份额变化</span><span class="sort-ico"></span></button><span class="th-approx" tabindex="0" role="note" title="小类级日序列 × 该 ETF 最新份额权重估算（ETF 级逐日数据未提供）">近似</span></th>
-              <th scope="col" data-esort="flowRange" class="num" aria-sort="descending"><button type="button"><span class="th-label">区间净申购</span><span class="sort-ico"></span></button><span class="th-approx" tabindex="0" role="note" title="小类级日序列 × 该 ETF 最新份额权重估算（ETF 级逐日数据未提供）">近似</span></th>
-              <th scope="col" data-esort="scaleEnd" class="num" aria-sort="none"><button type="button"><span class="th-label">期末规模</span><span class="sort-ico"></span></button><span class="th-approx" tabindex="0" role="note" title="小类级日序列 × 该 ETF 最新份额权重估算（ETF 级逐日数据未提供）">近似</span></th>
+              <th scope="col" data-esort="pctRange" class="num" aria-sort="none"><button type="button"><span class="th-label">区间规模变化</span><span class="sort-ico"></span></button><span class="th-approx" tabindex="0" role="note" title="小类级规模日序列 × 该 ETF 当前规模权重估算（自定义区间无精确值）">近似</span></th>
+              <th scope="col" data-esort="flowRange" class="num" aria-sort="descending"><button type="button"><span class="th-label">区间净申购</span><span class="sort-ico"></span></button><span class="th-approx" tabindex="0" role="note" title="小类级规模日序列 × 该 ETF 当前规模权重估算（自定义区间无精确值）">近似</span></th>
+              <th scope="col" data-esort="scaleEnd" class="num" aria-sort="none"><button type="button"><span class="th-label">期末规模</span><span class="sort-ico"></span></button><span class="th-approx" tabindex="0" role="note" title="小类级规模日序列 × 该 ETF 当前规模权重估算（自定义区间无精确值）">近似</span></th>
               <th scope="col" data-esort="premiumEnd" class="num" aria-sort="none" title="区间终点为最新交易日时取快照，否则留空"><button type="button"><span class="th-label">折溢价</span><span class="sort-ico"></span></button></th>
               <th scope="col" class="num">占本类</th>
             </tr>
@@ -356,7 +357,7 @@ function renderDetail(app, name, s, entry) {
           <tbody></tbody>
         </table>
       </div>
-      <p class="t-2xs faint">区间列跟随上方选择的区间：<b>区间份额变化</b> = 小类期初→期末份额变化率；<b>区间净申购</b> = 小类区间份额净申购合计；<b>期末规模</b> = 小类期末规模。ETF 级逐日数据未提供，三项均按「小类级 × 该 ETF 最新份额权重」估算（表头标「近似」），不是 ETF 逐日精确值；「最新价 / 折溢价」为最新交易日快照，折溢价仅在区间终点=最新交易日时展示。</p>
+      <p class="t-2xs faint" id="etfRangeNote">区间列跟随上方区间：<b>区间规模变化</b> / <b>区间净申购</b> / <b>期末规模</b>；区间净申购含期初当天。端点为低覆盖日时会向前取最近达标日（tooltip 注明实际日期）；「最新价 / 折溢价」为最新交易日快照，折溢价仅在区间终点=最新交易日时展示。</p>
     </section>`;
 
   drawerRows = rows;
@@ -370,7 +371,7 @@ function renderDetail(app, name, s, entry) {
     dates: state.rangeInfo.fromIdx >= 0 ? state.calendar.slice(state.rangeInfo.fromIdx, state.rangeInfo.toIdx + 1) : [],
     values: s?.series || [],
     color,
-    unit: "亿份",
+    unit: "亿元",
     name,
   });
 
@@ -383,7 +384,7 @@ function renderDetail(app, name, s, entry) {
   });
 
   document.getElementById("etfCsv")?.addEventListener("click", () => {
-    const header = ["代码", "名称", "市场", "最新价(元)", "区间份额变化(%)", "区间净申购(亿元)", "期末规模(亿元)", "折溢价(%)", "占本类(%)"];
+    const header = ["代码", "名称", "市场", "最新价(元)", "区间规模变化(%)", "区间净申购(亿元)", "期末规模(亿元)", "折溢价(%)", "占本类(%)"];
     const data = drawerSorted.map((r) => [
       r.code,
       r.name,
@@ -401,9 +402,9 @@ function renderDetail(app, name, s, entry) {
 
   document.getElementById("seriesCsv")?.addEventListener("click", () => {
     const dates = state.calendar.slice(state.rangeInfo.fromIdx, state.rangeInfo.toIdx + 1);
-    const header = ["日期", `${name}份额(亿份)`];
+    const header = ["日期", `${name}规模(亿元)`];
     const data = (s?.series || []).map((v, i) => [dates[i], v ?? ""]);
-    download(`${name}-份额-${state.rangeInfo.from}-${state.rangeInfo.to}.csv`, toCSV([header, ...data]));
+    download(`${name}-规模-${state.rangeInfo.from}-${state.rangeInfo.to}.csv`, toCSV([header, ...data]));
     toast("已导出走势 CSV", "ok");
   });
 }
@@ -423,10 +424,10 @@ function renderMissingDetail(app, name, s) {
       ${
         s
           ? `<dl class="kpi-mini">
-              <div><dt>最新份额</dt><dd class="num">${esc(cnum(s.last, 1))}<span class="unit">亿份</span></dd></div>
-              <div><dt>规模（估算）</dt><dd class="num">${s.scale != null ? esc(cnum(s.scale, 1)) : "—"}<span class="unit">亿元</span></dd></div>
+              <div><dt>最新规模</dt><dd class="num">${esc(cnum(s.last, 1))}<span class="unit">亿元</span></dd></div>
+              <div><dt>区间起点规模</dt><dd class="num">${esc(cnum(s.first, 1))}<span class="unit">亿元</span></dd></div>
               <div><dt>区间变化</dt><dd class="num ${s.pct > 0 ? "up" : s.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s.pct, 2))}</dd></div>
-              <div><dt>区间份额净申购</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>
+              <div><dt>区间净申购</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>
             </dl>`
           : ""
       }
@@ -454,10 +455,6 @@ export function etfRowHTML(r, totalScale, app) {
   const pctCls = r.pctRange == null ? "flat" : r.pctRange > 0 ? "up" : r.pctRange < 0 ? "down" : "flat";
   const flowCls = r.flowRange == null ? "flat" : r.flowRange > 0 ? "up" : r.flowRange < 0 ? "down" : "flat";
   const share = r.weightPct;
-  const deltaShares =
-    r.pctRange != null && r.pctRange > -100 && Number.isFinite(r.shares)
-      ? r.shares - r.shares / (1 + r.pctRange / 100)
-      : null;
   return `<tr>
     <td class="mono t-2xs">${code}</td>
     <td class="etf-name-cell">
@@ -466,11 +463,17 @@ export function etfRowHTML(r, totalScale, app) {
       ${renderTags(r.tags, app?.meta?.tagDims)}
     </td>
     <td class="num col-price" data-code="${code}">${r.price != null ? esc(cnum(r.price, 3)) : "—"}</td>
-    <td class="num ${pctCls}"${
-      deltaShares != null ? ` title="小类级估算，约 ${esc(fmtSigned(deltaShares, 1))} 亿份（ETF 级逐日数据未提供）"` : ""
-    }>${r.pctRange != null ? esc(fmtSigned(r.pctRange, 2)) + "%" : "—"}</td>
-    <td class="num ${flowCls}" title="小类级区间净申购 × 该 ETF 最新份额权重">${r.flowRange != null ? esc(fmtSigned(r.flowRange, 1)) : "—"}</td>
-    <td class="num" title="小类期末规模 × 该 ETF 最新份额权重">${r.scaleEnd != null ? esc(cnum(r.scaleEnd, 1)) : "—"}</td>
+    <td class="num ${pctCls}" title="${
+      r.approx
+        ? `估算：小类级区间规模变化 × 该 ETF 当前规模权重${r.endpointNote ? "；" + r.endpointNote : ""}`
+        : "区间规模变化（ETF 精确值）"
+    }">${r.pctRange != null ? esc(fmtSigned(r.pctRange, 2)) + "%" : "—"}</td>
+    <td class="num ${flowCls}" title="${
+      r.approx ? `估算：小类级区间净申购 × 该 ETF 当前规模权重${r.endpointNote ? "；" + r.endpointNote : ""}` : "区间净申购（ETF 精确值）"
+    }">${r.flowRange != null ? esc(fmtSigned(r.flowRange, 1)) : "—"}</td>
+    <td class="num" title="${r.approx ? "估算：小类期末规模 × 该 ETF 当前规模权重" : "期末规模（ETF 精确值）"}">${
+      r.scaleEnd != null ? esc(cnum(r.scaleEnd, 1)) : "—"
+    }</td>
     <td class="num ${premCls}${premStrong}"${
       prem == null && r.premium != null
         ? ' title="区间终点不是最新交易日，没有逐日期末折溢价（不编造）"'
@@ -516,6 +519,17 @@ async function renderEtfTable(rows = drawerRows, totalScale = drawerTotalScale) 
   const token = ++drawerRenderToken;
   const ctx = name ? await rangeContext(app, name, rows) : null;
   if (token !== drawerRenderToken || current !== name) return;
+  const approx = ctx?.mode !== "exact";
+  document.querySelectorAll("#tblEtf .th-approx").forEach((el) => {
+    /** @type {HTMLElement} */ (el).hidden = !approx;
+  });
+  const note = document.getElementById("etfRangeNote");
+  if (note) {
+    const ep = ctx?.endpointsAdjusted ? `；${endpointNote(ctx)}` : "";
+    note.innerHTML = approx
+      ? `区间列按「小类级规模 × 该 ETF 当前规模权重」估算（表头标「近似」）：<b>区间规模变化</b> = 小类期初→期末规模变化率，<b>区间净申购</b> = 小类区间净申购 × 权重（含期初当天），<b>期末规模</b> = 小类期末规模 × 权重${ep}。`
+      : `区间列为后端按 ETF 逐日数据计算的<b>精确值</b>（预设区间）：区间规模变化 / 区间净申购（含期初当天）/ 期末规模。自定义区间无精确值时自动回退为估算并标「近似」。`;
+  }
   const decorated = decorateRows(rows, ctx);
   const sorted = sortEtfRows(decorated, etfSort);
   drawerSorted = sorted;
@@ -564,7 +578,7 @@ export async function exportAllEtfs() {
   const header = [
     "代码", "名称", "大类", "小类", "市场",
     ...prefixCols.map(([, label]) => label),
-    "份额(亿份)", "规模(亿元)", "折溢价(%)", "成交额(亿元)", "换手率(%)", "上市日",
+    "规模(亿元)", "折溢价(%)", "成交额(亿元)", "换手率(%)", "上市日",
   ];
   const rows = [];
   for (const [subName, sub] of Object.entries(subs)) {
@@ -582,7 +596,6 @@ export async function exportAllEtfs() {
         subName,
         e.market || "",
         ...prefixCols.map(([p]) => tagMap[p] || ""),
-        e.shares ?? "",
         e.scale ?? "",
         e.premium ?? "",
         e.amount ?? "",
@@ -616,14 +629,6 @@ export function initAllSubs(app, hooks) {
     if (!b) return;
     state.allSign = b.dataset.sign;
     document.querySelectorAll("#allSign [data-sign]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-    renderAllTable();
-  });
-  document.getElementById("allMetric")?.addEventListener("click", async (e) => {
-    const b = e.target.closest("[data-m]");
-    if (!b) return;
-    state.allMetric = b.dataset.m;
-    document.querySelectorAll("#allMetric [data-m]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-    if (state.allMetric === "scale" && !allCache) await prepareScaleData();
     renderAllTable();
   });
   document.getElementById("allCsv")?.addEventListener("click", exportAllCsv);
@@ -669,7 +674,7 @@ export async function openAllSubs(opts = {}) {
     }
   }
   renderAllTable();
-  if (state.allMetric === "scale" && !allCache) await prepareScaleData();
+  if (!allHooks.app?.subsReady) await allHooks.ensureSubs?.().catch(() => {});
 }
 
 /** 金额口径：按需拉全部大类 charts（约 1.2–1.7MB），计算区间 scale 变化 */
@@ -697,9 +702,7 @@ async function prepareScaleData() {
   }
   if (sub) sub.textContent = `金额口径 · ${rangeTextShort()} · 已加载 ${allCache.size} 个小类`;
   if (!allCache.size) {
-    toast("金额序列加载失败，已回退到份额口径", "error");
-    state.allMetric = "shares";
-    document.querySelectorAll("#allMetric [data-m]").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.m === "shares")));
+    toast("规模序列加载失败，请稍后重试", "error");
   }
 }
 
@@ -719,13 +722,11 @@ function allRows() {
   const stats = app?.stats;
   if (!stats) return [];
   const q = state.allQuery.trim().toLowerCase();
-  const isScale = state.allMetric === "scale" && allCache;
   let rows = stats.subs.map((s) => {
-    const extra = isScale ? allCache.get(s.name) : null;
-    const first = extra ? extra.first : s.first;
-    const last = extra ? extra.last : s.last;
-    const delta = extra ? extra.delta : s.delta;
-    const pct = extra ? extra.pct : s.pct;
+    const first = s.first;
+    const last = s.last;
+    const delta = s.delta;
+    const pct = s.pct;
     const catTotal = stats.byCat.get(s.cat)?.last || 0;
     return {
       sub: s.name,
@@ -764,7 +765,7 @@ function renderAllTable() {
   const tbody = tbl.querySelector("tbody");
   const rows = allRows();
   const count = document.getElementById("allCount");
-  const unit = state.allMetric === "scale" ? "亿元" : "亿份";
+  const unit = "亿元";
   if (count) {
     const total = allHooks.app?.meta?.counts?.subs;
     count.textContent = `共 ${rows.length} 个小类有区间数据${total && total !== rows.length ? `（口径共 ${total} 个）` : ""} · 单位 ${unit} · ${rangeTextShort()}`;
@@ -804,7 +805,7 @@ function renderAllTable() {
 
 function exportAllCsv() {
   const rows = allRows();
-  const unit = state.allMetric === "scale" ? "亿元" : "亿份";
+  const unit = "亿元";
   const header = ["细分行业", "大类", `区间起点(${unit})`, `区间终点(${unit})`, `变化量(${unit})`, "变化率(%)", "本类占比(%)"];
   const data = rows.map((r) => [
     r.sub,
@@ -815,7 +816,7 @@ function exportAllCsv() {
     r.pct != null ? r.pct.toFixed(2) : "",
     r.share != null ? r.share.toFixed(2) : "",
   ]);
-  download(`全部小类-${state.rangeInfo.from}-${state.rangeInfo.to}-${state.allMetric}.csv`, toCSV([header, ...data]));
+  download(`全部小类-${state.rangeInfo.from}-${state.rangeInfo.to}.csv`, toCSV([header, ...data]));
   toast("已导出全部小类 CSV", "ok");
 }
 
@@ -891,7 +892,7 @@ function renderQuality(q) {
     </div>
     <div class="notice" style="margin:0 0 var(--sp-3)">
       <svg aria-hidden="true"><use href="#i-info"/></svg>
-      <span>校验口径：把「成分 ETF 份额之和」与交易所披露的同名小类口径对比，容差外记为差异。差异通常来自停牌、净值缺失或成分变更，属正常现象。${
+      <span>校验口径：把「成分 ETF 合计（按份额×净值折算）」与交易所披露的同名小类口径对比，容差外记为差异。差异通常来自停牌、净值缺失或成分变更，属正常现象。${
         s.worstSub?.sub ? `本轮偏离最大的小类：${esc(s.worstSub.sub)}（${esc(s.worstSub.note || "")}）。` : ""
       }</span>
     </div>

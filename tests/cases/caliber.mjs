@@ -4,11 +4,13 @@ import { computeDay } from "../../lib/aggregate.mjs";
 import { subValues } from "../../lib/validate.mjs";
 import { subCodes } from "../helpers.mjs";
 
+// 内部分额口径（series.val）：v4 起份额不再对外展示，只用于计算净申购；
+// 对外的「规模/净申购/变化率」见 tests/cases/metrics.mjs。
 // 固定样本：60000 万份 = 6 亿份；债券类再 ×100
 const SUB_A = "A股大盘"; // 67 只成分
 const SUB_B = "信用债"; // 4 只成分，属 9_债券
 
-test("口径：sum/1e4 与债券 ×100（固定 3 只基金样本）", () => {
+test("内部分额口径：sum/1e4 与债券 ×100（series.val，不再对外展示）", () => {
   const a = subCodes(SUB_A);
   const sharesA = { [a[0]]: 10000, [a[1]]: 20000, [a[2]]: 30000 }; // 合计 60000 万份
   assertEq(computeDay([SUB_A], sharesA)[SUB_A], 6, "3 只合计 60000 万份 → 6 亿份");

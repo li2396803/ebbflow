@@ -60,9 +60,17 @@ import * as detail from "./detail.js";
 import { initDetail, openDetail, initAllSubs, openAllSubs, initQuality } from "./detail.js";
 import { toast } from "./ui.js";
 import { COMPARE_COLORS } from "./util.js";
+import { coverageOf, effectiveIndex, lowSpans, LOW_COVERAGE } from "./coverage.js";
 
 // 是否显式要求在本机启用 Service Worker（写 URL 前捕获，避免被 writeURL 清掉查询参数）
 const SW_FORCED = new URLSearchParams(location.search).has("sw");
+const DEBUG_STATE = (() => {
+  try {
+    return new URLSearchParams(location.search).has("debug");
+  } catch {
+    return false;
+  }
+})();
 
 const app = {
   meta: null,
@@ -80,6 +88,7 @@ const app = {
   subsReady: false,
   indexReady: false,
   chartData: new Map(),
+  etfRanges: new Map(),
   pinyinOf: (name) => app.pinyin.get(name) || "",
   onMarketRender: (p) => chart.renderMarket(p),
   onCategoryRender: (key) => renderCatChart(key),
@@ -89,10 +98,10 @@ let palette = null;
 let marketReady = false;
 let mainReady = false;
 let freshChartToken = 0;
-const FOCUS_COLORS = { shares: "#4B57D6", scale: "#0E9C9C", pct: "#8B5CF6" };
+const FOCUS_COLORS = { scale: "#0E9C9C", flow: "#C8322D", pct: "#8B5CF6" };
 const OVERLAY_COLORS = { scale: "#0e9c9c", pct: "#8b5cf6", flow: "#8b93a7" };
-const METRIC_LABEL = { shares: "份额", scale: "规模", flow: "份额净申购", pct: "变化率" };
-const METRIC_UNIT = { shares: "亿份", scale: "亿元", flow: "亿元/日", pct: "%" };
+const METRIC_LABEL = { scale: "规模", flow: "净申购", pct: "变化率" };
+const METRIC_UNIT = { scale: "亿元", flow: "亿元/日", pct: "%" };
 const TAG_PREFIXES = ["index", "sw", "csi", "theme", "region", "factor", "bond", "commodity"];
 const TAG_ALIAS = {
   申万: "sw", 申万一级: "sw", 中证: "csi", 中证一级: "csi", 指数: "index", 指数类别: "index",
@@ -403,7 +412,7 @@ function applyMeta() {
   if (desc && subs && etfs) {
     desc.setAttribute(
       "content",
-      `Ebbflow · ETF 细分行业资金流向：${cats} 大类 / ${subs} 个细分行业 / ${etfs} 只 ETF 的份额、规模与份额净申购长期序列，含区间对比、自选、全市场总览与数据质量校验。`
+      `Ebbflow · ETF 细分行业资金流向：${cats} 大类 / ${subs} 个细分行业 / ${etfs} 只 ETF 的规模与净申购长期序列，含区间对比、自选、全市场总览与数据质量校验。`
     );
   }
   fillFoot();
@@ -522,7 +531,12 @@ function buildCatalog() {
 
 function recomputeStats() {
   syncRangeInfo();
-  app.stats = computeStats(app.subs, state.rangeInfo);
+  // 规模序列只在 charts-<cat>.json：按 name → 所属大类的已加载图表取
+  const chartOf = (name) => {
+    const cat = app.subs?.[name]?.cat;
+    return cat ? getChart(cat) : null;
+  };
+  app.stats = computeStats(app.subs, state.rangeInfo, chartOf);
 }
 
 /* ==========================================================================
@@ -596,6 +610,8 @@ export function ensureIndex() {
 /** subs 到位后：补齐所有依赖区间统计的区块（并触发图表预取） */
 function afterSubsReady() {
   buildEtfTagIndex();
+  // v4：净申购逐日序列随 subs 下发（flowSeries），不再依赖 charts 是否加载完
+  app.flowComplete = true;
   // URL 里可能带不存在的小类：对比项按 subs 收敛，避免图例/按钮计数与曲线数不一致
   if (state.compare.length) {
     const valid = state.compare.filter((n) => app.subs?.[n]);
@@ -702,12 +718,13 @@ function renderRangeChip() {
 }
 
 /**
- * 区间份额净申购：优先用已加载图表里的「每日份额净申购」求和（精确），
- * 未加载时退回 Δ份额 × 最新净值（近似）。两处 UI 都标「估算」，避免口径承诺。
+ * 区间净申购：优先用 flowSeries 求和（精确）；未加载图表时退回快照 flow。
  */
 function flowOf(name, stats) {
   const s = stats || app.stats?.byName?.get(name);
   if (!s) return 0;
+  // v4：computeStats 已按区间对 flowSeries 求和
+  if (s.flow != null && Number.isFinite(+s.flow) && Array.isArray(app.subs?.[name]?.flowSeries)) return +s.flow;
   const cat = app.subs?.[name]?.cat;
   const payload = cat ? getChart(cat) : null;
   const series = payload?.series?.find((x) => x.name === name);
@@ -767,7 +784,7 @@ async function ensureMainChart() {
   mainReady = true;
 }
 
-/** 图例右侧的数值：份额净申购显示区间累计（当日值没有比较意义），其余显示窗口末端值 */
+/** 图例右侧的数值：净申购显示区间累计（当日值没有比较意义），其余显示窗口末端值 */
 function legendValue(series, payload) {
   if (state.metric !== "flow" || !payload?.series) return lastNonNull(series.values, 0, series.values.length - 1);
   const { fromIdx, toIdx } = state.rangeInfo;
@@ -798,6 +815,22 @@ function normalizeSeries(arr, a, b, base, { index100 = false } = {}) {
   }
   if (bv == null || bv === 0) return arr.map(() => null);
   return arr.map((v) => (v == null || !Number.isFinite(+v) ? null : index100 ? (v / bv) * 100 : (v / bv - 1) * 100));
+}
+
+/** v4：规模/净申购用原序列；变化率 = 规模相对基准的百分比 */
+function metricValues(series, metric, a, b, baseIdx) {
+  if (metric === "pct") return normalizeSeries(series.scale || [], a, b, baseIdx, { index100: false });
+  return series[metric] || [];
+}
+
+/** 序列覆盖率：优先图表序列，其次 subs 条目 */
+function seriesCoverage(name, chartSeries) {
+  return coverageOf(chartSeries) || coverageOf(app.subs?.[name]);
+}
+
+/** 端点回退后的基准索引（变化率用） */
+function pctBase(coverage, a) {
+  return state.norm === "all" ? null : effectiveIndex(coverage, a);
 }
 
 function firstNonNull(arr, a, b) {
@@ -831,7 +864,7 @@ function buildChartPayload(payload, catKey) {
 
   let series = [];
   let mode = metric === "flow" ? "bar" : "line";
-  let unit = metric === "flow" ? "亿元 / 日" : metric === "scale" ? "亿元" : metric === "shares" ? "亿份" : "%";
+  let unit = metric === "flow" ? "亿元 / 日" : metric === "scale" ? "亿元" : "%";
   let footNote = "";
   let secondary = null;
 
@@ -851,22 +884,21 @@ function buildChartPayload(payload, catKey) {
         });
         return { name: c.name, color: toneColor(COMPARE_COLORS[i % COMPARE_COLORS.length], isDark()), values: vals };
       });
-      footNote = "对比：区间累计份额净申购";
+      footNote = "对比：区间累计净申购";
     } else {
       unit = "指数（区间起点 = 100）";
       series = compare.map((c, i) => {
-        const arr = c.series[metric === "pct" ? "shares" : metric] || [];
         const baseIdx = state.norm === "all" ? 0 : a;
         return {
           name: c.name,
           color: toneColor(COMPARE_COLORS[i % COMPARE_COLORS.length], isDark()),
-          values: normalizeSeries(arr, a, b, state.norm === "all" ? null : baseIdx, { index100: true }),
+          values: normalizeSeries(c.series.scale || [], a, b, state.norm === "all" ? null : baseIdx, { index100: true }),
         };
       });
       footNote = "对比：归一化到区间起点 = 100";
     }
   } else {
-    const allList = (payload.series || []).filter((s) => (s[metric === "pct" ? "shares" : metric] || []).some((v) => v != null));
+    const allList = (payload.series || []).filter((s) => (metricValues(s, metric, a, b, null) || []).some((v) => v != null));
     // 默认只画规模 Top 12，其余合并成「其他」：24 条线同时画本来也读不出来
     const TOPN = 12;
     let list = allList;
@@ -878,21 +910,22 @@ function buildChartPayload(payload, catKey) {
       others = ranked.slice(TOPN);
     }
     series = list.map((s) => {
-      let values;
-      if (metric === "pct") {
-        const baseIdx = state.norm === "all" ? 0 : a;
-        values = normalizeSeries(s.shares || [], a, b, state.norm === "all" ? null : baseIdx, { index100: false });
-      } else {
-        values = s[metric] || [];
-      }
-      return { name: s.name, color: s.color, values };
+      const cov = seriesCoverage(s.name, s);
+      const values = metricValues(s, metric, a, b, pctBase(cov, a));
+      return {
+        name: s.name,
+        color: s.color,
+        values,
+        coverage: cov,
+        lowSpans: lowSpans(cov, a, b),
+      };
     });
     // 「其他」= 其余小类按指标聚合
     if (others.length) {
       const n = Math.max(0, b - a + 1);
       const agg = new Array(n).fill(null);
       for (const s of others) {
-        const arr = s[metric === "pct" ? "shares" : metric] || [];
+        const arr = metricValues(s, metric === "pct" ? "scale" : metric, a, b, null);
         for (let i = 0; i < n; i++) {
           const v = arr[a + i];
           if (v == null) continue;
@@ -910,7 +943,7 @@ function buildChartPayload(payload, catKey) {
       footNote = state.norm === "all" ? "相对全历史首日的变化率" : "相对区间首日的变化率";
       unit = "%";
     } else if (metric === "flow") {
-      footNote = "每日份额净申购（Δ份额 × 当日净值）";
+      footNote = "每日净申购（亿元/日；一级市场申赎 × 当日净值）";
     }
     if (others.length) {
       footNote = `${footNote ? footNote + " · " : ""}只画规模 Top ${list.length}，其余 ${others.length} 个合并为「其他」`;
@@ -920,7 +953,7 @@ function buildChartPayload(payload, catKey) {
     const map = {};
     for (const s of list) {
       if (metric === "pct") {
-        const v = lastNonNull(s.shares || [], a, b);
+        const v = lastNonNull(s.scale || [], a, b);
         map[s.name] = v;
       } else if (metric === "flow") {
         const arr = s.flow || [];
@@ -978,9 +1011,8 @@ function buildChartPayload(payload, catKey) {
 
 /**
  * 单系列聚焦 + 指标叠加：
- *  · 左轴 = 金额（份额/规模；主指标是份额净申购时左轴就是 亿元/日）
- *  · 右轴 = 百分比（变化率，仅在勾选时出现）
- *  · 份额净申购永远是柱子，且有独立轴（不与折线共用刻度），z 轴压在折线下方
+ *  · 规模 = 亿元折线；净申购 = 亿元/日柱状；变化率 = % 折线
+ *  · 三个指标各自独立坐标轴（叠加模式）或独立分面（分面模式）
  */
 function buildFocusPayload(payload, catKey, name) {
   const dates = payload.dates || state.calendar;
@@ -992,13 +1024,12 @@ function buildFocusPayload(payload, catKey, name) {
 
   const sel = (state.metricSel.length ? state.metricSel.slice() : [state.metric]).slice(0, 4);
   const dark = isDark();
-  const UNIT = { shares: "亿份", scale: "亿元", flow: "亿元/日", pct: "%" };
-  const LABEL = { shares: "份额", scale: "规模", flow: "份额净申购", pct: "变化率" };
+  const UNIT = { scale: "亿元", flow: "亿元/日", pct: "%" };
+  const LABEL = { scale: "规模", flow: "净申购", pct: "变化率" };
+  const cov = seriesCoverage(name, sub);
+  const base = pctBase(cov, a);
   const colorOf = (m) => (m === "flow" ? (dark ? "#ff6b5e" : "#C8322D") : toneColor(FOCUS_COLORS[m], dark));
-  const valuesOf = (m) =>
-    m === "pct"
-      ? normalizeSeries(sub.shares || [], a, b, state.norm === "all" ? null : a, { index100: false })
-      : sub[m] || [];
+  const valuesOf = (m) => (m === "pct" ? normalizeSeries(sub.scale || [], a, b, base, { index100: false }) : sub[m] || []);
 
   // ── 叠加模式：选中顺序 = 轴顺序（左右交替，每个指标一条轴）
   const axes = [];
@@ -1027,13 +1058,14 @@ function buildFocusPayload(payload, catKey, name) {
       axis: axes.length - 1,
       unit: UNIT[m],
       baseline: m === "flow" || m === "pct",
+      coverage: cov,
+      lowSpans: lowSpans(cov, a, b),
     });
   });
 
-  // ── 分面模式：份额/规模同栏（双轴），净申购、变化率各一栏
+  // ── 分面模式：规模 / 净申购 / 变化率 各一栏
   const panes = [];
-  const amountSel = sel.filter((m) => m === "shares" || m === "scale");
-  if (amountSel.length) panes.push({ index: panes.length, metrics: amountSel });
+  if (sel.includes("scale")) panes.push({ index: panes.length, metrics: ["scale"] });
   if (sel.includes("flow")) panes.push({ index: panes.length, metrics: ["flow"] });
   if (sel.includes("pct")) panes.push({ index: panes.length, metrics: ["pct"] });
   const fracs = panes.length === 1 ? [1] : panes.length === 2 ? [0.65, 0.35] : [0.55, 0.25, 0.2];
@@ -1081,8 +1113,8 @@ function buildFocusPayload(payload, catKey, name) {
   const axisW = 58;
   const gridLeft = 14 + (leftCount > 1 ? (leftCount - 1) * axisW : 0);
   const gridRight = 14 + (rightCount > 0 ? rightCount * axisW : 0) + gutter;
-  const dualPane = panes[0]?.key !== "flow" && panes[0]?.metrics.length === 2;
-  const paneGridRight = 14 + (dualPane ? axisW : 0) + gutter;
+  const dualPane = false;
+  const paneGridRight = 14 + gutter;
 
   const labelsOf = (layout) =>
     series
@@ -1112,8 +1144,24 @@ function buildFocusPayload(payload, catKey, name) {
     secondary: null,
     compare: false,
     zero: sel.includes("flow"),
+    coverage: cov,
+    lowSpans: lowSpans(cov, a, b),
+    coverageNote: cov ? "灰色区间为数据覆盖不足（<60%），虚线不参与端点取值" : "",
     log: false,
-    footNote: `${sel.map((m) => LABEL[m]).join(" · ")}`,
+    footNote: `${sel.map((m) => LABEL[m]).join(" · ")}${
+      sel.includes("flow") ? " · 净申购含期初当天" : ""
+    }${
+      sel.includes("flow") && sel.includes("pct") ? " · 规模变化率 ≈ 净申购/期初规模 + 净值涨跌" : ""
+    }${(() => {
+      if (!cov) return "";
+      const e0 = effectiveIndex(cov, a);
+      const e1 = effectiveIndex(cov, b);
+      if (e0 === a && e1 === b) return "";
+      const bits = [];
+      if (e0 !== a) bits.push(`期初按 ${dates[e0]} 计`);
+      if (e1 !== b) bits.push(`期末按 ${dates[e1]} 计`);
+      return ` · 端点回退：${bits.join("、")}`;
+    })()}`,
     endLabels: labelsOf("axes"),
     paneEndLabels: labelsOf("panes"),
     endLabelDigits: sel.includes("pct") ? 1 : 0,
@@ -1265,6 +1313,7 @@ async function renderCatChart(catKey, opts = {}) {
       }
     }
     if (token !== freshChartToken) return;
+    recomputeStats();
     await ensureMainChart();
     if (token !== freshChartToken) return;
     if (payload?.dates?.length && state.calendar.length !== payload.dates.length) {
@@ -1305,7 +1354,7 @@ async function renderCatChart(catKey, opts = {}) {
           state.compare.map((n, i) => {
             const cat = app.subs?.[n]?.cat;
             const ser = getChart(cat)?.series?.find((x) => x.name === n);
-            const vals = ser?.[state.metric === "pct" ? "shares" : state.metric] || [];
+            const vals = ser?.[state.metric === "pct" ? "scale" : state.metric] || [];
             return {
               name: n,
               color: toneColor(COMPARE_COLORS[i % COMPARE_COLORS.length], isDark()),
@@ -1333,11 +1382,13 @@ async function renderCatChart(catKey, opts = {}) {
     const metricObj = METRICS.find((m) => m.id === state.metric);
     const hintEl = document.querySelector(".legend-hint");
     if (hintEl) {
+      const covHint = (p.lowSpans && p.lowSpans.length) ? "灰色区间为数据覆盖不足（<60%），虚线仅示意 · " : "";
       hintEl.textContent = p.focusMode
-        ? p.layout === "axes"
-          ? "多轴模式：注意各系列刻度独立 · 点击图例或按钮可取消指标"
-          : "分面模式：各指标独立坐标轴，共享时间轴 · 点击图例可取消指标"
-        : "点击图例聚焦某个小类 · 再点「全部」退出";
+        ? covHint +
+          (p.layout === "axes"
+            ? "多轴模式：注意各系列刻度独立 · 点击图例或按钮可取消指标"
+            : "分面模式：各指标独立坐标轴，共享时间轴 · 点击图例可取消指标")
+        : covHint + "点击图例聚焦某个小类 · 再点「全部」退出";
     }
     if (unitEl) {
       unitEl.innerHTML = p.focusMode
@@ -1457,7 +1508,7 @@ function exitBrushMode() {
 function afterRangeChange(source) {
   if (source === "brush") exitBrushMode();
   syncRangeInfo();
-  app.stats = computeStats(app.subs, state.rangeInfo);
+  recomputeStats();
   writeURL({ replace: true });
   renderRangeChip();
   views.renderRangeSegs();
@@ -1720,7 +1771,7 @@ function openSearch(mode = "search") {
 function syncLogUI() {
   const btn = document.getElementById("btnLog");
   if (!btn) return;
-  const usable = state.metric === "shares" || state.metric === "scale";
+  const usable = state.metric === "scale";
   btn.hidden = !usable || state.compare.length > 0 || isFocusMode();
   btn.setAttribute("aria-pressed", String(!!state.log && usable));
 }
@@ -1896,13 +1947,13 @@ function exportWatchCsv() {
     const s = app.stats?.byName?.get(n);
     return [n, app.catMap.get(s?.cat)?.label || s?.cat || "", s?.last ?? "", s?.delta ?? "", s?.pct != null ? s.pct.toFixed(2) : "", s?.scale ?? ""];
   });
-  download(`自选-${state.rangeInfo.from}-${state.rangeInfo.to}.csv`, toCSV([["细分行业", "大类", "最新份额(亿份)", "区间变化(亿份)", "变化率(%)", "规模(亿元)"], ...rows]));
+  download(`自选-${state.rangeInfo.from}-${state.rangeInfo.to}.csv`, toCSV([["细分行业", "大类", "期末规模(亿元)", "区间规模变化(亿元)", "变化率(%)", "区间净申购(亿元)"], ...rows]));
   toast("已导出自选 CSV", "ok");
 }
 
 /** 把页面里已经渲染好的表格导出为 CSV（与用户看到的排序一致） */
 function exportTableCsv(kind) {
-  const map = { topin: ["tblTopIn", "份额增加TOP"], topout: ["tblTopOut", "份额减少TOP"], cattable: ["tblCat", "本类明细"] };
+  const map = { topin: ["tblTopIn", "净申购增加TOP"], topout: ["tblTopOut", "净申购减少TOP"], cattable: ["tblCat", "本类明细"] };
   const [id, name] = map[kind] || [];
   const tbl = id && document.getElementById(id);
   if (!tbl) return;
@@ -2016,7 +2067,7 @@ function closeSheet() {
 
 /* ==========================================================================
    后台预取：首屏之后逐个拉取其余大类图表
-   · 目的：① 区间份额净申购从「估算」升级为「每日求和」的精确值；
+   · 目的：① 区间净申购从「估算」升级为「每日求和」的精确值；
             ② 大类切换即时（命中缓存），不阻塞首屏
    · 尊重 saveData / 2G 网络，串行加载避免抢带宽
    ========================================================================== */
@@ -2045,11 +2096,17 @@ function scheduleChartPrefetch() {
           /* 单个失败不影响其它 */
         }
         done += 1;
-        if (done % 2 === 0 && state.view === "overview") views.renderOverviewWatch(app);
+        recomputeStats();
+        if (done % 2 === 0) {
+          if (state.view === "overview") views.renderOverview(app);
+          else if (state.view === "cat") views.renderCategory(app, { chart: false });
+          else if (state.view === "watch") views.renderWatch(app);
+        }
       }
     };
     // 限并发 2：不抢首屏与交互的带宽
     await Promise.all([worker(), worker()]);
+    recomputeStats();
     if (chartsAllLoaded()) {
       app.flowComplete = true;
       if (state.view === "overview") views.renderOverview(app);
@@ -2280,12 +2337,6 @@ function wireEvents() {
       copyTable(copyBtn.dataset.copy);
       return;
     }
-    const mktBtn = closest("#mktMetric [data-m]");
-    if (mktBtn) {
-      state.marketMetric = mktBtn.dataset.m;
-      views.renderOverview(app);
-      return;
-    }
     const navSub = closest("[data-navsub]");
     if (navSub) {
       closeSheet();
@@ -2420,7 +2471,7 @@ function wireEvents() {
     readURL();
     if (state.view === "cat" && !state.cat && app.cats.length) state.cat = app.cats[0].key;
     syncRangeInfo();
-    app.stats = computeStats(app.subs, state.rangeInfo);
+    recomputeStats();
     renderView();
   });
 
@@ -2570,8 +2621,19 @@ async function boot() {
   readURL();
   loadWatch();
   api.setTaxonomy(state.taxonomy);
+  if (DEBUG_STATE) {
+    /** @type {any} */ (window).__ebbflowState = state;
+    /** @type {any} */ (window).__ebbflowApp = app;
+  }
   views.renderRangeSegs();
   wireEvents();
+
+  // v4 迁移：旧链接 ?m=shares → 规模，提示一次
+  if (state.shareMigrationNotice) {
+    state.shareMigrationNotice = false;
+    toast("份额指标已下线（份数不可跨资产相加），已改用规模（亿元）", "info", 3600);
+    writeURL({ replace: true });
+  }
 
   // 离线态：徽标显示「离线（缓存）」，恢复后自动还原
   window.addEventListener("offline", () => {
@@ -2682,6 +2744,7 @@ function resetTaxonomyState() {
   app.indexReady = false;
   app.flowComplete = false;
   app.chartData.clear();
+  app.etfRanges.clear();
   app.etfTags = null;
   subsPromise = null;
   indexPromise = null;

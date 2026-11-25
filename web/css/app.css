@@ -1387,11 +1387,9 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
 #tblCat thead th:nth-child(2),
 #tblCat thead th:nth-child(3),
 #tblCat thead th:nth-child(4),
-#tblCat thead th:nth-child(5),
 #tblCat tbody td:nth-child(2),
 #tblCat tbody td:nth-child(3),
-#tblCat tbody td:nth-child(4),
-#tblCat tbody td:nth-child(5) {
+#tblCat tbody td:nth-child(4) {
   width: 1%;
   white-space: nowrap;
 }
@@ -2970,10 +2968,8 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
   }
   #tblCat thead th:nth-child(2),
   #tblCat thead th:nth-child(3),
-  #tblCat thead th:nth-child(4),
   #tblCat tbody td:nth-child(2),
-  #tblCat tbody td:nth-child(3),
-  #tblCat tbody td:nth-child(4) {
+  #tblCat tbody td:nth-child(3) {
     width: 1%;
     padding-left: 6px;
     padding-right: 6px;
@@ -3134,4 +3130,17 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
   background: var(--surface-3);
   vertical-align: 1px;
   cursor: help;
+}
+
+
+/* tooltip 低覆盖提示 */
+.ec-tip-note {
+  padding: 4px 10px 6px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  border-top: 1px dashed var(--line);
+}
+.ec-tip-note span {
+  display: inline-block;
 }

@@ -185,14 +185,16 @@ export function renderMetricSegs(focusMode = false) {
   host.innerHTML = METRICS.map((m) => {
     const selected = focusMode ? state.metricSel.includes(m.id) : state.metric === m.id;
     const cls = ["seg-btn", selected ? (focusMode ? "is-selected" : "is-primary") : ""].filter(Boolean).join(" ");
-    const title = focusMode
-      ? selected
-        ? `取消「${m.label}」（至少保留 1 个指标）`
-        : `加入「${m.label}」`
-      : "";
-    return `<button class="${cls}" type="button" data-metric="${m.id}" aria-pressed="${selected}" ${
-      title ? `title="${esc(title)}"` : ""
-    }><span class="seg-mark" aria-hidden="true"></span>${m.label}</button>`;
+    const pctTip =
+      m.id === "pct"
+        ? "变化率＝区间规模变化率（期末/期初）；与净申购并列时两者不相等是正常的：规模变化率 ≈ 净申购/期初规模 + 净值涨跌"
+        : m.id === "flow"
+          ? "净申购＝Σ(Δ份额 × 当日净值)，只反映一级市场申赎，不等于二级成交额"
+          : "规模＝Σ(份额 × 单位净值)，可跨 ETF、跨大类相加";
+    const title = focusMode ? `${selected ? `取消「${m.label}」（至少保留 1 个指标）` : `加入「${m.label}」`} · ${pctTip}` : pctTip;
+    return `<button class="${cls}" type="button" data-metric="${m.id}" aria-pressed="${selected}" title="${esc(
+      title
+    )}"><span class="seg-mark" aria-hidden="true"></span>${m.label}</button>`;
   }).join("");
 }
 
@@ -228,20 +230,44 @@ export function renderOverview(app) {
   renderOverviewWatch(app);
 }
 
+/** 区间净申购（含期初当天）：优先 subs.flowSeries；旧数据退回 stats.flow */
+function flowSumRange(app, name) {
+  const entry = app?.subs?.[name];
+  const arr = Array.isArray(entry?.flowSeries) ? entry.flowSeries : null;
+  const r = state.rangeInfo;
+  if (arr && r.fromIdx >= 0) {
+    let sum = 0;
+    let any = false;
+    for (let i = r.fromIdx; i <= Math.min(r.toIdx, arr.length - 1); i += 1) {
+      const v = arr[i];
+      if (v != null && Number.isFinite(+v)) {
+        sum += +v;
+        any = true;
+      }
+    }
+    if (any) return +sum.toFixed(2);
+  }
+  const st = app?.stats?.byName?.get(name);
+  return st && st.flow != null && Number.isFinite(+st.flow) ? +st.flow : null;
+}
+
 function totalSeries(app) {
   const r = state.rangeInfo;
   const mkt = app.market;
-  if (mkt?.total?.shares?.length) {
+  if (mkt?.total?.scale?.length) {
     const slice = (arr) => (Array.isArray(arr) ? arr.slice(r.fromIdx, r.toIdx + 1) : []);
-    return { shares: slice(mkt.total.shares), scale: slice(mkt.total.scale), fromMarket: true };
+    return { scale: slice(mkt.total.scale), fromMarket: true };
   }
-  // 兜底：用各大类份额序列相加
+  // 兜底：用各大类规模序列相加
   const n = Math.max(0, r.toIdx - r.fromIdx + 1);
-  const shares = new Array(n).fill(0);
+  const scale = new Array(n).fill(null);
   for (const c of app.stats?.cats || []) {
-    for (let i = 0; i < n; i++) shares[i] += c.series[i] || 0;
+    for (let i = 0; i < n; i++) {
+      if (c.series[i] == null) continue;
+      scale[i] = (scale[i] || 0) + c.series[i];
+    }
   }
-  return { shares, scale: null, fromMarket: false };
+  return { scale, fromMarket: false };
 }
 
 function renderOverviewKpis(app) {
@@ -260,10 +286,9 @@ function renderOverviewKpis(app) {
     const delta = last - +first;
     return { first: +first, last, delta, pct: +first ? (delta / Math.abs(+first)) * 100 : null };
   };
-  const sh = pick(t.shares);
   const sc = pick(t.scale);
-  const flowOne = (x) => (app.flowOf ? app.flowOf(x.name, x) : flowEstimate(x));
-  const flowEst = (stats?.subs || []).reduce((s, x) => s + flowOne(x), 0);
+  const allNames = Object.keys(app.subs || {}).filter((n) => n !== "__dates");
+  const flowEst = allNames.reduce((acc, n) => acc + (flowSumRange(app, n) || 0), 0);
   const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
   const up = getComputedStyle(document.documentElement).getPropertyValue("--up").trim();
   const down = getComputedStyle(document.documentElement).getPropertyValue("--down").trim();
@@ -283,10 +308,9 @@ function renderOverviewKpis(app) {
     return big(v, unit);
   };
   const b1 = fmtBig(sc.last, "亿元");
-  const bSh = fmtBig(sh.last, "亿份");
-  const catFlows = (app.stats?.cats || []).map((c) => ({
+  const catFlows = (app.cats || []).map((c) => ({
     key: c.key,
-    flow: app.catFlowOf ? app.catFlowOf(c.key) : (app.subsByCat?.get(c.key) || []).reduce((acc, n) => acc + flowOne(app.stats?.byName?.get(n)), 0),
+    flow: (app.subsByCat?.get(c.key) || []).reduce((acc, n) => acc + (flowSumRange(app, n) || 0), 0),
   }));
   const catIn = catFlows.filter((c) => c.flow > 0).length;
   const catFlowSum = catFlows.reduce((acc, c) => acc + c.flow, 0);
@@ -301,8 +325,7 @@ function renderOverviewKpis(app) {
       "全市场规模",
       b1.num,
       b1.unit,
-      `<span class="dim">份额 ${esc(bSh.num)} ${esc(bSh.unit)}</span>
-       <span class="chip chip--line chip--sm" title="份额（份数）跨资产不可直接相加：债券 ETF 面值 100 元、股票 ETF 约 1 元，加总没有经济含义；规模（亿元）才是可比口径">份数不可直接相加</span>`,
+      `<span class="dim">按最新净值折算 · ${esc(String(app.meta?.counts?.etfs ?? "—"))} 只 ETF</span>`,
       t.scale ? sparkSVG(t.scale, { w: 160, h: 44, color: accent, area: true }) : "",
       "var(--accent)"
     ),
@@ -319,24 +342,24 @@ function renderOverviewKpis(app) {
       sc.delta >= 0 ? "var(--up)" : "var(--down)"
     ),
     card(
-      !ready ? "区间份额净申购" : app.flowComplete ? "区间份额净申购" : "区间份额净申购（估算）",
+      !ready ? "区间净申购" : app.flowComplete ? "区间净申购" : "区间净申购（估算）",
       ready ? fmtSigned(flowEst, 1) : "—",
       "亿元",
       !ready
         ? pending
         : app.flowComplete
-          ? `<span class="dim">逐日份额净申购累加</span><span class="chip chip--line chip--sm" title="口径：按当日单位净值折算的每日份额净申购逐日累加；份额拆分/合并已剔除">口径</span>`
-          : `<span class="dim">Δ份额 × 最新净值近似</span><span class="chip chip--line chip--sm" title="口径：区间份额变化量 × 最新单位净值（近似）；全量图表加载完成后会自动切换为每日份额净申购求和">估算</span>`,
+          ? `<span class="dim">逐日净申购累加（含期初当天）</span><span class="chip chip--line chip--sm" title="口径：每日净申购（Δ份额 × 当日净值，拆分/合并已还原）逐日累加，包含期初当天">口径</span>`
+          : `<span class="dim">按区间规模变化近似</span><span class="chip chip--line chip--sm" title="口径：未加载逐日数据时按规模变化近似；全量图表加载完成后会自动切换为每日净申购求和">估算</span>`,
       "",
       "var(--ink-3)",
-      "份额净申购＝成分 ETF 份额变动×净值（估算）。ETF 在二级市场买卖不改变份额，只有一级申购赎回才改变，因此该指标反映的是一级申赎，不等于二级成交额。"
+      "净申购＝Σ(Δ份额 × 当日净值)，只反映一级市场申赎；ETF 在二级市场买卖不改变份额，因此不等于二级成交额。"
     ),
     card(
       "大类分化",
       ready && app.cats.length ? `${catIn}/${app.cats.length}` : "—",
-      "类份额净申购",
+      "类净申购",
       ready
-        ? `<span class="dim">份额净申购合计</span><span class="delta ${catFlowSum > 0 ? "delta--up" : catFlowSum < 0 ? "delta--down" : "delta--flat"}">${esc(fmtSigned(catFlowSum, 1))} 亿元</span>`
+        ? `<span class="dim">净申购合计</span><span class="delta ${catFlowSum > 0 ? "delta--up" : catFlowSum < 0 ? "delta--down" : "delta--flat"}">${esc(fmtSigned(catFlowSum, 1))} 亿元</span>`
         : pending,
       "",
       "var(--ink-3)"
@@ -344,22 +367,17 @@ function renderOverviewKpis(app) {
   ].join("");
 }
 
-/** 区间份额净申购估算：Δ份额 × 最新单位净值（scale/shares 得到加权净值） */
+/** 区间净申购：v4 由 computeStats 直接给出（flowSeries 区间求和） */
 export function flowEstimate(subStat) {
   if (!subStat) return 0;
-  const nav = subStat.scale != null && subStat.last ? subStat.scale / subStat.last : null;
-  if (!nav || !Number.isFinite(nav)) return subStat.flow || 0;
-  return subStat.delta * nav;
+  // v4：computeStats 已按区间对 flowSeries 求和；旧数据只有快照 flow
+  return subStat.flow != null && Number.isFinite(+subStat.flow) ? +subStat.flow : 0;
 }
 
 function renderMarketBlock(app) {
   const loading = document.getElementById("mktLoading");
   const mkt = app.market;
   const legend = document.getElementById("mktLegend");
-  const seg = document.getElementById("mktMetric");
-  if (seg) {
-    seg.querySelectorAll("[data-m]").forEach((b) => b.setAttribute("aria-pressed", String(/** @type {HTMLElement} */ (b).dataset.m === state.marketMetric)));
-  }
   if (!mkt) {
     if (loading) loading.hidden = true;
     const host = document.getElementById("mktWrap");
@@ -382,26 +400,25 @@ function renderMarketBlock(app) {
   if (legend) legend.hidden = false;
   const ms = marketRangeStats(mkt, state.rangeInfo);
   if (!ms) return;
-  const key = state.marketMetric === "scale" ? "scale" : "shares";
-  const picks = ms[key];
-  const unit = key === "scale" ? mkt.unit?.scale || "亿元" : mkt.unit?.shares || "亿份";
+  const picks = ms.scale;
+  const unit = mkt.unit?.scale || "亿元";
   app.onMarketRender?.({
     dates: ms.dates,
-    sh: ms.sh[key],
-    sz: ms.sz[key],
+    sh: ms.sh.scale,
+    sz: ms.sz.scale,
     total: picks.series,
     unit,
   });
   const sub = document.getElementById("mktSub");
   if (sub) {
     const etfs = mkt.total?.etfs ? `全市场 ${mkt.total.etfs} 只 ETF` : "";
-    sub.textContent = [key === "scale" ? "规模" : "份额", etfs, mkt.asOf ? `截至 ${mkt.asOf}` : ""].filter(Boolean).join(" · ");
+    sub.textContent = ["规模", etfs, mkt.asOf ? `截至 ${mkt.asOf}` : ""].filter(Boolean).join(" · ");
   }
   const note = document.getElementById("mktNote");
   if (note) {
-    const szArr = ms.sz[key];
+    const szArr = ms.sz.scale;
     const szLast = Array.isArray(szArr) ? szArr[szArr.length - 1] : undefined;
-    const stale = key === "scale" && (!szLast || szLast === 0);
+    const stale = !szLast || szLast === 0;
     note.innerHTML = `${mkt.note ? esc(mkt.note) : ""}${
       stale ? `<span class="chip chip--warn" style="margin-left:8px">深市规模待补齐</span>` : ""
     }`;
@@ -420,7 +437,7 @@ function renderTypeBars(app, mkt) {
     return;
   }
   if (empty) empty.hidden = true;
-  const key = state.marketMetric === "scale" ? "scale" : "shares";
+  const key = "scale";
   const total = list.reduce((s, x) => s + (x[key] || 0), 0) || 1;
   const sorted = list.sort((a, b) => (b[key] || 0) - (a[key] || 0));
   host.innerHTML = sorted
@@ -471,7 +488,7 @@ function renderCatGrid(app) {
         if (bondScale) s = { ...s, pct: bondScale.pct, delta: bondScale.delta, series: bondScale.series, count: s?.count ?? 0 };
       }
       const pct = s?.pct;
-      const unit = bond ? "亿元" : "亿份";
+      const unit = "亿元";
       const color = toneColor(c.color, isDark());
       return `<button class="catcard" type="button" data-cat="${esc(c.key)}" style="--cat-color:${esc(colorOf(c))}" aria-label="${esc(
         c.label
@@ -490,7 +507,7 @@ function renderCatGrid(app) {
       )} ${unit}</span>
         </span>
         <span class="catcard-spark" aria-hidden="true">${
-          s ? sparkSVG(s.series, { w: 220, h: 26, color, area: true, stroke: 1.4 }) : ""
+          s && s.series ? sparkSVG(s.series, { w: 220, h: 26, color, area: true, stroke: 1.4 }) : ""
         }</span>
         <span class="catcard-foot">
           ${
@@ -505,13 +522,34 @@ function renderCatGrid(app) {
 }
 
 function topRows(app, dir, n = 8) {
-  const subs = (app.stats?.subs || []).filter((s) => Number.isFinite(s.delta));
-  // in：delta 降序取前 n（增加最多）；out：delta 升序取前 n（减少最多，负值）
-  const sorted = subs.slice().sort((a, b) => (dir === "in" ? b.delta - a.delta : a.delta - b.delta));
+  // 净申购来自 subs.flowSeries（无需 charts），规模/变化率来自已加载 charts 的 stats
+  const names = Object.keys(app.subs || {}).filter((x) => x !== "__dates");
+  const subs = names
+    .map((name) => {
+      const st = app.stats?.byName?.get(name) || {};
+      const entry = app.subs[name] || {};
+      return {
+        name,
+        cat: entry.cat,
+        color: entry.color,
+        series: st.series || null,
+        pct: Number.isFinite(st.pct) ? st.pct : null,
+        delta: Number.isFinite(st.delta) ? st.delta : null,
+        flow: flowSumRange(app, name),
+      };
+    })
+    .filter((s) => Number.isFinite(s.flow));
+  // in：净申购降序；out：净申购升序
+  const sorted = subs.slice().sort((a, b) => (dir === "in" ? b.flow - a.flow : a.flow - b.flow));
   const base = sorted.slice(0, n);
-  const sort = state.topSort[dir] || { key: "delta", dir: dir === "in" ? -1 : 1 };
+  const sort = state.topSort[dir] || { key: "flow", dir: dir === "in" ? -1 : 1 };
   const list = base.slice().sort((a, b) => {
     if (sort.key === "name") return sort.dir * String(a.name).localeCompare(String(b.name), "zh-CN");
+    const av = a[sort.key];
+    const bv = b[sort.key];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
     return sort.dir * ((a[sort.key] ?? -Infinity) - (b[sort.key] ?? -Infinity));
   });
   return list;
@@ -531,7 +569,7 @@ export function renderTopTables(app) {
       tbody.innerHTML = `<tr><td colspan="5"><div class="state state--sm"><p class="state-desc">当前区间没有可比较的数据</p></div></td></tr>`;
       continue;
     }
-    const sort = state.topSort[dir] || { key: "delta", dir: dir === "in" ? -1 : 1 };
+    const sort = state.topSort[dir] || { key: "flow", dir: dir === "in" ? -1 : 1 };
     tbl.querySelectorAll("thead th[data-sort-key]").forEach((th) => {
       if (/** @type {HTMLElement} */ (th).dataset.sortKey === sort.key) th.setAttribute("aria-sort", sort.dir > 0 ? "ascending" : "descending");
       else th.removeAttribute("aria-sort");
@@ -542,17 +580,17 @@ export function renderTopTables(app) {
         return `<tr data-sub="${esc(s.name)}" data-cat="${esc(s.cat)}" tabindex="0">
         <td>${i + 1}</td>
         <td><span class="cell-name"><span class="cat-dot" style="background:${esc(c)}"></span>${esc(s.name)}</span></td>
-        <td class="num ${s.delta > 0 ? "up" : s.delta < 0 ? "down" : "flat"}">${esc(fmtSigned(s.delta, 1))}</td>
+        <td class="num ${s.flow > 0 ? "up" : s.flow < 0 ? "down" : "flat"}">${esc(fmtSigned(s.flow, 1))}</td>
         <td class="num ${s.pct > 0 ? "up" : s.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s.pct, 2))}</td>
-        <td class="num" aria-hidden="true">${sparkSVG(s.series, { w: 104, h: 32, color: s.delta >= 0 ? "var(--up)" : "var(--down)", stroke: 1.3, fill: true })}</td>
+        <td class="num" aria-hidden="true">${s.series ? sparkSVG(s.series, { w: 104, h: 32, color: s.flow >= 0 ? "var(--up)" : "var(--down)", stroke: 1.3, fill: true }) : ""}</td>
       </tr>`;
       })
       .join("");
   }
   const sub = document.getElementById("topInSub");
-  if (sub) sub.textContent = `${rangeText(app)} · 按份额差排序`;
+  if (sub) sub.textContent = `${rangeText(app)} · 按区间净申购排序`;
   const sub2 = document.getElementById("topOutSub");
-  if (sub2) sub2.textContent = `负值为净赎回 · ${rangeText(app)}`;
+  if (sub2) sub2.textContent = `负值为净赎回（亿元）· ${rangeText(app)}`;
 }
 
 export function renderOverviewWatch(app) {
@@ -601,12 +639,12 @@ export function watchCardHTML(app, name) {
       </div>
     </div>
     <div class="watchcard-val">
-      <span><b>${esc(cnum(s?.last, 1))}</b><span class="unit dim t-2xs"> 亿份</span></span>
+      <span><b>${esc(cnum(s?.last, 1))}</b><span class="unit dim t-2xs"> 亿元</span></span>
       <span class="delta ${pct > 0 ? "delta--up" : pct < 0 ? "delta--down" : "delta--flat"}">${fmtPct(pct, 2)}</span>
     </div>
-    <div class="watchcard-spark" aria-hidden="true">${s ? sparkSVG(s.series, { w: 260, h: 40, color, area: true }) : ""}</div>
+    <div class="watchcard-spark" aria-hidden="true">${s && s.series ? sparkSVG(s.series, { w: 260, h: 40, color, area: true }) : ""}</div>
     <div class="watchcard-foot">
-      <span>规模 ${s?.scale != null ? cnum(s.scale, 0) + " 亿" : "—"}</span>
+      <span>净申购 ${s?.flow != null ? fmtSigned(s.flow, 1) + " 亿" : "—"}</span>
       <button class="linkbtn" type="button" data-sub="${esc(name)}" data-cat="${esc(s?.cat || "")}">明细 ›</button>
     </div>
   </article>`;
@@ -651,21 +689,20 @@ export function renderWatch(app) {
     return;
   }
   const stats = watchNames.map((n) => app.stats?.byName?.get(n)).filter(Boolean);
-  const sumShares = stats.reduce((s, x) => s + (x.last || 0), 0);
-  const sumScale = stats.reduce((s, x) => s + (x.scale || 0), 0);
-  const flow = stats.reduce((s, x) => s + (app.flowOf ? app.flowOf(x.name, x) : flowEstimate(x)), 0);
+  const sumScale = stats.reduce((s, x) => s + (x.last || 0), 0);
+  const flow = watchNames.reduce((s, n) => s + (flowSumRange(app, n) || 0), 0);
   const avgPct = stats.length ? stats.reduce((s, x) => s + (x.pct || 0), 0) / stats.length : null;
   if (kpis) {
     kpis.innerHTML = [
       kpiCard("自选数量", String(state.watch.length), "个", `<span class="dim">已覆盖 ${new Set(stats.map((s) => s.cat)).size} 个大类</span>`),
-      kpiCard("合计份额", cnum(sumShares, 1), "亿份", `<span class="dim">${rangeText(app)}</span>`),
-      kpiCard("合计规模", sumScale ? cnum(sumScale, 0) : "—", "亿元", `<span class="dim">按最新净值估算</span>`),
+      kpiCard("合计规模", sumScale ? cnum(sumScale, 0) : "—", "亿元", `<span class="dim">${rangeText(app)}</span>`),
+      kpiCard("区间净申购", fmtSigned(flow, 1), "亿元", `<span class="dim">${app.flowComplete ? "逐日累加（一级申赎）" : "规模变化近似"}</span>`),
       kpiCard(
         "平均区间变化",
         fmtPct(avgPct, 2),
         "",
         `<span class="delta ${flow > 0 ? "delta--up" : flow < 0 ? "delta--down" : "delta--flat"}">${esc(fmtSigned(flow, 1))} 亿元</span><span class="dim">${
-          app.flowComplete ? "区间份额净申购" : "份额净申购估算"
+          app.flowComplete ? "区间净申购" : "净申购估算"
         }</span>`,
         avgPct != null ? (avgPct >= 0 ? "var(--up)" : "var(--down)") : undefined
       ),
@@ -681,8 +718,8 @@ export function renderWatch(app) {
       <svg aria-hidden="true"><use href="#i-info"/></svg>
       <span>${
         app.flowComplete
-          ? "「区间份额净申购」为区间内每日份额净申购（Δ份额 × 当日单位净值）之和；已退市或缺少净值的成分不计入。不等同于交易所口径的申赎金额。"
-          : "「区间份额净申购」为区间份额变化量乘以该小类最新单位净值的估算值；全量图表加载完成后会自动切换为每日份额净申购求和。不等同于交易所口径的申赎金额。"
+          ? "「区间净申购」为区间内每日净申购（Δ份额 × 当日单位净值）之和，包含期初当天；已退市或缺少净值的成分不计入，不等同于交易所口径的申赎金额。"
+          : "「区间净申购」在逐日数据未加载时按规模变化近似；全量图表加载后会自动切换为每日净申购求和。"
       }</span>
     </p>`;
 }
@@ -722,7 +759,7 @@ export function syncCatHeading(app) {
       summary?.pct,
       2
     )}</span>`,
-    `<span class="dim">区间份额净申购${app.chartData?.has(key) ? "" : "（估算）"} ${esc(fmtSigned(flow, 1))} 亿元</span>`,
+    `<span class="dim">区间净申购${app.chartData?.has(key) ? "" : "（估算）"} ${esc(fmtSigned(flow, 1))} 亿元</span>`,
     state.compare.length
       ? `<span class="cmp-chips"><span class="dim">对比 ${state.compare.length} 个</span>${state.compare
           .map(
@@ -773,7 +810,7 @@ function renderCatTable(app, key) {
   const names = app.subsByCat?.get(key) || [];
   const rows = names
     .map((n) => app.stats?.byName?.get(n))
-    .filter(Boolean)
+    .filter((s) => s && Number.isFinite(s.last) && Array.isArray(s.series))
     .map((s) => ({ ...s, name: s.name }));
   const { key: sortKey, dir } = state.catSort;
   rows.sort((a, b) => {
@@ -792,9 +829,8 @@ function renderCatTable(app, key) {
       return `<tr data-sub="${esc(s.name)}" data-cat="${esc(s.cat)}" tabindex="0">
       <td><span class="cell-name"><span class="cat-dot" style="background:${esc(color)}"></span>${esc(s.name)}</span></td>
       <td class="num">${esc(cnum(s.last, 1))}</td>
-      <td class="num ${s.delta > 0 ? "up" : s.delta < 0 ? "down" : "flat"}">${esc(fmtSigned(s.delta, 1))}</td>
+      <td class="num ${s.flow > 0 ? "up" : s.flow < 0 ? "down" : "flat"}">${esc(fmtSigned(s.flow, 1))}</td>
       <td class="num ${s.pct > 0 ? "up" : s.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s.pct, 2))}</td>
-      <td class="num cat-scale">${s.scale != null ? esc(cnum(s.scale, 1)) : "—"}</td>
       <td class="num cat-spark">${sparkSVG(s.series, { w: 104, h: 32, color, stroke: 1.3, fill: true })}</td>
     </tr>`;
     })
@@ -816,23 +852,24 @@ function renderCatSide(app, key) {
   const kpis = document.getElementById("catKpis");
   const names = app.subsByCat?.get(key) || [];
   const stats = names.map((n) => app.stats?.byName?.get(n)).filter(Boolean);
-  const first = stats.reduce((s, x) => s + (x.first || 0), 0);
-  const last = stats.reduce((s, x) => s + (x.last || 0), 0);
-  const flow = stats.reduce((s, x) => s + (app.flowOf ? app.flowOf(x.name, x) : flowEstimate(x)), 0);
+  const known = stats.filter((x) => Number.isFinite(x.first) && Number.isFinite(x.last));
+  const first = known.reduce((s, x) => s + (x.first || 0), 0);
+  const last = known.reduce((s, x) => s + (x.last || 0), 0);
+  const flow = names.reduce((s, n) => s + (flowSumRange(app, n) || 0), 0);
   const pct = first ? ((last - first) / Math.abs(first)) * 100 : null;
   if (kpis) {
-    kpis.innerHTML = `<div><dt>区间起点份额</dt><dd class="num">${esc(cnum(first, 1))}<span class="unit">亿份</span></dd></div>
-      <div><dt>区间终点份额</dt><dd class="num">${esc(cnum(last, 1))}<span class="unit">亿份</span></dd></div>
+    kpis.innerHTML = `<div><dt>区间起点规模</dt><dd class="num">${esc(cnum(first, 1))}<span class="unit">亿元</span></dd></div>
+      <div><dt>区间终点规模</dt><dd class="num">${esc(cnum(last, 1))}<span class="unit">亿元</span></dd></div>
       <div><dt>区间变化率</dt><dd class="num ${pct > 0 ? "up" : pct < 0 ? "down" : "flat"}">${esc(fmtPct(pct, 2))}</dd></div>
-      <div><dt>区间份额净申购</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>`;
+      <div><dt>区间净申购</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>`;
   }
   const renderRank = (hostId, dir) => {
     const host = document.getElementById(hostId);
     if (!host) return;
-    const sorted = stats.slice().sort((a, b) => (dir === "in" ? b.delta - a.delta : a.delta - b.delta));
-    const list = dir === "in" ? sorted.filter((s) => s.delta > 0).slice(0, 3) : sorted.filter((s) => s.delta < 0).slice(0, 3);
+    const sorted = stats.slice().sort((a, b) => (dir === "in" ? b.flow - a.flow : a.flow - b.flow));
+    const list = dir === "in" ? sorted.filter((s) => s.flow > 0).slice(0, 3) : sorted.filter((s) => s.flow < 0).slice(0, 3);
     if (!list.length) {
-      host.innerHTML = `<p class="t-2xs dim" style="padding:6px 12px">该区间无${dir === "in" ? "份额净申购" : "净流出"}的小类</p>`;
+      host.innerHTML = `<p class="t-2xs dim" style="padding:6px 12px">该区间无${dir === "in" ? "净申购" : "净流出"}的小类</p>`;
       return;
     }
     host.innerHTML = list
@@ -841,7 +878,7 @@ function renderCatSide(app, key) {
         <span class="rankrow-idx">${i + 1}</span>
         <span class="cat-dot" style="background:${esc(toneColor(s.color, isDark()))}"></span>
         <span class="rankrow-name">${esc(s.name)}</span>
-        <span class="rankrow-val ${s.delta > 0 ? "up" : "down"}">${esc(fmtSigned(s.delta, 1))}</span>
+        <span class="rankrow-val ${s.flow > 0 ? "up" : "down"}">${esc(fmtSigned(s.flow, 1))}</span>
       </button>`
       )
       .join("");

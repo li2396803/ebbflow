@@ -90,3 +90,59 @@ export function seedDay(db, date, { sh, sz, src = "sse", flags = { sse: true }, 
   putInfo.run(date, flags.sse ? 1 : 0, flags.szse ? 1 : 0, flags.ts ? 1 : 0);
   return rows.length;
 }
+
+/** 写入净值行：[[code, nav], ...] */
+export function seedNavRows(db, date, rows) {
+  const put = db.prepare("INSERT INTO nav(code,date,nav) VALUES(?,?,?) ON CONFLICT(code,date) DO UPDATE SET nav=excluded.nav");
+  db.exec("BEGIN");
+  try {
+    for (const [code, nav] of rows) put.run(code, date, nav);
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+}
+
+/** 写入份额折算事件：[{code,date,kind,ratio}] */
+export function seedEvents(db, rows) {
+  const put = db.prepare("INSERT INTO event(code,date,kind,ratio) VALUES(?,?,?,?) ON CONFLICT(code,date,kind) DO UPDATE SET ratio=excluded.ratio");
+  db.exec("BEGIN");
+  try {
+    for (const r of rows) put.run(r.code, r.date, r.kind ?? "split", r.ratio);
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+}
+
+/** 设置上市日期：{code: 'YYYY-MM-DD'} */
+export function seedListDates(db, map) {
+  const upd = db.prepare("UPDATE fund SET list_date=? WHERE code=?");
+  db.exec("BEGIN");
+  try {
+    for (const [code, d] of Object.entries(map)) upd.run(d, code);
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+}
+
+/** 造一个小宇宙：{ 小类名: {cat, codes:[]} } → universe */
+export function mkUniverse(spec) {
+  const SUB = {};
+  for (const [name, v] of Object.entries(spec)) {
+    SUB[name] = { cat: v.cat ?? "1_宽基市场", color: v.color ?? "#000000", etfs: v.codes.map((code) => ({ code })) };
+  }
+  const CATS = Object.keys(spec).length ? [{ key: "1_宽基市场", label: "1.测试", color: "#000000", subs: Object.keys(SUB) }] : [];
+  return { CATS, SUB };
+}
+
+/** 直接查 series 表：Map<'sub|date', {val,scale,flow,coverage}> */
+export function readSeries(db, table = "series") {
+  const out = new Map();
+  for (const r of db.prepare(`SELECT sub,date,val,scale,flow,coverage FROM ${table}`).all()) out.set(`${r.sub}|${r.date}`, r);
+  return out;
+}

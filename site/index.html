@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="description" content="Ebbflow · ETF 细分行业资金流向：把沪深两市 ETF 的份额、规模与份额净申购按行业归堆画成曲线，支持区间对比、自选与离线查看。">
+<meta name="description" content="Ebbflow · ETF 细分行业资金流向：把沪深两市 ETF 的规模与净申购按行业归堆画成曲线，支持区间对比、自选与离线查看。">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0a0b0e" media="(prefers-color-scheme: dark)">
 <title>Ebbflow · ETF 细分行业资金流向</title>
@@ -18,7 +18,7 @@
 <!-- ebbflow · ETF 细分行业资金流向 · built by dreemetoo · https://github.com/li2396803/ebbflow -->
 <!-- signature 01965be232d20323 · license MIT · based on a work by 生炸瓜 (哔哩哔哩（B站）) -->
 <meta name="author" content="dreemetoo">
-<meta name="generator" content="ebbflow/3.12.0 (+https://github.com/li2396803/ebbflow)">
+<meta name="generator" content="ebbflow/4.0.0 (+https://github.com/li2396803/ebbflow)">
 <meta name="ebbflow:signature" content="01965be232d20323">
 <meta name="ebbflow:license" content="MIT">
 <meta name="ebbflow:origin" content="生炸瓜 @ 哔哩哔哩（B站）">
@@ -63,9 +63,9 @@
 </script>
 <link rel="preload" as="fetch" href="data/market.json" crossorigin>
 <!-- echarts 由 js/chart.js 在真正需要画图时注入：不阻塞首屏文本与 KPI -->
-  <script type="module" crossorigin src="./assets/index-DTD7Ansx.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/style-BhHsyNmO.css">
-<link rel="modulepreload" href="assets/echarts-BmlN25iB.js" crossorigin><link rel="modulepreload" href="assets/vendor-echarts-DkgGIiZw.js" crossorigin></head>
+  <script type="module" crossorigin src="./assets/index-BtYSUXTS.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/style-ClErctzm.css">
+<link rel="modulepreload" href="assets/echarts-DJ_gnKoA.js" crossorigin><link rel="modulepreload" href="assets/vendor-echarts-BTNrdOh3.js" crossorigin></head>
 <body>
 
 <a class="skip-link" href="#main">跳到主要内容</a>
@@ -218,10 +218,10 @@
       </div>
 
       <div class="grid grid--4" id="ovKpis" aria-label="全市场关键指标">
-        <div class="kpi"><div class="kpi-top"><span class="kpi-label"><span class="kpi-dot"></span>总份额</span></div><div class="kpi-val"><span class="sk sk-num"></span></div><div class="kpi-foot"><span class="sk sk-line" style="width:80px"></span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label"><span class="kpi-dot"></span>全市场规模</span></div><div class="kpi-val"><span class="sk sk-num"></span></div><div class="kpi-foot"><span class="sk sk-line" style="width:80px"></span></div></div>
         <div class="kpi"><div class="kpi-top"><span class="kpi-label"><span class="kpi-dot"></span>总规模</span></div><div class="kpi-val"><span class="sk sk-num"></span></div><div class="kpi-foot"><span class="sk sk-line" style="width:80px"></span></div></div>
-        <div class="kpi"><div class="kpi-top"><span class="kpi-label"><span class="kpi-dot"></span>区间份额变化</span></div><div class="kpi-val"><span class="sk sk-num"></span></div><div class="kpi-foot"><span class="sk sk-line" style="width:80px"></span></div></div>
-        <div class="kpi"><div class="kpi-top"><span class="kpi-label"><span class="kpi-dot"></span>区间份额净申购</span></div><div class="kpi-val"><span class="sk sk-num"></span></div><div class="kpi-foot"><span class="sk sk-line" style="width:80px"></span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label"><span class="kpi-dot"></span>区间规模变化</span></div><div class="kpi-val"><span class="sk sk-num"></span></div><div class="kpi-foot"><span class="sk sk-line" style="width:80px"></span></div></div>
+        <div class="kpi"><div class="kpi-top"><span class="kpi-label"><span class="kpi-dot"></span>区间净申购</span></div><div class="kpi-val"><span class="sk sk-num"></span></div><div class="kpi-foot"><span class="sk sk-line" style="width:80px"></span></div></div>
       </div>
 
       <div class="split-2-1">
@@ -232,10 +232,7 @@
               <p class="card-sub" id="mktSub">沪市 / 深市 / 合计，点击图例可聚焦</p>
             </div>
             <div class="card-tools">
-              <div class="seg" id="mktMetric" role="group" aria-label="市场指标">
-                <button class="seg-btn" type="button" data-m="scale" aria-pressed="true">规模</button>
-                <button class="seg-btn" type="button" data-m="shares" aria-pressed="false">份额</button>
-              </div>
+
             </div>
           </div>
           <div class="card-body">
@@ -272,7 +269,7 @@
         <div class="card-head">
           <div class="card-title">
             <h2 id="catGridTitle">大类区间表现</h2>
-            <p class="card-sub" id="catGridSub">按当前选中区间计算份额变化，点击进入该类走势</p>
+            <p class="card-sub" id="catGridSub">按当前选中区间计算规模变化与净申购，点击进入该类走势</p>
           </div>
           <div class="card-tools">
             <button class="btn btn--ghost btn--sm" type="button" id="btnAllSubsFromGrid">查看全部小类</button>
@@ -287,8 +284,8 @@
         <section class="card" aria-labelledby="topInTitle">
           <div class="card-head">
             <div class="card-title">
-              <h2 id="topInTitle">区间份额增加 TOP 8</h2>
-              <p class="card-sub" id="topInSub">按所选区间首末交易日份额差排序</p>
+              <h2 id="topInTitle">区间净申购 TOP 8</h2>
+              <p class="card-sub" id="topInSub">按所选区间净申购（亿元）排序</p>
             </div>
             <div class="card-tools">
               <button class="icon-btn" type="button" data-copy="topin" aria-label="复制表格" title="复制表格">
@@ -306,7 +303,7 @@
                   <tr>
                     <th scope="col">#</th>
                     <th scope="col" data-sort-key="name" data-type="text" aria-sort="none"><button type="button">细分行业<span class="sort-ico"></span></button></th>
-                    <th scope="col" class="num" data-sort-key="delta" data-type="num" aria-sort="descending"><button type="button">份额变化<span class="sort-ico"></span></button></th>
+                    <th scope="col" class="num" data-sort-key="flow" data-type="num" aria-sort="descending"><button type="button">净申购<span class="sort-ico"></span></button></th>
                     <th scope="col" class="num" data-sort-key="pct" data-type="num" aria-sort="none"><button type="button">变化率<span class="sort-ico"></span></button></th>
                     <th scope="col" class="num">区间走势</th>
                   </tr>
@@ -320,8 +317,8 @@
         <section class="card" aria-labelledby="topOutTitle">
           <div class="card-head">
             <div class="card-title">
-              <h2 id="topOutTitle">区间份额减少 TOP 8</h2>
-              <p class="card-sub" id="topOutSub">负值为净赎回（份额减少）</p>
+              <h2 id="topOutTitle">区间净赎回 TOP 8</h2>
+              <p class="card-sub" id="topOutSub">负值为净赎回（亿元）</p>
             </div>
             <div class="card-tools">
               <button class="icon-btn" type="button" data-copy="topout" aria-label="复制表格" title="复制表格">
@@ -339,7 +336,7 @@
                   <tr>
                     <th scope="col">#</th>
                     <th scope="col" data-sort-key="name" data-type="text" aria-sort="none"><button type="button">细分行业<span class="sort-ico"></span></button></th>
-                    <th scope="col" class="num" data-sort-key="delta" data-type="num" aria-sort="descending"><button type="button">份额变化<span class="sort-ico"></span></button></th>
+                    <th scope="col" class="num" data-sort-key="flow" data-type="num" aria-sort="descending"><button type="button">净申购<span class="sort-ico"></span></button></th>
                     <th scope="col" class="num" data-sort-key="pct" data-type="num" aria-sort="none"><button type="button">变化率<span class="sort-ico"></span></button></th>
                     <th scope="col" class="num">区间走势</th>
                   </tr>
@@ -368,7 +365,7 @@
 
       <p class="notice">
         <svg aria-hidden="true"><use href="#i-info"/></svg>
-        <span>数据来自上交所、深交所、Tushare 等公开接口；「规模」「份额净申购」为按单位净值折算的估算值。份额净申购＝成分 ETF 份额变动×净值（估算）——ETF 在二级市场买卖<b>不改变份额</b>，只有一级申购赎回才改变，因此该指标反映一级申赎，<b>不等于二级成交额</b>。不构成投资建议。</span>
+        <span>数据来自上交所、深交所、Tushare 等公开接口；「规模」「净申购」按单位净值折算。净申购＝Σ(Δ份额 × 当日净值)，只反映一级市场申赎——ETF 在二级市场买卖<b>不改变份额</b>，因此<b>不等于二级成交额</b>。不构成投资建议。</span>
       </p>
     </section>
 
@@ -415,7 +412,7 @@
             <button class="btn btn--sm" type="button" id="btnBrush" aria-pressed="false" title="框选区间（拖出矩形后同步所有图表与表格）">
               <svg aria-hidden="true"><use href="#i-brush"/></svg>框选
             </button>
-            <button class="btn btn--sm" type="button" id="btnLog" aria-pressed="false" title="对数坐标：适合量级差异很大的多个系列（仅份额/规模）">
+            <button class="btn btn--sm" type="button" id="btnLog" aria-pressed="false" title="对数坐标：适合量级差异很大的多个系列（仅规模）">
               对数
             </button>
             <button class="btn btn--sm" type="button" id="btnShowAll" aria-pressed="false" title="默认只画规模最大的 12 条，其余合并为「其他」；点这里显示全部小类">Top 12</button>
@@ -481,14 +478,13 @@
                 <thead>
                   <tr>
                     <th scope="col" data-sort-key="name" data-type="text" aria-sort="none"><button type="button">细分行业<span class="sort-ico"></span></button></th>
-                    <th scope="col" class="num" data-sort-key="last" data-type="num" aria-sort="none"><button type="button">最新份额<span class="sort-ico"></span></button></th>
-                    <th scope="col" class="num" data-sort-key="delta" data-type="num" aria-sort="none"><button type="button">区间变化<span class="sort-ico"></span></button></th>
+                    <th scope="col" class="num" data-sort-key="last" data-type="num" aria-sort="none"><button type="button">期末规模<span class="sort-ico"></span></button></th>
+                    <th scope="col" class="num" data-sort-key="flow" data-type="num" aria-sort="none"><button type="button">区间净申购<span class="sort-ico"></span></button></th>
                     <th scope="col" class="num" data-sort-key="pct" data-type="num" aria-sort="descending"><button type="button">变化率<span class="sort-ico"></span></button></th>
-                    <th scope="col" class="num cat-scale" data-sort-key="scale" data-type="num" aria-sort="none"><button type="button">规模<span class="sort-ico"></span></button></th>
                     <th scope="col" class="num cat-spark">走势</th>
                   </tr>
                 </thead>
-                <tbody><tr><td colspan="6"><span class="sk sk-line" style="width:80%"></span></td></tr></tbody>
+                <tbody><tr><td colspan="5"><span class="sk sk-line" style="width:80%"></span></td></tr></tbody>
               </table>
             </div>
           </div>
@@ -503,17 +499,17 @@
           </div>
           <div class="card-body card-body--pad">
             <dl class="kpi-mini" id="catKpis">
-              <div><dt>区间起点份额</dt><dd><span class="sk sk-line" style="width:60px;display:block"></span></dd></div>
-              <div><dt>区间终点份额</dt><dd><span class="sk sk-line" style="width:60px;display:block"></span></dd></div>
+              <div><dt>区间起点规模</dt><dd><span class="sk sk-line" style="width:60px;display:block"></span></dd></div>
+              <div><dt>区间终点规模</dt><dd><span class="sk sk-line" style="width:60px;display:block"></span></dd></div>
               <div><dt>区间变化率</dt><dd><span class="sk sk-line" style="width:60px;display:block"></span></dd></div>
-              <div><dt>区间份额净申购</dt><dd><span class="sk sk-line" style="width:60px;display:block"></span></dd></div>
+              <div><dt>区间净申购</dt><dd><span class="sk sk-line" style="width:60px;display:block"></span></dd></div>
             </dl>
             <div class="drawer-sec" style="margin-top:var(--sp-4)">
-              <div class="drawer-sec-head"><h3>本类份额净申购 TOP 3</h3><button class="linkbtn" type="button" data-open-all="in">全部</button></div>
+              <div class="drawer-sec-head"><h3>本类净申购 TOP 3</h3><button class="linkbtn" type="button" data-open-all="in">全部</button></div>
               <div class="ranklist" id="catTopIn"></div>
             </div>
             <div class="drawer-sec" style="margin-top:var(--sp-3)">
-              <div class="drawer-sec-head"><h3>本类份额净赎回 TOP 3</h3><button class="linkbtn" type="button" data-open-all="out">全部</button></div>
+              <div class="drawer-sec-head"><h3>本类净赎回 TOP 3</h3><button class="linkbtn" type="button" data-open-all="out">全部</button></div>
               <div class="ranklist" id="catTopOut"></div>
             </div>
           </div>
@@ -546,7 +542,7 @@
           <h3><span class="foot-tag">鸣谢</span>鸣谢 · 本项目复刻自 B 站 UP 主「生炸瓜」的看板</h3>
           <p>原看板：<a href="https://space.bilibili.com/3546681834473583" target="_blank" rel="noopener">B 站主页</a>
             ｜ <a href="https://github.com/ysz-xiao" target="_blank" rel="noopener">GitHub</a></p>
-          <p>9 大类 / 86 个细分行业的分类体系、「份额＝成分 ETF 之和、债券 ×100」的口径、以及看板的整体形态，都源自
+          <p>9 大类 / 86 个细分行业的分类体系、按成分 ETF 聚合的口径、以及看板的整体形态，都源自
             <b>哔哩哔哩（B站）UP 主「生炸瓜」</b> 的公开作品。原看板的设计与制作成果归原作者所有，郑重致谢。</p>
           <p class="foot-muted">本站是独立重写的数据管道 + 前端，与原作者无隶属关系。</p>
         </section>
@@ -555,7 +551,7 @@
           <h3><span class="foot-tag">免责声明</span>不构成任何投资建议</h3>
           <p>
             数据来自<b>上交所、深交所、Tushare</b> 等公开接口，可能存在延迟、缺失、口径差异或抓取错误；
-            「规模」「份额净申购」为按单位净值折算的<b>估算值</b>。本项目仅供个人研究与技术学习使用，
+            「规模」「净申购」为按单位净值折算的<b>估算值</b>。本项目仅供个人研究与技术学习使用，
             <b>不构成投资建议、要约或推荐</b>，任何人据此作出的投资决策与后果自负。
           </p>
           <p class="foot-muted">本项目与原作者、交易所、数据服务商均无从属或合作关系；不保证数据的准确性、完整性与时效性。</p>
@@ -564,7 +560,7 @@
         <section class="foot-card foot-about">
           <h3><span class="foot-tag">项目</span>开源 · MIT</h3>
           <p>
-            版本 <b>v3.12.0</b> ｜ 作者 <a href="https://github.com/li2396803" target="_blank" rel="noopener">dreemetoo</a>
+            版本 <b>v4.0.0</b> ｜ 作者 <a href="https://github.com/li2396803" target="_blank" rel="noopener">dreemetoo</a>
             ｜ 仓库 <a href="https://github.com/li2396803/ebbflow" target="_blank" rel="noopener">https://github.com/li2396803/ebbflow</a>
           </p>
           <p id="taxLine">分类口径：—</p>
@@ -658,10 +654,7 @@
           <button class="seg-btn" type="button" data-sign="in" aria-pressed="false">净增加</button>
           <button class="seg-btn" type="button" data-sign="out" aria-pressed="false">净减少</button>
         </div>
-        <div class="seg" id="allMetric" role="group" aria-label="指标">
-          <button class="seg-btn" type="button" data-m="shares" aria-pressed="true">份额</button>
-          <button class="seg-btn" type="button" data-m="scale" aria-pressed="false">金额</button>
-        </div>
+
         <button class="btn btn--sm" type="button" id="allCsv">
           <svg aria-hidden="true"><use href="#i-download"/></svg>CSV
         </button>
@@ -676,9 +669,9 @@
               <th scope="col">#</th>
               <th scope="col" data-sort-key="sub" data-type="text" aria-sort="none"><button type="button">细分行业<span class="sort-ico"></span></button></th>
               <th scope="col" data-sort-key="cat" data-type="text" aria-sort="none"><button type="button">大类<span class="sort-ico"></span></button></th>
-              <th scope="col" class="num" data-sort-key="first" data-type="num" aria-sort="none"><button type="button">区间起点<span class="sort-ico"></span></button></th>
-              <th scope="col" class="num" data-sort-key="last" data-type="num" aria-sort="none"><button type="button">区间终点<span class="sort-ico"></span></button></th>
-              <th scope="col" class="num" data-sort-key="delta" data-type="num" aria-sort="descending"><button type="button">变化量<span class="sort-ico"></span></button></th>
+              <th scope="col" class="num" data-sort-key="first" data-type="num" aria-sort="none"><button type="button">期初规模(亿元)<span class="sort-ico"></span></button></th>
+              <th scope="col" class="num" data-sort-key="last" data-type="num" aria-sort="none"><button type="button">期末规模(亿元)<span class="sort-ico"></span></button></th>
+              <th scope="col" class="num" data-sort-key="delta" data-type="num" aria-sort="descending"><button type="button">规模变化(亿元)<span class="sort-ico"></span></button></th>
               <th scope="col" class="num" data-sort-key="pct" data-type="num" aria-sort="none"><button type="button">变化率<span class="sort-ico"></span></button></th>
               <th scope="col" class="num" data-sort-key="share" data-type="num" aria-sort="none"><button type="button">本类占比<span class="sort-ico"></span></button></th>
             </tr>

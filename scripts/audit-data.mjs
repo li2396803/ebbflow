@@ -16,6 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { openDb, dbStats, axisDiagnostics, dayCoverage } from "../lib/db.mjs";
+import { loadShares as loadSharesRaw } from "../lib/invariants.mjs";
 import { loadUniverse } from "../lib/universe.mjs";
 import { loadShares, loadSeries, officialCountsFromShares, resolveMarketModes, numericChecks, suspiciousJumps, BAND , detectUnitOutliers, filterIsolated} from "../lib/invariants.mjs";
 import { projectRoot, readJsonFile } from "../lib/cli.mjs";
@@ -146,6 +147,156 @@ function checkDb() {
       if (all.etfs !== sh.etfs + sz.etfs) mktBad.push(`${d} 只数不合计`);
     }
     record("C. market ALL = SH + SZ", mktBad.length === 0, mktBad.length ? mktBad.slice(0, 5) : [`${byDate.size} 天全部自洽`]);
+
+    // C3: 钱口径自洽（规模 = Σ份额×净值；净申购 = Σ Δ份额×净值，含折算还原/上市首日）
+    {
+      const sampleSubs = Object.entries(UL.SUB).slice(0, 12).map(([k]) => k);
+      const sampleDates = dates.slice(-30);
+      const navByDate = new Map();
+      for (const d of sampleDates) {
+        navByDate.set(d, new Map(db.prepare("SELECT code, nav FROM nav WHERE date=?").all(d).map((r) => [r.code, r.nav])));
+      }
+      const listDate = new Map(db.prepare("SELECT code, list_date FROM fund WHERE list_date IS NOT NULL").all().map((r) => [r.code, r.list_date]));
+      const events = new Map();
+      for (const r of db.prepare("SELECT code, date, ratio FROM event").all()) {
+        let l = events.get(r.code);
+        if (!l) events.set(r.code, (l = []));
+        l.push({ date: r.date, ratio: r.ratio });
+      }
+      const adjust = (code, date, wan) => {
+        const list = events.get(code);
+        if (!list) return wan;
+        let f = 1;
+        for (const e of list) if (e.date > date) f *= e.ratio > 0 ? e.ratio : 1;
+        return wan * f;
+      };
+      const stored = new Map(db.prepare("SELECT sub, date, scale, flow FROM series").all().map((r) => [`${r.sub}|${r.date}`, r]));
+      const scaleBad = [];
+      const flowBad = [];
+      let scaleChecked = 0;
+      let flowChecked = 0;
+      for (const sub of sampleSubs) {
+        const meta = UL.SUB[sub];
+        const codes = meta.etfs.map((e) => e.code);
+        for (let di = 1; di < sampleDates.length; di++) {
+          const d = sampleDates[di];
+          const prevD = sampleDates[di - 1];
+          const day = shares.get(d);
+          const prevDay = shares.get(prevD);
+          const navs = navByDate.get(d);
+          // 每天用「当天自己的口径模式」：官方缺深市快照的日子（如 11-19）与有快照的日子（11-20）
+          // 模式不同，拿今天的模式去过滤昨天的行会误删 Tushare 兜底（审计会与库值对不上）。
+          const mode = modes.get(d) ?? { sh: "all", sz: "all" };
+          const modePrev = modes.get(prevD) ?? { sh: "all", sz: "all" };
+          const pick = (m, code, mo) => {
+            const r = m?.get(code);
+            if (!r) return null;
+            const isSh = /^[56]/.test(code);
+            const officialRow = isSh ? r.src === "sse" : r.src === "szse";
+            const useOfficial = isSh ? mo.sh === "official" : mo.sz === "official";
+            if (useOfficial && !officialRow) return null;
+            return r;
+          };
+          let expScale = 0;
+          let scaleHit = 0;
+          let expFlow = 0;
+          let flowHit = 0;
+          for (const code of codes) {
+            const r = pick(day, code, mode);
+            const nav = navs?.get(code);
+            if (r && nav != null) {
+              expScale += (r.wan / 1e4) * nav;
+              scaleHit++;
+            }
+            const p = pick(prevDay, code, modePrev);
+            if (r && p && nav != null && !(listDate.get(code) === d)) {
+              expFlow += ((adjust(code, d, r.wan) - adjust(code, prevD, p.wan)) / 1e4) * nav;
+              flowHit++;
+            }
+          }
+          const row = stored.get(`${sub}|${d}`);
+          if (!row) continue;
+          if (scaleHit) {
+            scaleChecked++;
+            if (Math.abs((row.scale ?? 0) - Math.round(expScale * 1e4) / 1e4) > 1e-4) {
+              if (scaleBad.length < 5) scaleBad.push(`${sub} ${d} 库 ${row.scale} ≠ 复算 ${(Math.round(expScale * 1e4) / 1e4).toFixed(4)}`);
+            }
+          }
+          if (flowHit) {
+            flowChecked++;
+            if (Math.abs((row.flow ?? 0) - Math.round(expFlow * 1e4) / 1e4) > 1e-4) {
+              if (flowBad.length < 5) flowBad.push(`${sub} ${d} 库 ${row.flow} ≠ 复算 ${(Math.round(expFlow * 1e4) / 1e4).toFixed(4)}`);
+            }
+          }
+        }
+      }
+      record(
+        "C3. 规模 = Σ(份额×净值)",
+        scaleBad.length === 0,
+        scaleBad.length ? scaleBad : [`抽查 ${sampleSubs.length} 小类 × 30 天（${scaleChecked} 个点），最大误差 < 1e-4`]
+      );
+      record(
+        "C3. 净申购 = Σ(Δ份额×净值)（含折算还原/上市首日）",
+        flowBad.length === 0,
+        flowBad.length ? flowBad : [`抽查 ${sampleSubs.length} 小类 × 30 天（${flowChecked} 个点），含 254 起折算事件`]
+      );
+    }
+
+    // G: etfRanges 抽查（对照 site/data/etf-ranges/<cat>.json；没有构建产物时跳过）
+    {
+      const dir = path.join(ROOT, "site", "data", "etf-ranges");
+      const subsFile = path.join(ROOT, "site", "data", "subs.json");
+      if (!fs.existsSync(dir) || !fs.existsSync(subsFile)) {
+        record("G. etfRanges 抽查", true, ["无站点构建产物（site/data/etf-ranges 不存在），跳过"], { severity: "warn" });
+      } else {
+        const periods = ["1m", "3m", "1y"];
+        const months = { "1m": 1, "3m": 3, "1y": 12 };
+        const addMonths = (dateStr, m) => {
+          const dt = new Date(`${dateStr}T00:00:00Z`);
+          const day = dt.getUTCDate();
+          dt.setUTCDate(1);
+          dt.setUTCMonth(dt.getUTCMonth() + m);
+          const dim = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + 1, 0)).getUTCDate();
+          dt.setUTCDate(Math.min(day, dim));
+          return dt.toISOString().slice(0, 10);
+        };
+        const last = dates[dates.length - 1];
+        const bad = [];
+        let checked = 0;
+        let usedFile = null;
+        for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".json"))) {
+          const payload = JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
+          const subNames = Object.keys(payload.subs ?? {});
+          if (!subNames.length) continue;
+          usedFile = f;
+          const sub = subNames[0];
+          const meta = UL.SUB[sub];
+          if (!meta) continue;
+          for (const p of periods) {
+            const target = addMonths(last, -months[p]);
+            let i0 = 0;
+            for (let i = dates.length - 1; i >= 0; i--) if (dates[i] <= target) { i0 = i; break; }
+            const from = dates[i0];
+            for (const e of meta.etfs.slice(0, 3)) {
+              const got = payload.subs[sub]?.[p]?.[e.code];
+              if (!got) continue;
+              const s0 = db.prepare("SELECT wan FROM share WHERE code=? AND date=?").get(e.code, from)?.wan ?? null;
+              const n0 = db.prepare("SELECT nav FROM nav WHERE code=? AND date=?").get(e.code, from)?.nav ?? null;
+              const s1 = db.prepare("SELECT wan FROM share WHERE code=? AND date=?").get(e.code, last)?.wan ?? null;
+              const n1 = db.prepare("SELECT nav FROM nav WHERE code=? AND date=?").get(e.code, last)?.nav ?? null;
+              const end = s1 != null && n1 != null ? (s1 / 1e4) * n1 : null;
+              const start = s0 != null && n0 != null ? (s0 / 1e4) * n0 : null;
+              const chg = end != null && start != null && start > 0 ? ((end - start) / start) * 100 : null;
+              checked++;
+              const close = (a, b, tol) => (a == null && b == null) || (a != null && b != null && Math.abs(a - b) <= tol);
+              if (!close(got.scaleEnd, end == null ? null : Math.round(end * 100) / 100, 0.02)) bad.push(`${sub} ${p} ${e.code} scaleEnd 库 ${got.scaleEnd} ≠ 复算 ${end}`);
+              if (!close(got.chgPct, chg == null ? null : Math.round(chg * 100) / 100, 0.02)) bad.push(`${sub} ${p} ${e.code} chgPct 库 ${got.chgPct} ≠ 复算 ${chg}`);
+            }
+          }
+        }
+        record("G. etfRanges 抽查（期初/期末按 code/date 复算）", bad.length === 0, bad.length ? bad.slice(0, 5) : [`抽查 ${checked} 条（${usedFile ?? "-"}：3 只 ETF × 1m/3m/1y）`]);
+      }
+    }
 
     // D: 序列只在轴内
     for (const table of ["series", "series_v2"]) {

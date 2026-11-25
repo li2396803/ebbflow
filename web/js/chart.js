@@ -12,6 +12,15 @@
 
 import { axisNum, cnum, esc, fmtPct, isDesktop, prefersReducedMotion, toneColor, throttleRAF } from "./util.js";
 
+// 构建后 URL 会被 writeURL 重写：debug 标记在模块加载时捕获一次
+const DEBUG_QUERY = (() => {
+  try {
+    return new URLSearchParams(location.search).has("debug");
+  } catch {
+    return false;
+  }
+})();
+
 let echartsMod = null;
 let echartsReady = null;
 
@@ -454,7 +463,7 @@ function yAxisOption(a, index, t, p) {
     logBase: 10,
     position: a.position || "left",
     offset: a.offset || 0,
-    // 金额轴按数据自适应；份额净申购含正负、变化率含 0，都强制包含 0
+    // 金额轴按数据自适应；净申购含正负、变化率含 0，都强制包含 0
     scale: !isFlow && !isPct && !p.log,
     splitNumber: 4,
     axisLine: { show: false },
@@ -566,11 +575,17 @@ function focusTooltip(p, params) {
       s.name
     )}</span><span class="ec-tip-val">${txt}</span></div>`;
   });
+  const cov = p.coverage ? p.coverage[idx] : null;
+  const covNote =
+    cov != null && cov < 0.6
+      ? `<div class="ec-tip-note"><span>该日数据覆盖不足（${Math.round(cov * 100)}%），虚线/灰底仅供参考</span></div>`
+      : "";
   return `<div class="ec-tip">
     <div class="ec-tip-head"><span class="ec-tip-date">${esc(date)}</span><span class="ec-tip-sum">${esc(
       p.footNote || ""
     )}</span></div>
     <div class="ec-tip-body">${rows.join("")}</div>
+    ${covNote}
   </div>`;
 }
 
@@ -638,7 +653,7 @@ function axesFocusOption(p) {
       name: s.name,
       xAxisIndex: 0,
       yAxisIndex: s.axis,
-      data: s.values,
+      data: s.lowSpans && s.lowSpans.length ? nullLowSegments(s.values, s.lowSpans) : s.values,
       animation: false,
       unit: s.unit,
       z: s.kind === "bar" ? 2 : 3,
@@ -682,6 +697,13 @@ function axesFocusOption(p) {
       ...baseline,
     };
   });
+  // 低覆盖：同色虚线叠加 + 灰底（聚焦态只有一个小类）
+  const covAxes = coverageOverlays(p, t, { mode: "axes" });
+  if (covAxes.overlays.length) series.push(...covAxes.overlays);
+  if (covAxes.spans.length) {
+    const mainLine = series.find((x) => x.type === "line" && !String(x.name).endsWith("__cov"));
+    if (mainLine) mainLine.markArea = coverageMarkArea(p, t, covAxes.spans);
+  }
   /** @type {any[]} */
   const dz = [
     {
@@ -746,7 +768,7 @@ function axesFocusOption(p) {
 }
 
 
-/** 分面布局：主图（份额/规模双轴）+ 份额净申购 + 变化率，共享 X 轴与十字光标 */
+/** 分面布局：规模 / 净申购 / 变化率 各占一栏，共享 X 轴与十字光标 */
 function panesFocusOption(p) {
   const t = tokens();
   const mobile = !isDesktop();
@@ -819,7 +841,7 @@ function panesFocusOption(p) {
       name: s.name,
       xAxisIndex: s.pane,
       yAxisIndex: s.paneAxis,
-      data: s.values,
+      data: s.lowSpans && s.lowSpans.length ? nullLowSegments(s.values, s.lowSpans) : s.values,
       animation: false,
       unit: s.unit,
       z: s.kind === "bar" ? 2 : 3,
@@ -863,6 +885,12 @@ function panesFocusOption(p) {
       ...baseline,
     };
   });
+  const covPanes = coverageOverlays(p, t, { mode: "panes" });
+  if (covPanes.overlays.length) series.push(...covPanes.overlays);
+  if (covPanes.spans.length) {
+    const mainLine = series.find((x) => x.type === "line" && !String(x.name).endsWith("__cov"));
+    if (mainLine) mainLine.markArea = coverageMarkArea(p, t, covPanes.spans);
+  }
   /** @type {any[]} */
   const dz = [
     {
@@ -926,6 +954,79 @@ function panesFocusOption(p) {
   };
 }
 
+/** 合并重叠/相邻的低覆盖区段 */
+function mergeSpans(spans) {
+  const arr = spans.slice().sort((a, b) => a[0] - b[0]);
+  const out = [];
+  for (const sp of arr) {
+    const last = out[out.length - 1];
+    if (last && sp[0] <= last[1] + 1) last[1] = Math.max(last[1], sp[1]);
+    else out.push([sp[0], sp[1]]);
+  }
+  return out;
+}
+
+/** 把低覆盖区段从实线数据里置空（视觉虚线由 overlay 绘制，数值仍保留在 payload） */
+function nullLowSegments(values, spans) {
+  if (!spans || !spans.length || !Array.isArray(values)) return values;
+  const out = values.slice();
+  for (const [a, b] of spans) {
+    for (let i = Math.max(0, a); i <= Math.min(out.length - 1, b); i += 1) out[i] = null;
+  }
+  return out;
+}
+
+/** 低覆盖区段：同色虚线（与主线同名，tooltip 只出现一条） */
+function coverageOverlays(p, t, opts = {}) {
+  const mode = opts.mode || "axes";
+  const dates = p.dates || [];
+  const overlays = [];
+  const spans = [];
+  for (const s of p.series || []) {
+    if (s.kind === "bar") continue;
+    const list = s.lowSpans || [];
+    if (!list.length) continue;
+    const color = toneColor(s.color, t.dark);
+    for (const [st, en] of list) {
+      const data = new Array(dates.length).fill(null);
+      const from = Math.max(0, st - 1);
+      const to = Math.min(dates.length - 1, en + 1);
+      for (let i = from; i <= to; i += 1) data[i] = s.values?.[i];
+      overlays.push({
+        name: `${s.name}__cov`,
+        type: "line",
+        data,
+        ...(mode === "panes" ? { xAxisIndex: s.pane, yAxisIndex: s.paneAxis } : { yAxisIndex: Number.isInteger(s.axis) ? s.axis : 0 }),
+        showSymbol: false,
+        symbol: "none",
+        silent: false,
+        tooltip: { show: true },
+        legendHoverLink: false,
+        lineStyle: { color, width: 1.7, type: [5, 3], opacity: 1 },
+        itemStyle: { color },
+        z: 5,
+        animation: false,
+        connectNulls: false,
+        sampling: "lttb",
+      });
+    }
+    spans.push(...list);
+  }
+  return { overlays, spans };
+}
+
+function coverageMarkArea(p, t, spans) {
+  if (!spans.length) return undefined;
+  const dates = p.dates || [];
+  const merged = mergeSpans(spans);
+  return {
+    silent: true,
+    symbol: "none",
+    itemStyle: { color: t.dark ? "rgba(255,255,255,0.07)" : "rgba(16,19,26,0.055)" },
+    data: merged.map(([a, b]) => [{ xAxis: dates[a] ?? "" }, { xAxis: dates[b] ?? "" }]),
+  };
+}
+
 function baseOption(p) {
   if (p.focusMode) return p.layout === "panes" ? panesFocusOption(p) : axesFocusOption(p);
   const t = tokens();
@@ -940,11 +1041,12 @@ function baseOption(p) {
     const unit = s.unit || p.unit || "";
     const dim = p.focused && p.focused !== s.name && p.series.length > 1 && !p.mixed ? true : false;
     const opacity = dim ? 0.13 : 1;
+    const data = s.lowSpans && s.lowSpans.length ? nullLowSegments(s.values, s.lowSpans) : s.values;
     if (s.kind === "bar") {
       return {
         name: s.name,
         type: "bar",
-        data: s.values,
+        data,
         yAxisIndex: axisIndex,
         barMaxWidth: p.mixed ? 7 : 9,
         barGap: "12%",
@@ -965,7 +1067,7 @@ function baseOption(p) {
     return {
       name: s.name,
       type: "line",
-      data: s.values,
+      data,
       yAxisIndex: axisIndex,
       showSymbol: false,
       symbol: "circle",
@@ -1005,6 +1107,14 @@ function baseOption(p) {
       unit,
     };
   });
+
+  // 低覆盖：虚线叠加 + 单系列时灰底
+  const cov = coverageOverlays(p, t);
+  if (cov.overlays.length) series.push(...cov.overlays);
+  if (cov.spans.length && p.series.length === 1) {
+    const main = series.find((x) => x.type === "line" && !String(x.name).endsWith("__cov"));
+    if (main) main.markArea = coverageMarkArea(p, t, cov.spans);
+  }
 
   const endIdx = b ?? dates.length - 1;
   /** @type {any[]} */
@@ -1185,12 +1295,18 @@ function tooltipHTML(params, p) {
       : `合计 ${cnum(sum, 1)}${rows.some((r) => r.type === "bar") ? "" : ""}`
     : "";
 
+  const idx = arr[0]?.dataIndex;
+  const lowCount = (p.series || []).filter((s) => s.coverage && s.coverage[idx] != null && s.coverage[idx] < 0.6).length;
+  const covNote = lowCount
+    ? `<div class="ec-tip-note"><span>该日有 ${lowCount} 个系列数据覆盖不足（&lt;60%），虚线仅供参考</span></div>`
+    : "";
   return `<div class="ec-tip">
     <div class="ec-tip-head">
       <span class="ec-tip-date">${esc(date)}</span>
       <span class="ec-tip-sum">${esc(sumTxt)}</span>
     </div>
     <div class="ec-tip-body">${body}${rest > 0 ? `<div class="ec-tip-more">另有 ${rest} 项…</div>` : ""}</div>
+    ${covNote}
     ${p.footNote ? `<div class="ec-tip-foot"><span>${esc(p.footNote)}</span><span>${p.focused ? "已聚焦：" + esc(p.focused) : ""}</span></div>` : ""}
   </div>`;
 }
@@ -1216,6 +1332,10 @@ export function renderMain(p) {
   } catch (e) {}
   const opt = baseOption(p);
   main.ec.setOption(opt, { replaceMerge: ["series", "yAxis", "xAxis", "dataZoom", "grid", "tooltip", "toolbox"], lazyUpdate: true });
+  // 仅 ?debug=1 暴露实例，便于自测检查 series / markArea（不影响正常页面）
+  try {
+    if (DEBUG_QUERY) /** @type {any} */ (window).__ebbflowChart = main.ec;
+  } catch {}
   main.firstRender = false;
   scheduleLabels();
 }
