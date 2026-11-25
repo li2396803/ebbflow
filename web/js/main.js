@@ -1472,6 +1472,8 @@ function afterRangeChange(source) {
       document.getElementById("chartNoteRange").textContent = `当前区间 ${rangeTextForChart()}`;
     }
   }
+  // 通知抽屉等衍生视图：区间已变化（成分表区间列需要重算）
+  document.dispatchEvent(new CustomEvent("ebbflow:rangechange"));
 }
 
 /* ==========================================================================

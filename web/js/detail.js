@@ -5,6 +5,7 @@
 import { cnum, download, esc, fmtPct, fmtSigned, skeletonRows, toCSV, toneColor, isDark, emptyState } from "./util.js";
 import { flowEstimate, catLabelOf } from "./views.js";
 import { attachQuotes } from "./quote.js";
+import { rangeContext, decorateRows, APPROX_TIP } from "./etf-range.js";
 import { rankOf, state } from "./state.js";
 import { closeOverlay, openOverlay, toast } from "./ui.js";
 import { createMiniChart } from "./chart.js";
@@ -51,43 +52,70 @@ function renderTags(tags, dims, max = 4) {
 }
 let mini = null;
 let current = null;
-let etfSort = { key: "scale", dir: -1 };
+let etfSort = { key: "flowRange", dir: -1 };
+let drawerRows = [];
+let drawerTotalScale = 0;
+let drawerSorted = [];
 let drawerHooks = {};
 
 /* ------------------------- 聚焦态内嵌成分表（复用抽屉表） ------------------------- */
 const inlineTableState = new Map(); // subName → { key, dir, page }
+const inlineRenderToken = new Map(); // subName → number（防止快速切换区间的异步竞态）
+const SORT_LABEL = {
+  code: "代码",
+  name: "名称",
+  price: "最新价",
+  pctRange: "区间份额变化",
+  flowRange: "区间净申购",
+  scaleEnd: "期末规模",
+  premiumEnd: "折溢价",
+  weightPct: "占本类",
+};
 
 export function renderInlineEtfTable(app, subName, host) {
-  if (!host) return;
+  if (!host) return Promise.resolve();
   const entry = app.subs?.[subName];
   if (!entry) {
     host.innerHTML = `<div class="state state--sm" style="padding:var(--sp-6) 0">
       <p class="state-title">成分 ETF 明细暂未收录</p>
       <p class="state-desc">当前数据包还没有这个小类的成分明细，补齐后会出现在这里。</p></div>`;
-    return;
+    return Promise.resolve();
   }
   const rows = entry.etfs || [];
   if (!rows.length) {
     host.innerHTML = `<div class="state state--sm" style="padding:var(--sp-6) 0"><p class="state-desc">该小类暂无成分 ETF</p></div>`;
-    return;
+    return Promise.resolve();
   }
-  const st = inlineTableState.get(subName) || { key: "scale", dir: -1, page: 0 };
+  const st = inlineTableState.get(subName) || { key: "flowRange", dir: -1, page: 0 };
+  // 旧版本默认按规模排序：迁移到新的「区间净申购」
+  if (st.key === "scale" || st.key === "delta" || st.key === "shares") st.key = "flowRange";
   inlineTableState.set(subName, st);
-  const totalScale = rows.reduce((acc, r) => acc + (r.scale || 0), 0);
-  const sorted = sortEtfRows(rows, st);
-  const paged = sorted.length > 120;
-  const pages = paged ? Math.ceil(sorted.length / 50) : 1;
-  st.page = Math.min(st.page, pages - 1);
-  const view = paged ? sorted.slice(st.page * 50, st.page * 50 + 50) : sorted;
-  const sortHead = (key, label, extra = "", numeric = true) =>
-    `<th scope="col" data-isort="${key}" class="${extra}" aria-sort="${
-      st.key === key ? (st.dir > 0 ? "ascending" : "descending") : "none"
-    }" data-type="${numeric ? "num" : "text"}"><button type="button"><span class="th-label">${label}</span><span class="sort-ico"></span></button></th>`;
 
-  host.innerHTML = `
+  const token = (inlineRenderToken.get(subName) || 0) + 1;
+  inlineRenderToken.set(subName, token);
+  return (async () => {
+    const ctx = await rangeContext(app, subName, rows);
+    if (inlineRenderToken.get(subName) !== token) return; // 已有更新的渲染
+    const decorated = decorateRows(rows, ctx);
+    const sorted = sortEtfRows(decorated, st);
+    const paged = sorted.length > 120;
+    const pages = paged ? Math.ceil(sorted.length / 50) : 1;
+    st.page = Math.min(st.page, pages - 1);
+    const view = paged ? sorted.slice(st.page * 50, st.page * 50 + 50) : sorted;
+    const sortHead = (key, label, extra = "", numeric = true, note = "") =>
+      `<th scope="col" data-isort="${key}" class="${extra}" aria-sort="${
+        st.key === key ? (st.dir > 0 ? "ascending" : "descending") : "none"
+      }" data-type="${numeric ? "num" : "text"}"><button type="button"><span class="th-label">${label}</span><span class="sort-ico"></span></button>${
+        note
+          ? `<span class="th-approx" tabindex="0" role="note" title="${esc(APPROX_TIP)}">${note}</span>`
+          : ""
+      }</th>`;
+    const sortLabel = SORT_LABEL[st.key] || "所选列";
+
+    host.innerHTML = `
     <div class="etf-inline">
       <div class="etf-inline-head">
-        <span class="dim t-2xs">${rows.length} 只 · 按${st.key === "scale" ? "规模" : "所选列"}${st.dir > 0 ? "升序" : "降序"}${
+        <span class="dim t-2xs">${rows.length} 只 · 按${sortLabel}${st.dir > 0 ? "升序" : "降序"}${
           paged ? ` · 第 ${st.page + 1}/${pages} 页` : ""
         }</span>
         <span class="etf-inline-actions">
@@ -101,67 +129,71 @@ export function renderInlineEtfTable(app, subName, host) {
           <thead><tr>
             ${sortHead("code", "代码", "t-2xs", false)}
             ${sortHead("name", "名称", "", false)}
-            ${sortHead("shares", "最新份额", "num")}
-            ${sortHead("delta", "区间变化", "num")}
-            ${sortHead("price", "收盘价", "num col-price")}
-            ${sortHead("premium", "折溢价", "num")}
-            ${sortHead("amount", "成交额", "num")}
-            ${sortHead("nav", "净值", "num etf-nav")}
-            ${sortHead("scale", "规模", "num")}
-            ${sortHead("flow", "份额净申购", "num etf-flow")}
+            ${sortHead("price", "最新价", "num col-price")}
+            ${sortHead("pctRange", "区间份额变化", "num", true, "近似")}
+            ${sortHead("flowRange", "区间净申购", "num", true, "近似")}
+            ${sortHead("scaleEnd", "期末规模", "num", true, "近似")}
+            <th scope="col" class="num" title="区间终点为最新交易日时取快照，否则留空">折溢价</th>
             <th scope="col" class="num">占本类</th>
           </tr></thead>
-          <tbody>${view.map((r) => etfRowHTML(r, totalScale, app)).join("")}</tbody>
+          <tbody>${view.map((r) => etfRowHTML(r, 0, app)).join("")}</tbody>
         </table>
       </div>
     </div>`;
 
-  // 按需实时报价：只取当前页可见代码（最多 40 个），失败静默保持静态收盘价
-  attachQuotes(host.querySelector("#tblFocusEtf"), view.map((r) => r.code));
+    // 按需实时报价：只取当前页可见代码（最多 40 个），失败静默保持静态收盘价
+    attachQuotes(host.querySelector("#tblFocusEtf"), view.map((r) => r.code));
 
-  host.onclick = (e) => {
-    const th = e.target.closest("th[data-isort]");
-    if (th) {
-      const key = th.dataset.isort;
-      const numeric = th.dataset.type !== "text";
-      st.dir = st.key === key ? -st.dir : numeric ? -1 : 1;
-      st.key = key;
-      st.page = 0;
-      renderInlineEtfTable(app, subName, host);
-      return;
-    }
-    const page = e.target.closest("[data-ipage]");
-    if (page) {
-      st.page = Math.max(0, Math.min(pages - 1, st.page + Number(page.dataset.ipage)));
-      renderInlineEtfTable(app, subName, host);
-      return;
-    }
-    if (e.target.closest("[data-icsv]")) {
-      const csv = toCSV([
-        ["代码", "名称", "市场", "最新份额(亿份)", "区间变化(亿份)", "收盘价", "折溢价(%)", "成交额(亿元)", "换手率(%)", "净值", "规模(亿元)", "份额净申购(亿元)", "占本类(%)"],
-        ...sorted.map((r) => [
-          r.code,
-          r.name,
-          r.market || "",
-          r.shares ?? "",
-          r.delta ?? "",
-          r.price ?? "",
-          r.premium ?? "",
-          r.amount ?? "",
-          r.turnover ?? "",
-          r.nav ?? "",
-          r.scale ?? "",
-          r.flow ?? "",
-          totalScale && r.scale != null ? ((r.scale / totalScale) * 100).toFixed(2) : "",
-        ]),
-      ]);
-      download(`${subName}-成分ETF-${state.rangeInfo.from}-${state.rangeInfo.to}.csv`, csv, "text/csv;charset=utf-8");
-    }
-  };
+    host.onclick = (e) => {
+      const th = /** @type {HTMLElement} */ (e.target).closest("th[data-isort]");
+      if (th) {
+        const key = /** @type {HTMLElement} */ (th).dataset.isort;
+        const numeric = /** @type {HTMLElement} */ (th).dataset.type !== "text";
+        st.dir = st.key === key ? -st.dir : numeric ? -1 : 1;
+        st.key = key;
+        st.page = 0;
+        renderInlineEtfTable(app, subName, host);
+        return;
+      }
+      const page = /** @type {HTMLElement} */ (e.target).closest("[data-ipage]");
+      if (page) {
+        st.page = Math.max(0, Math.min(pages - 1, st.page + Number(/** @type {HTMLElement} */ (page).dataset.ipage)));
+        renderInlineEtfTable(app, subName, host);
+        return;
+      }
+      if (/** @type {HTMLElement} */ (e.target).closest("[data-icsv]")) {
+        const csv = toCSV([
+          ["代码", "名称", "市场", "最新价(元)", "区间份额变化(%)", "区间净申购(亿元)", "期末规模(亿元)", "折溢价(%)", "占本类(%)"],
+          ...sorted.map((r) => [
+            r.code,
+            r.name,
+            r.market || "",
+            r.price ?? "",
+            r.pctRange != null ? r.pctRange.toFixed(2) : "",
+            r.flowRange != null ? r.flowRange.toFixed(2) : "",
+            r.scaleEnd != null ? r.scaleEnd.toFixed(2) : "",
+            r.premiumEnd != null ? r.premiumEnd.toFixed(2) : "",
+            r.weightPct != null ? r.weightPct.toFixed(2) : "",
+          ]),
+        ]);
+        download(`${subName}-成分ETF-${state.rangeInfo.from}-${state.rangeInfo.to}.csv`, csv, "text/csv;charset=utf-8");
+      }
+    };
+  })();
 }
 
 export function initDetail(app, hooks = {}) {
   drawerHooks = { app, ...hooks };
+  // 区间变化时重建打开中的抽屉（KPI / 走势 / 成分表都跟着区间走）
+  document.addEventListener("ebbflow:rangechange", () => {
+    const drawer = document.getElementById("drawer");
+    if (!current || drawer?.dataset.open !== "1") return;
+    const body = document.getElementById("drawerBody");
+    const top = body ? body.scrollTop : 0;
+    openDetail(current).then(() => {
+      if (body) body.scrollTop = top;
+    });
+  });
   document.getElementById("drawerClose")?.addEventListener("click", () => closeDetail());
   document.getElementById("drawerStar")?.addEventListener("click", () => {
     if (!current) return;
@@ -311,25 +343,24 @@ function renderDetail(app, name, s, entry) {
         <table class="dt dt--dense" id="tblEtf">
           <thead>
             <tr>
-              <th scope="col" data-esort="code" aria-sort="none"><button type="button">代码<span class="sort-ico"></span></button></th>
-              <th scope="col" data-esort="name" aria-sort="none"><button type="button">名称<span class="sort-ico"></span></button></th>
-              <th scope="col" data-esort="shares" class="num" aria-sort="none"><button type="button">份额<span class="sort-ico"></span></button></th>
-              <th scope="col" data-esort="delta" class="num" aria-sort="none"><button type="button">区间变化<span class="sort-ico"></span></button></th>
-              <th scope="col" data-esort="price" class="num col-price" aria-sort="none"><button type="button"><span class="th-label">收盘价</span><span class="sort-ico"></span></button></th>
-              <th scope="col" data-esort="premium" class="num" aria-sort="none"><button type="button">折溢价<span class="sort-ico"></span></button><span class="th-info" tabindex="0" role="note" title="折溢价 =（收盘价 − 单位净值）/ 单位净值；>0 溢价、<0 折价" aria-label="折溢价 =（收盘价 − 单位净值）/ 单位净值">i</span></th>
-              <th scope="col" data-esort="amount" class="num" aria-sort="none"><button type="button">成交额<span class="sort-ico"></span></button><span class="th-info" tabindex="0" role="note" title="成交额（亿元），鼠标悬停单元格可看换手率（成交额 / 规模）" aria-label="成交额（亿元），悬停可看换手率">i</span></th>
-              <th scope="col" data-esort="nav" class="num etf-nav" aria-sort="none"><button type="button">净值<span class="sort-ico"></span></button></th>
-              <th scope="col" data-esort="scale" class="num" aria-sort="descending"><button type="button">规模<span class="sort-ico"></span></button></th>
-              <th scope="col" data-esort="flow" class="num etf-flow" aria-sort="none"><button type="button">份额净申购<span class="sort-ico"></span></button><span class="th-info" tabindex="0" role="note" title="份额拆分/合并已从份额净申购中剔除" aria-label="份额拆分/合并已从份额净申购中剔除">i</span></th>
+              <th scope="col" data-esort="code" aria-sort="none"><button type="button"><span class="th-label">代码</span><span class="sort-ico"></span></button></th>
+              <th scope="col" data-esort="name" aria-sort="none"><button type="button"><span class="th-label">名称</span><span class="sort-ico"></span></button></th>
+              <th scope="col" data-esort="price" class="num col-price" aria-sort="none"><button type="button"><span class="th-label">最新价</span><span class="sort-ico"></span></button></th>
+              <th scope="col" data-esort="pctRange" class="num" aria-sort="none"><button type="button"><span class="th-label">区间份额变化</span><span class="sort-ico"></span></button><span class="th-approx" tabindex="0" role="note" title="小类级日序列 × 该 ETF 最新份额权重估算（ETF 级逐日数据未提供）">近似</span></th>
+              <th scope="col" data-esort="flowRange" class="num" aria-sort="descending"><button type="button"><span class="th-label">区间净申购</span><span class="sort-ico"></span></button><span class="th-approx" tabindex="0" role="note" title="小类级日序列 × 该 ETF 最新份额权重估算（ETF 级逐日数据未提供）">近似</span></th>
+              <th scope="col" data-esort="scaleEnd" class="num" aria-sort="none"><button type="button"><span class="th-label">期末规模</span><span class="sort-ico"></span></button><span class="th-approx" tabindex="0" role="note" title="小类级日序列 × 该 ETF 最新份额权重估算（ETF 级逐日数据未提供）">近似</span></th>
+              <th scope="col" data-esort="premiumEnd" class="num" aria-sort="none" title="区间终点为最新交易日时取快照，否则留空"><button type="button"><span class="th-label">折溢价</span><span class="sort-ico"></span></button></th>
               <th scope="col" class="num">占本类</th>
             </tr>
           </thead>
           <tbody></tbody>
         </table>
       </div>
-      <p class="t-2xs faint">「近期变化 / 份额净申购」沿用数据管线的近一周窗口口径；「份额 / 规模 / 净值」为最新交易日快照。份额净申购按当日净值折算，部分已退市成分无净值时不计入（见上方净值覆盖）；份额拆分/合并已从份额净申购中剔除。</p>
+      <p class="t-2xs faint">区间列跟随上方选择的区间：<b>区间份额变化</b> = 小类期初→期末份额变化率；<b>区间净申购</b> = 小类区间份额净申购合计；<b>期末规模</b> = 小类期末规模。ETF 级逐日数据未提供，三项均按「小类级 × 该 ETF 最新份额权重」估算（表头标「近似」），不是 ETF 逐日精确值；「最新价 / 折溢价」为最新交易日快照，折溢价仅在区间终点=最新交易日时展示。</p>
     </section>`;
 
+  drawerRows = rows;
+  drawerTotalScale = totalScale;
   renderEtfTable(rows, totalScale);
 
   // 迷你走势
@@ -346,29 +377,25 @@ function renderDetail(app, name, s, entry) {
     th.addEventListener("click", () => {
       const k = th.dataset.esort;
       etfSort = { key: k, dir: etfSort.key === k ? -etfSort.dir : k === "name" || k === "code" ? 1 : -1 };
-      renderEtfTable(rows, totalScale);
+      renderEtfTable();
     });
   });
 
   document.getElementById("etfCsv")?.addEventListener("click", () => {
-    const header = ["代码", "名称", "市场", "份额(亿份)", "区间变化(亿份)", "收盘价(元)", "折溢价(%)", "成交额(亿元)", "换手率(%)", "净值(元)", "规模(亿元)", "份额净申购(亿元)", "占本类规模"];
-    const data = rows.map((r) => [
+    const header = ["代码", "名称", "市场", "最新价(元)", "区间份额变化(%)", "区间净申购(亿元)", "期末规模(亿元)", "折溢价(%)", "占本类(%)"];
+    const data = drawerSorted.map((r) => [
       r.code,
       r.name,
       r.market || "",
-      r.shares ?? "",
-      r.delta ?? "",
       r.price ?? "",
-      r.premium ?? "",
-      r.amount ?? "",
-      r.turnover ?? "",
-      r.nav ?? "",
-      r.scale ?? "",
-      r.flow ?? "",
-      totalScale && r.scale != null ? ((r.scale / totalScale) * 100).toFixed(2) + "%" : "",
+      r.pctRange != null ? r.pctRange.toFixed(2) : "",
+      r.flowRange != null ? r.flowRange.toFixed(2) : "",
+      r.scaleEnd != null ? r.scaleEnd.toFixed(2) : "",
+      r.premiumEnd != null ? r.premiumEnd.toFixed(2) : "",
+      r.weightPct != null ? r.weightPct.toFixed(2) : "",
     ]);
-    download(`${name}-成分ETF-${state.rangeInfo.to || ""}.csv`, toCSV([header, ...data]));
-    toast("已导出成分 ETF CSV", "ok");
+    download(`${name}-成分ETF-${state.rangeInfo.from}-${state.rangeInfo.to}.csv`, toCSV([header, ...data]));
+    toast("已导出成分 ETF CSV（区间列由小类级估算）", "ok");
   });
 
   document.getElementById("seriesCsv")?.addEventListener("click", () => {
@@ -419,55 +446,82 @@ function renderMissingDetail(app, name, s) {
 
 /** 成分 ETF 行内容（抽屉表与聚焦内嵌表共用） */
 export function etfRowHTML(r, totalScale, app) {
-  const share = totalScale && r.scale != null ? (r.scale / totalScale) * 100 : null;
-  const prem = r.premium;
+  const code = esc(r.code);
+  const prem = r.premiumEnd;
   const premCls = prem == null ? "flat" : prem > 0.3 ? "up" : prem < -0.3 ? "down" : "flat";
   const premStrong = prem != null && Math.abs(prem) > 2 ? " is-strong" : "";
-  const turnover = r.turnover == null ? "" : `换手率 ${cnum(r.turnover, 2)}%`;
+  const pctCls = r.pctRange == null ? "flat" : r.pctRange > 0 ? "up" : r.pctRange < 0 ? "down" : "flat";
+  const flowCls = r.flowRange == null ? "flat" : r.flowRange > 0 ? "up" : r.flowRange < 0 ? "down" : "flat";
+  const share = r.weightPct;
+  const deltaShares =
+    r.pctRange != null && r.pctRange > -100 && Number.isFinite(r.shares)
+      ? r.shares - r.shares / (1 + r.pctRange / 100)
+      : null;
   return `<tr>
-    <td class="mono t-2xs">${esc(r.code)}</td>
+    <td class="mono t-2xs">${code}</td>
     <td class="etf-name-cell">
       <span class="truncate" style="max-width:15ch;display:inline-block" title="${esc(r.name)}">${esc(r.name)}</span>
       <span class="chip chip--sm chip--line" style="margin-left:4px">${esc(r.market || "—")}</span>
       ${renderTags(r.tags, app?.meta?.tagDims)}
     </td>
-    <td class="num">${esc(cnum(r.shares, 1))}</td>
-    <td class="num ${r.delta > 0 ? "up" : r.delta < 0 ? "down" : "flat"}">${esc(fmtSigned(r.delta, 1))}</td>
-    <td class="num col-price" data-code="${esc(r.code)}">${r.price != null ? esc(cnum(r.price, 3)) : "—"}</td>
-    <td class="num ${premCls}${premStrong}" title="（收盘价 − 单位净值）/ 单位净值${prem != null ? ` = ${prem.toFixed(2)}%` : ""}">${prem != null ? esc(fmtSigned(prem, 2)) + "%" : "—"}</td>
-    <td class="num" title="${esc(turnover)}">${r.amount != null ? esc(cnum(r.amount, 1)) : "—"}</td>
-    <td class="num etf-nav">${r.nav != null ? esc(cnum(r.nav, 3)) : "—"}</td>
-    <td class="num">${r.scale != null ? esc(cnum(r.scale, 1)) : "—"}</td>
-    <td class="num etf-flow ${r.flow > 0 ? "up" : r.flow < 0 ? "down" : "flat"}">${r.flow != null ? esc(fmtSigned(r.flow, 1)) : "—"}</td>
-    <td class="num"><span class="barcell"><span class="barcell-track"><span class="barcell-fill" style="width:${share ? Math.min(100, share * 3).toFixed(1) : 0}%"></span></span><span class="barcell-val">${share != null ? share.toFixed(1) + "%" : "—"}</span></span></td>
+    <td class="num col-price" data-code="${code}">${r.price != null ? esc(cnum(r.price, 3)) : "—"}</td>
+    <td class="num ${pctCls}"${
+      deltaShares != null ? ` title="小类级估算，约 ${esc(fmtSigned(deltaShares, 1))} 亿份（ETF 级逐日数据未提供）"` : ""
+    }>${r.pctRange != null ? esc(fmtSigned(r.pctRange, 2)) + "%" : "—"}</td>
+    <td class="num ${flowCls}" title="小类级区间净申购 × 该 ETF 最新份额权重">${r.flowRange != null ? esc(fmtSigned(r.flowRange, 1)) : "—"}</td>
+    <td class="num" title="小类期末规模 × 该 ETF 最新份额权重">${r.scaleEnd != null ? esc(cnum(r.scaleEnd, 1)) : "—"}</td>
+    <td class="num ${premCls}${premStrong}"${
+      prem == null && r.premium != null
+        ? ' title="区间终点不是最新交易日，没有逐日期末折溢价（不编造）"'
+        : ` title="（收盘价 − 单位净值）/ 单位净值${prem != null ? ` = ${prem.toFixed(2)}%` : ""}"`
+    }>${prem != null ? esc(fmtSigned(prem, 2)) + "%" : "—"}</td>
+    <td class="num"><span class="barcell"><span class="barcell-track"><span class="barcell-fill" style="width:${
+      share != null ? Math.min(100, share * 3).toFixed(1) : 0
+    }%"></span></span><span class="barcell-val">${share != null ? share.toFixed(1) + "%" : "—"}</span></span></td>
   </tr>`;
 }
 export function sortEtfRows(rows, { key, dir }) {
+  const read = (r) => {
+    if (key === "code" || key === "name") return String(r[key] || "");
+    const raw = r[key];
+    if (raw == null || !Number.isFinite(raw)) return null;
+    // 「区间净申购」按绝对值排序：默认降序时把流入/流出最大的排前面
+    return key === "flowRange" ? Math.abs(raw) : raw;
+  };
   return rows.slice().sort((a, b) => {
-    if (key === "code" || key === "name") return dir * String(a[key] || "").localeCompare(String(b[key] || ""), "zh-CN");
-    return dir * ((a[key] ?? -Infinity) - (b[key] ?? -Infinity));
+    const av = read(a);
+    const bv = read(b);
+    if (typeof av === "string") return dir * av.localeCompare(/** @type {string} */ (bv), "zh-CN");
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1; // 空值始终排最后
+    if (bv == null) return -1;
+    return dir * (av - /** @type {number} */ (bv));
   });
 }
 
-function renderEtfTable(rows, totalScale) {
+let drawerRenderToken = 0;
+async function renderEtfTable(rows = drawerRows, totalScale = drawerTotalScale) {
   const tbody = document.querySelector("#tblEtf tbody");
   if (!tbody) return;
-  const { key, dir } = etfSort;
-  const sorted = rows.slice().sort((a, b) => {
-    if (key === "code" || key === "name") return dir * String(a[key] || "").localeCompare(String(b[key] || ""), "zh-CN");
-    return dir * ((a[key] ?? -Infinity) - (b[key] ?? -Infinity));
-  });
+  const app = drawerHooks.app;
+  const name = current;
+  const token = ++drawerRenderToken;
+  const ctx = name ? await rangeContext(app, name, rows) : null;
+  if (token !== drawerRenderToken || current !== name) return;
+  const decorated = decorateRows(rows, ctx);
+  const sorted = sortEtfRows(decorated, etfSort);
+  drawerSorted = sorted;
   if (!sorted.length) {
-    tbody.innerHTML = `<tr><td colspan="11"><div class="state state--sm"><p class="state-desc">该小类暂无成分 ETF 明细</p></div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8"><div class="state state--sm"><p class="state-desc">该小类暂无成分 ETF 明细</p></div></td></tr>`;
     return;
   }
-  const app = drawerHooks.app;
-  tbody.innerHTML = sorted.map((r) => etfRowHTML(r, totalScale, app)).join("");
-  // 抽屉表：成分通常 ≤40；失败静默，保留静态收盘价
+  tbody.innerHTML = sorted.map((r) => etfRowHTML(r, 0, app)).join("");
+  // 抽屉表：成分通常 ≤40；失败静默，保留静态价格
   attachQuotes(document.getElementById("tblEtf"), sorted.slice(0, 40).map((r) => r.code));
   document.querySelectorAll("#tblEtf th[data-esort]").forEach((th) => {
-    if (th.dataset.esort === key) th.setAttribute("aria-sort", dir > 0 ? "ascending" : "descending");
-    else th.removeAttribute("aria-sort");
+    const el = /** @type {HTMLElement} */ (th);
+    if (el.dataset.esort === etfSort.key) el.setAttribute("aria-sort", etfSort.dir > 0 ? "ascending" : "descending");
+    else el.removeAttribute("aria-sort");
   });
 }
 

@@ -17,7 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { openDb, dbStats, axisDiagnostics, dayCoverage } from "../lib/db.mjs";
 import { loadUniverse } from "../lib/universe.mjs";
-import { loadShares, loadSeries, officialCountsFromShares, resolveMarketModes, numericChecks, suspiciousJumps, BAND , detectUnitOutliers} from "../lib/invariants.mjs";
+import { loadShares, loadSeries, officialCountsFromShares, resolveMarketModes, numericChecks, suspiciousJumps, BAND , detectUnitOutliers, filterIsolated} from "../lib/invariants.mjs";
 import { projectRoot, readJsonFile } from "../lib/cli.mjs";
 
 const ROOT = projectRoot(import.meta.url);
@@ -100,7 +100,7 @@ function checkDb() {
 
     // C: 数值自洽（legacy + v2）
     const dates = ax.dates;
-    const shares = loadShares(db, dates);
+    const shares = filterIsolated(loadShares(db, dates), dates);
     const official = officialCountsFromShares(shares);
     const modes = resolveMarketModes({ dates, official });
     const UL = loadUniverse({ taxonomy: "legacy" });

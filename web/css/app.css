@@ -3118,3 +3118,20 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
     display: none;
   }
 }
+
+
+/* 成分表「近似」角标：小类级 × 权重估算的区间列 */
+.th-approx {
+  display: inline-block;
+  margin-left: 3px;
+  padding: 0 3px;
+  height: 13px;
+  line-height: 13px;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--ink-4);
+  background: var(--surface-3);
+  vertical-align: 1px;
+  cursor: help;
+}
