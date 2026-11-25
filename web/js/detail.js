@@ -183,9 +183,30 @@ export function renderInlineEtfTable(app, subName, host) {
   })();
 }
 
+let opening = false;
+let refreshTimer = 0;
+
+/** stats / charts / 指标变化后，若抽屉开着则重绘（保留滚动位置） */
+function scheduleRefresh() {
+  if (!current || opening) return;
+  const drawer = document.getElementById("drawer");
+  if (drawer?.dataset.open !== "1") return;
+  clearTimeout(refreshTimer);
+  refreshTimer = window.setTimeout(async () => {
+    if (!current || opening) return;
+    const body = document.getElementById("drawerBody");
+    const top = body ? body.scrollTop : 0;
+    await openDetail(current);
+    const body2 = document.getElementById("drawerBody");
+    if (body2) body2.scrollTop = top;
+  }, 120);
+}
+
 export function initDetail(app, hooks = {}) {
   drawerHooks = { app, ...hooks };
   // 区间变化时重建打开中的抽屉（KPI / 走势 / 成分表都跟着区间走）
+  document.addEventListener("ebbflow:stats", scheduleRefresh);
+  document.addEventListener("ebbflow:metric", scheduleRefresh);
   document.addEventListener("ebbflow:rangechange", () => {
     const drawer = document.getElementById("drawer");
     if (!current || drawer?.dataset.open !== "1") return;
@@ -210,6 +231,16 @@ export function initDetail(app, hooks = {}) {
 }
 
 export async function openDetail(name) {
+  if (opening) return;
+  opening = true;
+  try {
+    await openDetailImpl(name);
+  } finally {
+    opening = false;
+  }
+}
+
+async function openDetailImpl(name) {
   const app = drawerHooks.app;
   if (!app || !name) return;
   current = name;
@@ -257,6 +288,12 @@ export async function openDetail(name) {
     }
   }
   if (current !== name) return;
+  if (drawerHooks.ensureStatsFor) {
+    try {
+      await drawerHooks.ensureStatsFor(name);
+    } catch (e) {}
+  }
+  if (current !== name) return;
   const stats = app.stats?.byName?.get(name);
   const entry = app.subs?.[name];
   if (!entry) {
@@ -295,7 +332,7 @@ function renderDetail(app, name, s, entry) {
   if (!body) return;
 
   const rank = rankOf(app.stats, name, "pct");
-  const flow = app.flowOf ? app.flowOf(name, s) : flowEstimate(s);
+  const flow = s && Number.isFinite(+s.flow) ? (app.flowOf ? app.flowOf(name, s) : flowEstimate(s)) : null;
   const nav = entry?.navCoverage;
   const rows = entry?.etfs || [];
   const totalScale = rows.reduce((acc, r) => acc + (r.scale || 0), 0) || s?.scale || 0;
@@ -310,10 +347,16 @@ function renderDetail(app, name, s, entry) {
         }</span>
       </div>
       <dl class="kpi-mini">
-        <div><dt>最新规模</dt><dd class="num">${esc(cnum(s?.last, 1))}<span class="unit">亿元</span></dd></div>
-        <div><dt>区间起点规模</dt><dd class="num">${esc(cnum(s?.first, 1))}<span class="unit">亿元</span></dd></div>
+        <div><dt>最新规模</dt><dd class="num">${
+          s?.last == null ? "—" : `${esc(cnum(s.last, 1))}<span class="unit">亿元</span>`
+        }</dd></div>
+        <div><dt>区间起点规模</dt><dd class="num">${
+          s?.first == null ? "—" : `${esc(cnum(s.first, 1))}<span class="unit">亿元</span>`
+        }</dd></div>
         <div><dt>区间变化</dt><dd class="num ${s?.pct > 0 ? "up" : s?.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s?.pct, 2))}</dd></div>
-        <div><dt>区间净申购${app.chartData?.has(s?.cat || entry?.cat) ? "" : "（估算）"}</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>
+        <div><dt>区间净申购${app.chartData?.has(s?.cat || entry?.cat) ? "" : "（估算）"}</dt><dd class="num ${
+          flow == null ? "" : flow > 0 ? "up" : flow < 0 ? "down" : "flat"
+        }">${flow == null ? "—" : esc(fmtSigned(flow, 1))}${flow == null ? "" : `<span class="unit">亿元</span>`}</dd></div>
       </dl>
       <p class="t-2xs dim" style="margin-top:2px">规模变化 ${esc(fmtSigned(s?.delta, 1))} 亿元 ｜ 成分 ETF ${rows.length} 只${
         nav ? ` ｜ 净值覆盖 ${nav.hit}/${nav.total}` : ""
@@ -414,7 +457,7 @@ function renderMissingDetail(app, name, s) {
   const body = document.getElementById("drawerBody");
   if (!body) return;
   const rank = s ? rankOf(app.stats, name, "pct") : null;
-  const flow = s ? (app.flowOf ? app.flowOf(name, s) : flowEstimate(s)) : 0;
+  const flow = s && Number.isFinite(+s.flow) ? (app.flowOf ? app.flowOf(name, s) : flowEstimate(s)) : null;
   body.innerHTML = `
     <section class="drawer-sec">
       <div class="drawer-sec-head">
@@ -424,10 +467,12 @@ function renderMissingDetail(app, name, s) {
       ${
         s
           ? `<dl class="kpi-mini">
-              <div><dt>最新规模</dt><dd class="num">${esc(cnum(s.last, 1))}<span class="unit">亿元</span></dd></div>
-              <div><dt>区间起点规模</dt><dd class="num">${esc(cnum(s.first, 1))}<span class="unit">亿元</span></dd></div>
+              <div><dt>最新规模</dt><dd class="num">${s.last == null ? "—" : `${esc(cnum(s.last, 1))}<span class="unit">亿元</span>`}</dd></div>
+              <div><dt>区间起点规模</dt><dd class="num">${s.first == null ? "—" : `${esc(cnum(s.first, 1))}<span class="unit">亿元</span>`}</dd></div>
               <div><dt>区间变化</dt><dd class="num ${s.pct > 0 ? "up" : s.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s.pct, 2))}</dd></div>
-              <div><dt>区间净申购</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>
+              <div><dt>区间净申购</dt><dd class="num ${
+                flow == null ? "" : flow > 0 ? "up" : flow < 0 ? "down" : "flat"
+              }">${flow == null ? "—" : esc(fmtSigned(flow, 1))}${flow == null ? "" : `<span class="unit">亿元</span>`}</dd></div>
             </dl>`
           : ""
       }

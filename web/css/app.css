@@ -3144,3 +3144,27 @@ html[data-theme="dark"] .seg-btn[aria-pressed="true"] {
 .ec-tip-note span {
   display: inline-block;
 }
+
+
+/* 端点回退角标（G-1） */
+.cov-badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 5px;
+  font-size: 9px;
+  line-height: 15px;
+  font-weight: 600;
+  color: var(--ink-3);
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: help;
+  vertical-align: 1px;
+}
+.cov-badge:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+#catCovNote {
+  line-height: 1.6;
+}

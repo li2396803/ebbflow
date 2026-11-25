@@ -419,7 +419,8 @@ function renderMarketBlock(app) {
     const szArr = ms.sz.scale;
     const szLast = Array.isArray(szArr) ? szArr[szArr.length - 1] : undefined;
     const stale = !szLast || szLast === 0;
-    note.innerHTML = `${mkt.note ? esc(mkt.note) : ""}${
+    const mktNote = mkt.note ? String(mkt.note).replace(/与细分行业页的「份额」口径不同/g, "与细分行业页的规模/净申购口径不同") : "";
+    note.innerHTML = `${mktNote ? esc(mktNote) : ""}${
       stale ? `<span class="chip chip--warn" style="margin-left:8px">深市规模待补齐</span>` : ""
     }`;
   }
@@ -803,6 +804,21 @@ export function renderCategory(app, opts = {}) {
   if (opts.chart !== false) app.onCategoryRender?.(key);
 }
 
+/** 端点回退说明（期初/期末实际生效日期） */
+function coverageTip(s) {
+  if (!s || (!s.lowStart && !s.lowEnd)) return "";
+  const dates = state.calendar || [];
+  const bits = [];
+  if (s.lowStart) bits.push(`期初回退至 ${dates[s.firstIdx] || "—"}`);
+  if (s.lowEnd) bits.push(`期末回退至 ${dates[s.lastIdx] || "—"}`);
+  return bits.join("；");
+}
+
+function coverageBadge(s) {
+  const tip = coverageTip(s);
+  return tip ? `<span class="cov-badge" title="${esc(tip)}" tabindex="0" role="note">回退</span>` : "";
+}
+
 function renderCatTable(app, key) {
   const tbl = document.getElementById("tblCat");
   if (!tbl) return;
@@ -828,13 +844,42 @@ function renderCatTable(app, key) {
       const color = toneColor(s.color, isDark());
       return `<tr data-sub="${esc(s.name)}" data-cat="${esc(s.cat)}" tabindex="0">
       <td><span class="cell-name"><span class="cat-dot" style="background:${esc(color)}"></span>${esc(s.name)}</span></td>
-      <td class="num">${esc(cnum(s.last, 1))}</td>
+      <td class="num"${s.lowEnd ? ` title="${esc(coverageTip(s))}"` : ""}>${esc(cnum(s.last, 1))}</td>
       <td class="num ${s.flow > 0 ? "up" : s.flow < 0 ? "down" : "flat"}">${esc(fmtSigned(s.flow, 1))}</td>
-      <td class="num ${s.pct > 0 ? "up" : s.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s.pct, 2))}</td>
+      <td class="num ${s.pct > 0 ? "up" : s.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s.pct, 2))}${coverageBadge(s)}</td>
       <td class="num cat-spark">${sparkSVG(s.series, { w: 104, h: 32, color, stroke: 1.3, fill: true })}</td>
     </tr>`;
     })
     .join("");
+  const covNote = document.getElementById("catCovNote");
+  if (covNote) {
+    const fb = rows.filter((x) => x.lowStart || x.lowEnd);
+    if (fb.length) {
+      const dates = state.calendar || [];
+      const starts = rows.filter((x) => x.lowStart);
+      const ends = rows.filter((x) => x.lowEnd);
+      const parts = [];
+      if (starts.length) {
+        parts.push(
+          `期初回退 ${starts.slice(0, 4).map((x) => `${x.name}→${dates[x.firstIdx] || "—"}`).join("、")}${
+            starts.length > 4 ? ` 等 ${starts.length} 个` : ""
+          }`
+        );
+      }
+      if (ends.length) {
+        parts.push(
+          `期末回退 ${ends.slice(0, 4).map((x) => `${x.name}→${dates[x.lastIdx] || "—"}`).join("、")}${
+            ends.length > 4 ? ` 等 ${ends.length} 个` : ""
+          }`
+        );
+      }
+      covNote.hidden = false;
+      covNote.textContent = `⚠ 低覆盖端点回退：${parts.join("；")}。区间起点/变化率按回退后日期计算，不插值。`;
+    } else {
+      covNote.hidden = true;
+      covNote.textContent = "";
+    }
+  }
   const more = document.getElementById("catTableMore");
   if (more) {
     more.hidden = rows.length <= COLLAPSE_AT;
@@ -857,10 +902,23 @@ function renderCatSide(app, key) {
   const last = known.reduce((s, x) => s + (x.last || 0), 0);
   const flow = names.reduce((s, n) => s + (flowSumRange(app, n) || 0), 0);
   const pct = first ? ((last - first) / Math.abs(first)) * 100 : null;
+  const startFb = known.filter((x) => x.lowStart);
+  const endFb = known.filter((x) => x.lowEnd);
+  const fbTip = (list, which) => {
+    const dates = state.calendar || [];
+    const shown = list
+      .slice(0, 4)
+      .map((x) => `${x.name}→${dates[which === "start" ? x.firstIdx : x.lastIdx] || "—"}`)
+      .join("、");
+    return `${which === "start" ? "期初" : "期末"}回退：${shown}${list.length > 4 ? ` 等 ${list.length} 个` : ""}`;
+  };
+  const startBadge = startFb.length ? `<span class="cov-badge" title="${esc(fbTip(startFb, "start"))}" tabindex="0" role="note">回退</span>` : "";
+  const endBadge = endFb.length ? `<span class="cov-badge" title="${esc(fbTip(endFb, "end"))}" tabindex="0" role="note">回退</span>` : "";
+  const pctBadge = startFb.length || endFb.length ? `<span class="cov-badge" title="${esc([startFb.length ? fbTip(startFb, "start") : "", endFb.length ? fbTip(endFb, "end") : ""].filter(Boolean).join("；"))}" tabindex="0" role="note">回退</span>` : "";
   if (kpis) {
-    kpis.innerHTML = `<div><dt>区间起点规模</dt><dd class="num">${esc(cnum(first, 1))}<span class="unit">亿元</span></dd></div>
-      <div><dt>区间终点规模</dt><dd class="num">${esc(cnum(last, 1))}<span class="unit">亿元</span></dd></div>
-      <div><dt>区间变化率</dt><dd class="num ${pct > 0 ? "up" : pct < 0 ? "down" : "flat"}">${esc(fmtPct(pct, 2))}</dd></div>
+    kpis.innerHTML = `<div><dt>区间起点规模</dt><dd class="num">${esc(cnum(first, 1))}<span class="unit">亿元</span>${startBadge}</dd></div>
+      <div><dt>区间终点规模</dt><dd class="num">${esc(cnum(last, 1))}<span class="unit">亿元</span>${endBadge}</dd></div>
+      <div><dt>区间变化率</dt><dd class="num ${pct > 0 ? "up" : pct < 0 ? "down" : "flat"}">${esc(fmtPct(pct, 2))}${pctBadge}</dd></div>
       <div><dt>区间净申购</dt><dd class="num ${flow > 0 ? "up" : flow < 0 ? "down" : "flat"}">${esc(fmtSigned(flow, 1))}<span class="unit">亿元</span></dd></div>`;
   }
   const renderRank = (hostId, dir) => {

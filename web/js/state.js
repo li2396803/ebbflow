@@ -141,12 +141,30 @@ function presetRange(preset) {
 function clampCustom() {
   if (!state.custom || state.calendar.length < 2) return;
   const dates = state.calendar;
-  let i = indexOfDate(state.custom.from);
-  if (i < 0) i = clamp(lowerBound(dates, state.custom.from), 0, dates.length - 2);
-  let j = indexOfDate(state.custom.to);
-  if (j < 0) j = clamp(lowerBound(dates, state.custom.to) - 1, 1, dates.length - 1);
+  const raw = state.customRaw || state.custom;
+  let requestedFrom = raw?.from || "";
+  let requestedTo = raw?.to || "";
+  const fromOnly = !!requestedFrom && !requestedTo;
+  const toOnly = !requestedFrom && !!requestedTo;
+  if (fromOnly) requestedTo = dates[dates.length - 1];
+  if (toOnly) requestedFrom = dates[0];
+  if (!requestedFrom || !requestedTo) return;
+  // 单边参数缺的一侧是补出来的，不按「用户倒置」处理
+  const swapped = !fromOnly && !toOnly && requestedFrom > requestedTo;
+  const wantFrom = swapped ? requestedTo : requestedFrom;
+  const wantTo = swapped ? requestedFrom : requestedTo;
+
+  let i = indexOfDate(wantFrom);
+  if (i < 0) i = clamp(lowerBound(dates, wantFrom), 0, dates.length - 2);
+  let j = indexOfDate(wantTo);
+  if (j < 0) j = clamp(lowerBound(dates, wantTo) - 1, 1, dates.length - 1);
   if (j <= i) j = Math.min(dates.length - 1, i + 1);
-  state.custom = { from: dates[i], to: dates[j] };
+  const from = dates[i];
+  const to = dates[j];
+  if (!state.rangeAdjust && (swapped || from !== wantFrom || to !== wantTo)) {
+    state.rangeAdjust = { requestedFrom, requestedTo, from, to, swapped };
+  }
+  state.custom = { from, to };
 }
 
 /** 当前生效区间（永远对齐到真实交易日下标） */
@@ -193,11 +211,15 @@ export function setPreset(preset, { silent = false } = {}) {
   if (!PRESETS.some((p) => p.id === preset)) preset = DEFAULT_PRESET;
   state.preset = preset;
   state.custom = null;
+  state.customRaw = null;
+  state.rangeAdjust = null;
   if (!silent) emit("range", { source: "preset" });
 }
 
 export function setCustomRange(from, to, { silent = false } = {}) {
   if (!from || !to) return;
+  state.customRaw = { from, to };
+  state.rangeAdjust = null;
   if (from > to) [from, to] = [to, from];
   state.custom = { from, to };
   clampCustom();
@@ -206,6 +228,8 @@ export function setCustomRange(from, to, { silent = false } = {}) {
 
 export function resetRange() {
   state.custom = null;
+  state.customRaw = null;
+  state.rangeAdjust = null;
   state.preset = DEFAULT_PRESET;
   emit("range", { source: "reset" });
 }
@@ -447,11 +471,15 @@ export function readURL() {
   const from = p.get("from");
   const to = p.get("to");
   const r = p.get("r");
-  if (from && to && /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to)) {
-    state.custom = { from, to };
+  const hasFrom = !!from && /^\d{4}-\d{2}-\d{2}$/.test(from);
+  const hasTo = !!to && /^\d{4}-\d{2}-\d{2}$/.test(to);
+  if (hasFrom || hasTo) {
+    state.custom = { from: hasFrom ? from : null, to: hasTo ? to : null };
+    state.customRaw = { from: hasFrom ? from : null, to: hasTo ? to : null };
     state.preset = PRESETS.some((x) => x.id === r) ? r : DEFAULT_PRESET;
   } else {
     state.custom = null;
+    state.customRaw = null;
     state.preset = PRESETS.some((x) => x.id === r) ? r : DEFAULT_PRESET;
   }
   if (state.view === "cat" && !state.cat) state.view = "overview";
@@ -581,6 +609,8 @@ export function computeStats(subsPayload, r = range(), chartOf = null) {
     }
     const delta = last - first;
     const pct = first !== 0 ? (delta / Math.abs(first)) * 100 : null;
+    const lowStart = coverage ? firstIdxEff !== r.fromIdx : false;
+    const lowEnd = coverage ? lastIdxEff !== r.toIdx : false;
     const rec = {
       name,
       cat: entry.cat,
@@ -595,7 +625,9 @@ export function computeStats(subsPayload, r = range(), chartOf = null) {
       scale: entry.scale ?? null,
       flow: flowInRange(entry, r.fromIdx, r.toIdx, chartSeries?.flow),
       coverage,
-      lowCoverage: coverage ? effectiveIndex(coverage, r.fromIdx) !== r.fromIdx || effectiveIndex(coverage, r.toIdx) !== r.toIdx : false,
+      lowStart,
+      lowEnd,
+      lowCoverage: lowStart || lowEnd,
       etfCount: entry.etfs?.length || 0,
       navCoverage: entry.navCoverage || null,
     };

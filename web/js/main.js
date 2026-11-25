@@ -537,6 +537,22 @@ function recomputeStats() {
     return cat ? getChart(cat) : null;
   };
   app.stats = computeStats(app.subs, state.rangeInfo, chartOf);
+  try {
+    document.dispatchEvent(new CustomEvent("ebbflow:stats", { detail: { fromIdx: state.rangeInfo.fromIdx, toIdx: state.rangeInfo.toIdx } }));
+  } catch {}
+}
+
+/** 抽屉打开前：确保该小类所在大类 charts 已加载，并重算统计 */
+async function ensureStatsFor(name) {
+  const entry = app.subs?.[name];
+  if (!entry) return;
+  const cat = entry.cat;
+  if (cat && !hasChart(cat)) {
+    try {
+      setChart(cat, await api.load(`charts:${cat}`));
+    } catch (e) {}
+  }
+  recomputeStats();
 }
 
 /* ==========================================================================
@@ -612,6 +628,7 @@ function afterSubsReady() {
   buildEtfTagIndex();
   // v4：净申购逐日序列随 subs 下发（flowSeries），不再依赖 charts 是否加载完
   app.flowComplete = true;
+  recomputeStats();
   // URL 里可能带不存在的小类：对比项按 subs 收敛，避免图例/按钮计数与曲线数不一致
   if (state.compare.length) {
     const valid = state.compare.filter((n) => app.subs?.[n]);
@@ -1215,6 +1232,9 @@ function toggleMetricFromUI(id) {
   }
   if (!res.changed) return;
   writeURL({ replace: true });
+  try {
+    document.dispatchEvent(new CustomEvent("ebbflow:metric", { detail: { metric: id } }));
+  } catch {}
   syncFocusUI();
   renderCatChart(state.cat, { silent: true });
 }
@@ -1250,6 +1270,9 @@ function openMetricReplacePicker(id, max) {
       state.metricSel = state.metricSel.filter((m) => m !== old);
       toggleMetricSel(id, { max });
       writeURL({ replace: true });
+      try {
+        document.dispatchEvent(new CustomEvent("ebbflow:metric", { detail: { metric: id } }));
+      } catch {}
       syncFocusUI();
       renderCatChart(state.cat, { silent: true });
     };
@@ -2210,6 +2233,9 @@ function wireEvents() {
       state.focused = null;
       views.renderMetricSegs(false);
       writeURL({ replace: true });
+      try {
+        document.dispatchEvent(new CustomEvent("ebbflow:metric", { detail: { metric: id } }));
+      } catch {}
       syncLogUI();
       if (state.view === "cat") renderCatChart(state.cat, { silent: true });
       return;
@@ -2404,7 +2430,6 @@ function wireEvents() {
   document.getElementById("btnRefresh")?.addEventListener("click", doRefresh);
   document.getElementById("btnCatBack")?.addEventListener("click", () => navigate("overview"));
   document.getElementById("btnCatExport")?.addEventListener("click", exportCatCsv);
-  document.getElementById("btnChartCsv")?.addEventListener("click", exportCatCsv);
   document.getElementById("btnWatchCsv")?.addEventListener("click", exportWatchCsv);
   document.getElementById("btnLog")?.addEventListener("click", () => {
     state.log = !state.log;
@@ -2614,6 +2639,20 @@ async function loadTaxonomyData() {
   syncFocusUI();
 }
 
+/** G-3：自定义区间越界/倒置被夹取时，一次性提示实际可用区间 */
+function announceRangeAdjust() {
+  const adj = state.rangeAdjust;
+  if (!adj) return;
+  state.rangeAdjust = null;
+  const cal = state.calendar || [];
+  const avail = cal.length ? `${cal[0]} ~ ${cal[cal.length - 1]}` : `${adj.from} ~ ${adj.to}`;
+  const msg = adj.swapped
+    ? `起止日期已倒置，已交换并调整到可用区间 ${avail}`
+    : `已调整到可用区间 ${avail}`;
+  toast(msg, "info", 4200);
+  writeURL({ replace: true });
+}
+
 async function boot() {
   app.ready = false;
   document.documentElement.setAttribute("data-app-ready", "0");
@@ -2649,6 +2688,7 @@ async function boot() {
 
   initDetail(app, {
     ensureSubs,
+    ensureStatsFor,
     onOpen: (name) => {
       const cat = app.subs?.[name]?.cat;
       if (state.view === "cat" && cat && cat === state.cat && state.sub !== name) {
@@ -2695,7 +2735,8 @@ async function boot() {
     });
 
     // sub= 在「大类视图」里表示聚焦（图表单系列 + 叠加），不自动弹抽屉
-    if (state.sub && state.view !== "cat") setTimeout(() => openDetail(state.sub), 200);
+    if (state.sub) setTimeout(() => openDetail(state.sub), 200);
+    announceRangeAdjust();
 
     document.documentElement.setAttribute("data-ready", "1");
     document.body.classList.remove("is-loading");
