@@ -4,20 +4,22 @@ permissions: { contents: read }
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
-      - name: 单页多形态 + 冷却重试
+      - name: http 全量翻页
         run: |
-          set +e
-          UA='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36'
-          for u in \
-            "https://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1105&TABKEY=tab1&PAGENO=1" \
-            "http://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1105&TABKEY=tab1&PAGENO=1" \
-            "https://www.szse.cn/api/report/ShowReport/data?CATALOGID=scsj_fund_jjgm&SHOWTYPE=JSON&TABKEY=tab1&jjlb=ETF&txtStart=2026-11-24&txtEnd=2026-11-24&tab1PAGENO=1"; do
-            code=$(timeout 20 curl -s -o /tmp/x -w '%{http_code} %{time_total}s %{size_download}B' -H "User-Agent: $UA" -H 'Referer: https://www.szse.cn/' "$u")
-            echo "$(echo $u | cut -c1-42)... → $code"
-          done
-          echo "=== 60 秒后重试第一页 ==="
-          sleep 60
-          code=$(timeout 30 curl -s -o /tmp/x -w '%{http_code} %{time_total}s %{size_download}B' -H "User-Agent: $UA" -H 'Referer: https://www.szse.cn/' "https://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1105&TABKEY=tab1&PAGENO=1")
-          echo "冷却后 → $code"
+          node --input-type=module -e '
+            const UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36";
+            const H={"User-Agent":UA,Referer:"https://www.szse.cn/"};
+            for (const scheme of ["http","https"]) {
+              const base=`${scheme}://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1105&TABKEY=tab1&PAGENO=`;
+              const t0=Date.now(); let ok=0, rows=0, fail=null;
+              for (let p=1;p<=55;p++){
+                try {
+                  const r=await fetch(base+p,{headers:H, signal:AbortSignal.timeout(10000)});
+                  const j=await r.json(); rows+=(j?.[0]?.data||[]).length; ok++;
+                } catch(e){ fail=`page ${p}: ${e.cause?.code||e.name}`; break; }
+              }
+              console.log(`${scheme}: 成功 ${ok}/55 页 ${rows} 行 ${Date.now()-t0}ms` + (fail?` | 断于 ${fail}`:" | 全通"));
+            }
+          '
