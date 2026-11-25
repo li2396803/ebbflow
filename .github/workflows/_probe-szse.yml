@@ -9,24 +9,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "22" }
-      - name: 不加 ipv4first（对照）
+      - name: 并发抓全量
         run: |
           node --input-type=module -e '
-            import { fetchSzseSnapshot } from "./lib/sources.mjs";
-            const t0=Date.now();
-            try { const r=await fetchSzseSnapshot(); console.log("对照 ok", Object.keys(r.shares).length, Date.now()-t0, "ms"); }
-            catch(e){ console.log("对照 失败", e.cause?.code||e.message, Date.now()-t0, "ms"); }
-          '
-      - name: 加 ipv4first（实验组）
-        if: always()
-        run: |
-          node --input-type=module -e '
-            import dns from "node:dns";
-            dns.setDefaultResultOrder("ipv4first");
-            const { fetchSzseSnapshot } = await import("./lib/sources.mjs");
-            for (let i=1;i<=2;i++){
-              const t0=Date.now();
-              try { const r=await fetchSzseSnapshot(); console.log(`ipv4first 第${i}次 ok`, r.date, Object.keys(r.shares).length, "只", Date.now()-t0, "ms"); }
-              catch(e){ console.log(`ipv4first 第${i}次 失败`, e.cause?.code||e.message, Date.now()-t0, "ms"); }
+            const UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36";
+            const H={"User-Agent":UA,Referer:"https://www.szse.cn/"};
+            const base="https://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1105&TABKEY=tab1&PAGENO=";
+            for (const conc of [4, 8, 16]) {
+              const t0=Date.now(); let ok=0, rows=0, errs=[];
+              let next=1;
+              await Promise.all(Array.from({length:conc}, async ()=>{
+                while (true) {
+                  const p=next++; if (p>55) break;
+                  try { const r=await fetch(base+p,{headers:H}); const j=await r.json(); rows+=(j?.[0]?.data||[]).length; ok++; }
+                  catch(e){ errs.push(`${p}:${e.cause?.code||e.message}`); }
+                }
+              }));
+              console.log(`并发 ${conc}: 成功 ${ok}/55, ${rows} 行, ${Date.now()-t0}ms, 错误 ${errs.length} 个 ${errs.slice(0,3).join(",")}`);
             }
           '
