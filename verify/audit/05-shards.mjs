@@ -17,7 +17,7 @@ const w = windowOf(dates, 12);
 const catOf = (code) => Object.entries(U.SUB).find(([, m]) => m.etfs.some((e) => e.code === code))?.[1].cat;
 
 function manual(code) {
-  const d = dailyFlows(ctx, code, "prev");
+  const d = dailyFlows(ctx, code, "day");
   const dBug = dailyFlows(ctx, code, "same");
   const sh = ctx.shares.get(code);
   const nv = ctx.navs.get(code);
@@ -69,12 +69,12 @@ for (const r of rowsA) {
   const flowKind =
     r.shard_flow == null
       ? "分片 null"
-      : Math.abs(r.shard_flow - r.flowInc) < 0.02
-        ? "含期初/正确折算"
-        : Math.abs(r.shard_flow - r.flowExc) < 0.02
-          ? "不含期初/正确折算"
+      : Math.abs(r.shard_flow - r.flowExc) < 0.02
+        ? "不含期初+修正口径（v4.0.1 契约）"
+        : Math.abs(r.shard_flow - r.flowInc) < 0.02
+          ? "含期初+修正口径（旧 T0）"
           : Math.abs(r.shard_flow - r.flowBug) < 0.05
-            ? "含期初+旧折算实现(bug)"
+            ? "含期初+旧折算实现（E1/E2）"
             : "无法归类";
   console.log(`  ${r.code}(${r.cat}): chgPct Δ${dChg?.toFixed(2)}pp | scaleEnd Δ${dScale?.toFixed(2)} 亿 | flow 分片 ${r.shard_flow} vs 手工 含期初 ${r.flowInc}/不含 ${r.flowExc}/旧实现 ${r.flowBug} → ${flowKind}`);
 }
@@ -91,20 +91,20 @@ for (const [cat, shard] of shards) {
       for (const [code, v] of Object.entries(map)) {
         stat.total++;
         if (v?.flow == null) { stat.nullv++; continue; }
-        const d = dailyFlows(ctx, code, "prev");
+        const d = dailyFlows(ctx, code, "day");
         const dbg = dailyFlows(ctx, code, "same");
         const inc = sumRange(d, win.i0, win.i1);
         const exc = sumRange(d, win.i0 + 1, win.i1);
         const bug = sumRange(dbg, win.i0, win.i1);
-        if (inc != null && Math.abs(v.flow - inc) < 0.05) stat.inc++;
-        else if (exc != null && Math.abs(v.flow - exc) < 0.05) stat.exc++;
+        if (exc != null && Math.abs(v.flow - exc) < 0.05) stat.exc++;
+        else if (inc != null && Math.abs(v.flow - inc) < 0.05) stat.inc++;
         else if (bug != null && Math.abs(v.flow - bug) < 0.05) { stat.bug++; if (bugList.length < 8) bugList.push({ cat, sub, p, code, shard: v.flow, correct: r2(inc), diff: r2(v.flow - inc) }); }
         else stat.other++;
       }
     }
   }
 }
-console.log(`  总条目 ${stat.total}：含期初+正确折算 ${stat.inc}；不含期初 ${stat.exc}；**含期初+旧折算(bug) ${stat.bug}**；无法归类 ${stat.other}；null ${stat.nullv}`);
+console.log(`  总条目 ${stat.total}：**不含期初+修正（契约） ${stat.exc}**；含期初+修正 ${stat.inc}；旧折算(bug) ${stat.bug}；无法归类 ${stat.other}；null ${stat.nullv}`);
 console.log("  bug 样例（分片值 vs 正确复算）：");
 console.table(bugList);
 
@@ -125,8 +125,8 @@ for (const [sub, meta] of Object.entries(U.SUB)) {
     const nav = nv?.[win7.i1];
     if (![a, b, nav].every(Number.isFinite)) continue;
     const approx = ((b - a) / 1e4) * nav; // payloads.mjs 的公式
-    const d = dailyFlows(ctx, e.code, "prev");
-    const exactInc = sumRange(d, win7.i0, win7.i1);
+    const d = dailyFlows(ctx, e.code, "day");
+    const exactInc = sumRange(d, win7.i0 + 1, win7.i1);
     n++;
     if (Math.abs(e.flow - approx) < 0.02) same++;
     if (exactInc != null) {

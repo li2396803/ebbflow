@@ -4,7 +4,7 @@
 //   并比较「净值贡献率」与「净值涨跌幅」（份额不变时二者相等）
 import { openDb, loadDates, buildCtx, r1, r2, siteJson } from "./_db.mjs";
 import { loadUniverse } from "../../lib/universe.mjs";
-import { dailyFlows, sumRange, windowOf, PERIOD_MONTHS } from "./_flows.mjs";
+import { dailyFlows, sumRange, windowOf, ratioOn, PERIOD_MONTHS } from "./_flows.mjs";
 
 const db = openDb();
 const dates = loadDates(db, "series_v2");
@@ -20,7 +20,7 @@ function subAgg(sub, i0, i1) {
   let flowIn = 0, flowEx = 0, fHit = 0;
   let navContrib = 0; // Σ 份额_{t−1} × Δnav_t
   let navShareBase = 0; // Σ 份额_{t−1} × nav_{t−1}（用于算净值贡献率）
-  const per = codes.map((c) => ({ c, d: dailyFlows(ctx, c, "prev") }));
+  const per = codes.map((c) => ({ c, d: dailyFlows(ctx, c, "day") }));
   for (const { c, d } of per) {
     const sh = ctx.shares.get(c);
     const nv = ctx.navs.get(c);
@@ -40,7 +40,8 @@ function subAgg(sub, i0, i1) {
     for (let t = i0 + 1; t <= i1; t++) {
       const wp = sh?.[t - 1], np = nv?.[t - 1], nt = nv?.[t];
       if (Number.isFinite(wp) && Number.isFinite(np) && Number.isFinite(nt) && np > 0) {
-        navContrib += (wp / 1e4) * (nt - np);
+        const r = ratioOn(ctx, c, dates[t]);
+        navContrib += ((wp * r) / 1e4) * (nt - np / r);
         navShareBase += (wp / 1e4) * np;
       }
     }
@@ -80,7 +81,7 @@ console.log("  → 两种口径下「规模变化率 = 净申购率 + 净值贡�
 console.log("\n=== 单只 ETF 的净值涨跌幅对照（份额几乎不变时，净值贡献率 ≈ 净值涨跌幅）===");
 for (const [sub, code] of [["大盘宽基", "510050"], ["沪深300", "510310"], ["黄金", "518880"]]) {
   if (!U.SUB[sub]?.etfs.some((e) => e.code === code)) continue;
-  const d = dailyFlows(ctx, code, "prev");
+  const d = dailyFlows(ctx, code, "day");
   for (const p of ["1y"]) {
     const w = windowOf(dates, PERIOD_MONTHS[p]);
     const sh = ctx.shares.get(code), nv = ctx.navs.get(code);

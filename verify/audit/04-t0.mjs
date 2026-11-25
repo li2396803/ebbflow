@@ -15,7 +15,7 @@ const U = loadUniverse({ taxonomy: "v2" });
 console.log("=".repeat(78));
 console.log("A. 510050 1 年窗口：含期初 vs 不含期初");
 const w1y = windowOf(dates, 12);
-const f50 = dailyFlows(ctx, "510050", "prev");
+const f50 = dailyFlows(ctx, "510050", "day");
 const inc = sumRange(f50, w1y.i0, w1y.i1);
 const exc = sumRange(f50, w1y.i0 + 1, w1y.i1);
 console.log(`  窗口 ${w1y.from} → ${w1y.to}（i0=${w1y.i0}, i1=${w1y.i1}）`);
@@ -53,7 +53,7 @@ for (const p of ["1m", "1y"]) {
   let n = 0, nBig = 0, maxRatio = 0, maxWho = null, sumAbs = 0;
   for (const [sub, meta] of Object.entries(U.SUB)) {
     for (const e of meta.etfs) {
-      const d = dailyFlows(ctx, e.code, "prev");
+      const d = dailyFlows(ctx, e.code, "day");
       const f0 = d[w.i0];
       const tot = sumRange(d, w.i0 + 1, w.i1);
       if (!Number.isFinite(f0) || tot == null) continue;

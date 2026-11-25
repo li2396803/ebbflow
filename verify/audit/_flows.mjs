@@ -17,9 +17,11 @@ export function dailyFlows(ctx, code, basis = "prev") {
     const nav = nv?.[i];
     if (!Number.isFinite(w) || !Number.isFinite(p) || !Number.isFinite(nav) || !(nav > 0)) continue;
     if (ctx.listDate.get(code) === ctx.dates[i]) continue; // 上市首日不计
-    const cur = w * adjustFactor(ctx, code, ctx.dates[i]);
-    const before = p * adjustFactor(ctx, code, basis === "prev" ? ctx.dates[i - 1] : ctx.dates[i]);
-    out[i] = ((cur - before) / 1e4) * nav;
+    const mt = adjustFactor(ctx, code, ctx.dates[i]);
+    // "same" 是旧实现的错误基准（两值都用当日），只用于复现历史缺陷
+    const mp = adjustFactor(ctx, code, basis === "same" ? ctx.dates[i] : ctx.dates[i - 1]);
+    // basis="day"：v4.0.1 契约口径（折回当日份额单位）；"prev"：v4.0.0 的「最新单位 × 当日净值」
+    out[i] = basis === "day" ? ((w - p * (mp / mt)) / 1e4) * nav : ((w * mt - p * mp) / 1e4) * nav;
   }
   return out;
 }
@@ -80,3 +82,10 @@ export function windowOf(dates, months, endIndex = dates.length - 1) {
 }
 
 export const PERIOD_MONTHS = { "1m": 1, "3m": 3, "6m": 6, "1y": 12, "3y": 36, "5y": 60 };
+
+/** 当日事件 ratio（无事件 = 1） */
+export function ratioOn(ctx, code, date) {
+  let r = 1;
+  for (const e of ctx.events.get(code) ?? []) if (e.date === date && e.ratio > 0) r *= e.ratio;
+  return r;
+}
