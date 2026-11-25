@@ -204,6 +204,23 @@ async function run({ quiet = false, lookback = 15 } = {}) {
   if (!quiet) log(`上交所补到 ${sseDays} 个交易日`);
 
   const sseMs = Date.now() - tSse0;
+  let szseInfo = null;
+  // ① 先用本地发布的深交所快照（data/szse/<date>.json）——云端 runner 在境外被 szse.cn 拦截，
+  //    由国内机器跑 `npm run szse` 发布，云端只负责消费。这一步不依赖网络，永远可用。
+  {
+    const feeds = loadSzseFeeds(10);
+    let applied = 0;
+    for (const [date, shares] of feeds) {
+      if (date < from || date > end) continue;
+      const n = Object.keys(shares || {}).length;
+      if (n < 100) continue;
+      putShares(db, date, Object.fromEntries(Object.entries(shares).map(([c, w]) => [c, { wan: w, src: "szse" }])));
+      markDaySource(db, date, "szse");
+      applied++;
+      if (date === end) szseInfo = { date, count: n };
+    }
+    if (applied && !quiet) log(`深交所快照（本地发布）：${applied} 个交易日`);
+  }
   // 2.05) 完整性闸门（P0-1）：进时间轴的每一天，两市覆盖都要在「近 20 个交易日中位数」的合理区间内。
   //       判据不写死 300/800：宽度随历史自动缩放，2021 年只有几百只时不误杀、2026 年 1700 只时不放过残缺日。
   //       不满足 → 先自动修复（Tushare 全天 → 深交所历史接口），仍不满足 → 不进轴 + 显式告警。
@@ -268,23 +285,6 @@ async function run({ quiet = false, lookback = 15 } = {}) {
   // 深交所快照：能否成功取决于抽到的 runner IP（实测同一分钟内有的 IP 通、有的第 1 页就 ETIMEDOUT，
   // 与请求频率无关，慢速/并发/换 UA/换协议栈都无解）。所以策略是「低成本试一次」：
   // 8 秒预算内成功就拿到官方深市数据，失败只损失 8 秒，深市由 Tushare 全市场覆盖。
-  let szseInfo = null;
-  // ① 先用本地发布的深交所快照（data/szse/<date>.json）——云端 runner 在境外被 szse.cn 拦截，
-  //    由国内机器跑 `npm run szse` 发布，云端只负责消费。这一步不依赖网络，永远可用。
-  {
-    const feeds = loadSzseFeeds(10);
-    let applied = 0;
-    for (const [date, shares] of feeds) {
-      if (date < from || date > end) continue;
-      const n = Object.keys(shares || {}).length;
-      if (n < 100) continue;
-      putShares(db, date, Object.fromEntries(Object.entries(shares).map(([c, w]) => [c, { wan: w, src: "szse" }])));
-      markDaySource(db, date, "szse");
-      applied++;
-      if (date === end) szseInfo = { date, count: n };
-    }
-    if (applied && !quiet) log(`深交所快照（本地发布）：${applied} 个交易日`);
-  }
   if (process.env.SZSE !== "0") {
   // 先试快照；失败或报告日不对，再按日期查历史接口（同一份数据的另一个入口，runner 上偶发网络失败时很关键）
   try {
