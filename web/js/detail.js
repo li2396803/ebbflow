@@ -357,7 +357,7 @@ function renderDetail(app, name, s, entry) {
           <tbody></tbody>
         </table>
       </div>
-      <p class="t-2xs faint" id="etfRangeNote">区间列跟随上方区间：<b>区间规模变化</b> / <b>区间净申购</b> / <b>期末规模</b>；区间净申购含期初当天。端点为低覆盖日时会向前取最近达标日（tooltip 注明实际日期）；「最新价 / 折溢价」为最新交易日快照，折溢价仅在区间终点=最新交易日时展示。</p>
+      <p class="t-2xs faint" id="etfRangeNote">区间列跟随上方区间：<b>区间规模变化</b> / <b>区间净申购</b> / <b>期末规模</b>；区间净申购按区间内交易日逐日累加，不含期初当天（期初当天属于上一区间）。端点为低覆盖日时会向前取最近达标日（tooltip 注明实际日期）；「最新价 / 折溢价」为最新交易日快照，折溢价仅在区间终点=最新交易日时展示。</p>
     </section>`;
 
   drawerRows = rows;
@@ -527,8 +527,8 @@ async function renderEtfTable(rows = drawerRows, totalScale = drawerTotalScale) 
   if (note) {
     const ep = ctx?.endpointsAdjusted ? `；${endpointNote(ctx)}` : "";
     note.innerHTML = approx
-      ? `区间列按「小类级规模 × 该 ETF 当前规模权重」估算（表头标「近似」）：<b>区间规模变化</b> = 小类期初→期末规模变化率，<b>区间净申购</b> = 小类区间净申购 × 权重（含期初当天），<b>期末规模</b> = 小类期末规模 × 权重${ep}。`
-      : `区间列为后端按 ETF 逐日数据计算的<b>精确值</b>（预设区间）：区间规模变化 / 区间净申购（含期初当天）/ 期末规模。自定义区间无精确值时自动回退为估算并标「近似」。`;
+      ? `区间列按「小类级规模 × 该 ETF 当前规模权重」估算（表头标「近似」）：<b>区间规模变化</b> = 小类期初→期末规模变化率，<b>区间净申购</b> = 小类区间净申购 × 权重（不含期初当天），<b>期末规模</b> = 小类期末规模 × 权重${ep}。`
+      : `区间列为后端按 ETF 逐日数据计算的<b>精确值</b>（预设区间）：区间规模变化 / 区间净申购（不含期初当天）/ 期末规模。自定义区间无精确值时自动回退为估算并标「近似」。`;
   }
   const decorated = decorateRows(rows, ctx);
   const sorted = sortEtfRows(decorated, etfSort);

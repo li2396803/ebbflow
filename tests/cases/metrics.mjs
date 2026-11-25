@@ -13,6 +13,8 @@ import {
   dailyFlow,
   buildEtfRanges,
   etfRangeMetrics,
+  flowStep,
+  flowOutOfBounds,
 } from "../../lib/metrics.mjs";
 import { tmpDb, seedFunds, seedShareRows, seedNavRows, seedEvents, seedListDates, mkUniverse, readSeries, weekdays } from "../helpers.mjs";
 
@@ -392,6 +394,138 @@ test("首页表格：按规模变化排行，变化率 = 规模变化率（不�
     // 类目行：规模合计与子项之和一致
     const cat = p.tables.cats.find((c) => c.key === "1_宽基市场");
     assertClose(cat.now, Math.round((A.last + B.last) * 10) / 10, 0.11, "类目规模 = 小类规模之和");
+  } finally {
+    cleanup();
+  }
+});
+
+/* ------------------ 财务审计回归（E1 / E2 / T0 / E3） ------------------ */
+
+test("E1：折算乘数不能缩放历史流量（同类 159219：m=23.53 曾把 −0.99 亿算成 −23.36 亿）", () => {
+  // 纯算术：当日无事件（mp=mt=m）时，无论 m 多大，flow 都必须是 (w−p)/1e4×nav
+  const fixed = flowStep(7638.8, 17438.8, 1.0131, 23.53, 23.53);
+  assertClose(fixed, -0.99, 0.01, "无事件日不应被 m 缩放");
+  const buggy = ((7638.8 * 23.53 - 17438.8 * 23.53) / 1e4) * 1.0131;
+  assertClose(buggy, -23.36, 0.02, "旧实现应复现 −23.36（用于对照）");
+  // 事件当日：mp/mt = ratio → 折算回当日单位
+  assertClose(flowStep(2000, 1000, 1, 1, 2), 0, 1e-12, "2:1 拆分日流量为 0");
+  assertClose(flowStep(1100, 1000, 1, 1, 1), 0.01, 1e-12, "普通申赎按当日单位计价");
+
+  // |flow| ≤ scale 不变量
+  assertEq(flowOutOfBounds(-23.36, 0.77, 0.77), true, "30 倍 AUM 的异常应被抓出");
+  assertEq(flowOutOfBounds(0.01, 0.1, 0.1), false, "正常流量不应触发");
+  assertEq(flowOutOfBounds(-0.9, 1, 0.1), false, "赎回 90%（|flow|>期末规模）是合法的，不应误报");
+  assertEq(flowOutOfBounds(-1.2, 1, 0.1), true, "赎回超过期初规模 → 越界");
+  assertEq(flowOutOfBounds(0.2, 0.1, 0.2), false, "申购不超过期末规模");
+});
+
+test("E1/E2：份额/净值序列级验证 —— 拆分前后流量不缩放、拆分日为 0", () => {
+  const { db, cleanup } = tmpDb("e1-flow");
+  try {
+    const dates = weekdays("2026-07-01", 10);
+    const S = "510401"; // 拆分：第 6 天 2:1
+    const F = "510402"; // 真实申购：第 3 天 +100
+    const universe = mkUniverse({ 折测: { codes: [S, F] } });
+    seedFunds(db, [S, F]);
+    seedEvents(db, [{ code: S, date: dates[5], kind: "split", ratio: 2 }]);
+    for (let i = 0; i < dates.length; i++) {
+      seedShareRows(db, dates[i], [
+        [S, i >= 5 ? 2000 : 1000, "sse"],
+        [F, i >= 2 ? 1100 : 1000, "sse"],
+      ]);
+      seedNavRows(db, dates[i], [[S, 1], [F, 1]]);
+    }
+    recomputeAll(db, { dates, universe });
+    const ser = readSeries(db, "series");
+    // 第 3 天（下标 2）：只有 F 的 +100 → 0.01 亿；旧实现会被 m=2 放大成 0.02
+    assertClose(ser.get(`折测|${dates[2]}`).flow, 0.01, 1e-9, "拆分前的申购不应被未来事件放大");
+    // 拆分日：S 份数翻倍 → 流量 0
+    assertClose(ser.get(`折测|${dates[5]}`).flow, 0, 1e-9, "拆分日流量应为 0");
+    // 拆分之后：同样只有 0 变动
+    assertClose(ser.get(`折测|${dates[6]}`).flow, 0, 1e-9, "拆分后流量应为 0");
+    // |flow| ≤ scale（每个交易日、这个小类）
+    for (const d of dates) {
+      const row = ser.get(`折测|${d}`);
+      if (row?.flow == null || row.scale == null) continue;
+      assert(Math.abs(row.flow) <= Math.abs(row.scale) + 1e-6, `${d} 流量 ${row.flow} 不应超过规模 ${row.scale}`);
+    }
+  } finally {
+    cleanup();
+  }
+});
+
+test("T0 裁决：区间净申购不含期初当天（期初只作为规模基准）", () => {
+  const { db, cleanup } = tmpDb("t0");
+  try {
+    // 需要足够长的历史，让 1m 的期初不是第 0 天（第 0 天没有前值、天然没有流量）
+    const dates = weekdays("2026-05-04", 60);
+    const C1 = "510501"; // 只在 1m 期初当天 +500（用于验证区间求和排除 T0）
+    const C2 = "510502"; // 只在 7 日窗口的期初当天 +500（用于验证载荷窗口排除 T0）
+    const universe = mkUniverse({ 期测: { codes: [C1, C2] } });
+    seedFunds(db, [C1, C2]);
+    const win1m = periodWindows(dates)["1m"];
+    const lastMs = new Date(`${dates.at(-1)}T00:00:00Z`).getTime();
+    let win7First = 0;
+    for (let i = dates.length - 1; i >= 0; i--) {
+      if (lastMs - new Date(`${dates[i]}T00:00:00Z`).getTime() <= 7 * 86400000) win7First = i;
+    }
+    for (let i = 0; i < dates.length; i++) {
+      seedShareRows(db, dates[i], [
+        [C1, i >= win1m.i0 ? 1500 : 1000, "sse"],
+        [C2, i >= win7First ? 1500 : 1000, "sse"],
+      ]);
+      seedNavRows(db, dates[i], [[C1, 1], [C2, 1]]);
+      markDaySource(db, dates[i], "sse");
+    }
+    recomputeAll(db, { dates, universe });
+    const ctx = createMetricContext(db, dates, { codes: [C1] });
+    const daily = dailyFlow(ctx, C1);
+    assertClose(daily[win1m.i0], 0.05, 1e-9, "期初当天确实有 0.05 亿流量（用于对照）");
+    const m = etfRangeMetrics(ctx, C1, win1m, daily);
+    assertClose(m.flow, 0, 1e-9, "区间 flow 应排除期初当天；含 T0 会是 0.05");
+
+    // 载荷级：表格与 subs 的 7 日窗口 flow 也要排除 T0（C2 的跳增正好落在窗口期初）
+    const p = buildAllPayloads(db, { universe });
+    const row = p.tables.all.find((r) => r.sub === "期测");
+    assert(row, "应有该小类");
+    assertClose(row.flow, 0, 1e-9, "窗口 flow 应为 0（期初当天的申赎不计）");
+    const etf2 = p.subs["期测"].etfs.find((e) => e.code === C2);
+    assertClose(etf2.flow, 0, 1e-9, "逐 ETF 窗口 flow 同样排除期初");
+  } finally {
+    cleanup();
+  }
+});
+
+test("E3：subs 逐 ETF flow = 逐日净申购求和（不是 Δ份额 × 末日净值）", () => {
+  const { db, cleanup } = tmpDb("e3");
+  try {
+    const dates = weekdays("2026-09-01", 10);
+    const C = "510601";
+    const universe = mkUniverse({ 近测: { codes: [C] } });
+    seedFunds(db, [C]);
+    // 份额在窗口第 2 天 +200；净值一路从 1.0 涨到 1.9 → 近似式（Δ×末日净值）会明显偏大
+    for (let i = 0; i < dates.length; i++) {
+      seedShareRows(db, dates[i], [[C, i >= 5 ? 1200 : 1000, "sse"]]);
+      seedNavRows(db, dates[i], [[C, 1 + 0.1 * i]]);
+      markDaySource(db, dates[i], "sse");
+    }
+    recomputeAll(db, { dates, universe });
+    const p = buildAllPayloads(db, { universe });
+    const etf = p.subs["近测"].etfs.find((e) => e.code === C);
+    const ctx = createMetricContext(db, dates, { codes: [C] });
+    const daily = dailyFlow(ctx, C);
+    // 用「窗口起点 = 最后一个与末日相差 ≤7 自然日」的同一规则复算期望值
+    const last = dates.length - 1;
+    let first = 0;
+    for (let i = last; i >= 0; i--) {
+      if (new Date(`${dates[last]}T00:00:00Z`).getTime() - new Date(`${dates[i]}T00:00:00Z`).getTime() <= 7 * 86400000) first = i;
+    }
+    let exact = null;
+    for (let i = first + 1; i <= last; i++) if (Number.isFinite(daily[i])) exact = (exact ?? 0) + daily[i];
+    const navEnd = 1 + 0.1 * last;
+    const approx = ((1200 - 1000) / 1e4) * navEnd;
+    assertClose(etf.flow, Math.round(exact * 100) / 100, 0.011, "逐 ETF flow 应等于逐日求和");
+    assert(Math.abs(etf.flow - approx) > 0.005, `本例近似式应明显不同（逐日 ${etf.flow} vs 近似 ${approx.toFixed(3)}）`);
   } finally {
     cleanup();
   }

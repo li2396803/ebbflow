@@ -210,7 +210,11 @@ function checkDb() {
             }
             const p = pick(prevDay, code, modePrev);
             if (r && p && nav != null && !(listDate.get(code) === d)) {
-              expFlow += ((adjust(code, d, r.wan) - adjust(code, prevD, p.wan)) / 1e4) * nav;
+              // 当日单位计价：flow = (w − p·m_{t−1}/m_t) / 1e4 × nav（审计 E1 的修正公式）
+              const mt = adjust(code, d, 1);
+              const mp = adjust(code, prevD, 1);
+              const back = mt > 0 ? mp / mt : 1;
+              expFlow += ((r.wan - p.wan * back) / 1e4) * nav;
               flowHit++;
             }
           }
@@ -239,6 +243,65 @@ function checkDb() {
         "C3. 净申购 = Σ(Δ份额×净值)（含折算还原/上市首日）",
         flowBad.length === 0,
         flowBad.length ? flowBad : [`抽查 ${sampleSubs.length} 小类 × 30 天（${flowChecked} 个点），含 254 起折算事件`]
+      );
+    }
+
+    // C3b: 单只 ETF 每日 |flow| ≤ 当日规模（审计 S1 不变量；E1 类异常会在第一次运行被抓到）
+    {
+      const evCodes = new Set(db.prepare("SELECT DISTINCT code FROM event").all().map((r) => r.code));
+      const U20 = loadUniverse({ taxonomy: "v2" });
+      const allCodes = [
+        ...new Set([
+          ...Object.values(UL.SUB).flatMap((m) => m.etfs.map((e) => e.code)),
+          ...Object.values(U20.SUB).flatMap((m) => m.etfs.map((e) => e.code)),
+        ]),
+      ];
+      const sample = [...new Set([...evCodes, ...allCodes.filter((c) => !evCodes.has(c)).slice(0, 300)])];
+      const evMap = new Map();
+      for (const r of db.prepare("SELECT code, date, ratio FROM event").all()) {
+        let l = evMap.get(r.code);
+        if (!l) evMap.set(r.code, (l = []));
+        l.push(r);
+      }
+      const factor = (code, date) => {
+        const l = evMap.get(code);
+        if (!l) return 1;
+        let f = 1;
+        for (const e of l) if (e.date > date && e.ratio > 0) f *= e.ratio;
+        return f;
+      };
+      const listDates = new Map(db.prepare("SELECT code, list_date FROM fund WHERE list_date IS NOT NULL").all().map((r) => [r.code, r.list_date]));
+      const bad = [];
+      let points = 0;
+      for (const code of sample) {
+        const sh = new Map(db.prepare("SELECT date, wan FROM share WHERE code=?").all(code).map((r) => [r.date, r.wan]));
+        if (!sh.size) continue;
+        const nv = new Map(db.prepare("SELECT date, nav FROM nav WHERE code=?").all(code).map((r) => [r.date, r.nav]));
+        let prevWan = null;
+        let prevD = null;
+        for (const d of dates) {
+          const w = sh.get(d);
+          const nav = nv.get(d);
+          if (w != null && prevWan != null && nav != null && nav > 0 && listDates.get(code) !== d) {
+            const mt = factor(code, d);
+            const mp = factor(code, prevD);
+            const flow = ((w - prevWan * (mt > 0 ? mp / mt : 1)) / 1e4) * nav;
+            const scalePrev = (prevWan / 1e4) * nav;
+            const scaleEnd = (w / 1e4) * nav;
+            points++;
+            // 合法区间：赎回不超过期初规模、申购不超过期末规模
+            if (flow < -scalePrev - 1e-6 || flow > scaleEnd + 1e-6) {
+              if (bad.length < 5) bad.push(`${code} ${d} flow ${flow.toFixed(2)} ∉ [−${scalePrev.toFixed(2)}, ${scaleEnd.toFixed(2)}]`);
+            }
+          }
+          prevWan = w ?? null;
+          prevD = w != null ? d : prevD;
+        }
+      }
+      record(
+        "C3b. 单只 ETF 每日 flow 落在 [−期初规模, 期末规模]",
+        bad.length === 0,
+        bad.length ? bad : [`扫描 ${sample.length} 只（含全部 ${evCodes.size} 只有折算事件的）、${points} 个 (ETF×日)`]
       );
     }
 

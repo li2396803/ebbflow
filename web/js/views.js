@@ -230,7 +230,7 @@ export function renderOverview(app) {
   renderOverviewWatch(app);
 }
 
-/** 区间净申购（含期初当天）：优先 subs.flowSeries；旧数据退回 stats.flow */
+/** 区间净申购（不含期初当天，Σ[i0+1..i1]）：优先 subs.flowSeries；旧数据退回 stats.flow */
 function flowSumRange(app, name) {
   const entry = app?.subs?.[name];
   const arr = Array.isArray(entry?.flowSeries) ? entry.flowSeries : null;
@@ -238,7 +238,7 @@ function flowSumRange(app, name) {
   if (arr && r.fromIdx >= 0) {
     let sum = 0;
     let any = false;
-    for (let i = r.fromIdx; i <= Math.min(r.toIdx, arr.length - 1); i += 1) {
+    for (let i = Math.min(r.fromIdx + 1, r.toIdx); i <= Math.min(r.toIdx, arr.length - 1); i += 1) {
       const v = arr[i];
       if (v != null && Number.isFinite(+v)) {
         sum += +v;
@@ -348,7 +348,7 @@ function renderOverviewKpis(app) {
       !ready
         ? pending
         : app.flowComplete
-          ? `<span class="dim">逐日净申购累加（含期初当天）</span><span class="chip chip--line chip--sm" title="口径：每日净申购（Δ份额 × 当日净值，拆分/合并已还原）逐日累加，包含期初当天">口径</span>`
+          ? `<span class="dim">逐日净申购累加（不含期初）</span><span class="chip chip--line chip--sm" title="口径：每日净申购（Δ份额 × 当日净值，拆分/合并已还原）逐日累加；不含期初当天（期初当天属于上一区间）">口径</span>`
           : `<span class="dim">按区间规模变化近似</span><span class="chip chip--line chip--sm" title="口径：未加载逐日数据时按规模变化近似；全量图表加载完成后会自动切换为每日净申购求和">估算</span>`,
       "",
       "var(--ink-3)",
@@ -718,7 +718,7 @@ export function renderWatch(app) {
       <svg aria-hidden="true"><use href="#i-info"/></svg>
       <span>${
         app.flowComplete
-          ? "「区间净申购」为区间内每日净申购（Δ份额 × 当日单位净值）之和，包含期初当天；已退市或缺少净值的成分不计入，不等同于交易所口径的申赎金额。"
+          ? "「区间净申购」为区间内交易日逐日净申购（Δ份额 × 当日单位净值）之和，不含期初当天（期初当天属于上一区间）；已退市或缺少净值的成分不计入，不等同于交易所口径的申赎金额。"
           : "「区间净申购」在逐日数据未加载时按规模变化近似；全量图表加载后会自动切换为每日净申购求和。"
       }</span>
     </p>`;

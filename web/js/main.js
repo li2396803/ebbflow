@@ -733,7 +733,7 @@ function flowOf(name, stats) {
     if (fromIdx >= 0) {
       let sum = 0;
       let hit = 0;
-      for (let i = fromIdx; i <= Math.min(toIdx, series.flow.length - 1); i++) {
+      for (let i = Math.min(fromIdx + 1, toIdx); i <= Math.min(toIdx, series.flow.length - 1); i++) {
         const v = series.flow[i];
         if (v != null && Number.isFinite(+v)) {
           sum += +v;
@@ -791,7 +791,7 @@ function legendValue(series, payload) {
   const raw = payload.series.find((x) => x.name === series.name)?.flow;
   if (!raw || fromIdx < 0) return null;
   let sum = 0;
-  for (let i = fromIdx; i <= toIdx; i++) {
+  for (let i = Math.min(fromIdx + 1, toIdx); i <= toIdx; i++) {
     const v = raw[i];
     if (v != null && Number.isFinite(+v)) sum += +v;
   }
@@ -878,6 +878,7 @@ function buildChartPayload(payload, catKey) {
         const vals = arr.map((v, i) => {
           if (i < a) return null;
           if (i > b) return null;
+          if (i === a) return 0; // 期初当天不计入区间净申购
           if (v == null) return null;
           acc += v;
           return +acc.toFixed(2);
@@ -1149,7 +1150,7 @@ function buildFocusPayload(payload, catKey, name) {
     coverageNote: cov ? "灰色区间为数据覆盖不足（<60%），虚线不参与端点取值" : "",
     log: false,
     footNote: `${sel.map((m) => LABEL[m]).join(" · ")}${
-      sel.includes("flow") ? " · 净申购含期初当天" : ""
+      sel.includes("flow") ? " · 净申购按区间内交易日累加，不含期初当天（期初当天属于上一区间）" : ""
     }${
       sel.includes("flow") && sel.includes("pct") ? " · 规模变化率 ≈ 净申购/期初规模 + 净值涨跌" : ""
     }${(() => {

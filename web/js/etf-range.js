@@ -114,7 +114,8 @@ export async function rangeContext(app, subName, rows) {
     startScale != null && endScale != null && Number.isFinite(+startScale) && Number.isFinite(+endScale) && +startScale !== 0
       ? ((endScale - startScale) / Math.abs(startScale)) * 100
       : null;
-  const flowSum = sumRange(flowArr, i0, i1);
+  // 审计口径：区间净申购 = Σ[i0+1..i1]，排除期初当天（属于上一区间）
+  const flowSum = sumRange(flowArr, Math.min(i0 + 1, i1), i1);
   const totalScale = (rows || []).reduce((acc, x) => acc + (Number.isFinite(x?.scale) ? x.scale : 0), 0);
   const latestIdx = scale.length - 1;
   const shard = await loadEtfRanges(app, entry.cat);

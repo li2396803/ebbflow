@@ -503,7 +503,7 @@ function flowInRange(entry, fromIdx, toIdx, fallbackArr) {
   if (Array.isArray(arr) && arr.length && fromIdx >= 0) {
     let sum = 0;
     let any = false;
-    for (let i = fromIdx; i <= Math.min(toIdx, arr.length - 1); i += 1) {
+    for (let i = Math.min(fromIdx + 1, toIdx); i <= Math.min(toIdx, arr.length - 1); i += 1) {
       const v = arr[i];
       if (v != null && Number.isFinite(+v)) {
         sum += +v;
