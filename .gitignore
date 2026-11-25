@@ -44,3 +44,4 @@ site/charts/
 web/_mock/
 web/_shots/
 web/dist/
+.tmp-diag/
