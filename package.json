@@ -1,6 +1,6 @@
 {
   "name": "ebbflow",
-  "version": "3.11.2",
+  "version": "3.12.0",
   "private": true,
   "description": "Ebbflow · ETF 细分行业资金流向：沪深全市场 ETF 份额/规模/净流入看板，两源数据管道 + 静态站点 + 本地服务，自动更新与交叉校验",
   "type": "module",

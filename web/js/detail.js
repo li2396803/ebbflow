@@ -4,7 +4,7 @@
 
 import { cnum, download, esc, fmtPct, fmtSigned, skeletonRows, toCSV, toneColor, isDark, emptyState } from "./util.js";
 import { flowEstimate, catLabelOf } from "./views.js";
-import { attachQuotes } from "./quote.js";
+import { attachQuotes, quoteEnabled } from "./quote.js";
 import { rangeContext, decorateRows, APPROX_TIP } from "./etf-range.js";
 import { rankOf, state } from "./state.js";
 import { closeOverlay, openOverlay, toast } from "./ui.js";
@@ -129,7 +129,7 @@ export function renderInlineEtfTable(app, subName, host) {
           <thead><tr>
             ${sortHead("code", "代码", "t-2xs", false)}
             ${sortHead("name", "名称", "", false)}
-            ${sortHead("price", "最新价", "num col-price")}
+            ${sortHead("price", quoteEnabled() ? "最新价" : "收盘价", "num col-price")}
             ${sortHead("pctRange", "区间份额变化", "num", true, "近似")}
             ${sortHead("flowRange", "区间净申购", "num", true, "近似")}
             ${sortHead("scaleEnd", "期末规模", "num", true, "近似")}
@@ -361,6 +361,7 @@ function renderDetail(app, name, s, entry) {
 
   drawerRows = rows;
   drawerTotalScale = totalScale;
+  syncPriceHeaderLabel(body);
   renderEtfTable(rows, totalScale);
 
   // 迷你走势
@@ -500,6 +501,13 @@ export function sortEtfRows(rows, { key, dir }) {
 }
 
 let drawerRenderToken = 0;
+/** 静态托管没有报价后端：列头用「收盘价」，避免「最新价」的误导 */
+function syncPriceHeaderLabel(scope = document) {
+  if (quoteEnabled()) return;
+  const label = scope.querySelector('#tblEtf th[data-esort="price"] .th-label, #tblFocusEtf th[data-isort="price"] .th-label');
+  if (label) label.textContent = "收盘价";
+}
+
 async function renderEtfTable(rows = drawerRows, totalScale = drawerTotalScale) {
   const tbody = document.querySelector("#tblEtf tbody");
   if (!tbody) return;
