@@ -8,21 +8,22 @@ jobs:
     steps:
       - uses: actions/setup-node@v4
         with: { node-version: "22" }
-      - name: 同一分钟内 curl vs node 各变体
+      - name: curl 与 node 逐项（修好脚本）
         run: |
           set +e
           U='https://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1105&TABKEY=tab1&PAGENO=1'
           UA='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36'
-          echo "1) curl -4 :"; timeout 20 curl -4 -s -o /dev/null -w '%{http_code} %{time_total}s\n' -H "User-Agent: $UA" -H 'Referer: https://www.szse.cn/' "$U"
-          echo "2) curl -6 :"; timeout 20 curl -6 -s -o /dev/null -w '%{http_code} %{time_total}s\n' -H "User-Agent: $UA" -H 'Referer: https://www.szse.cn/' "$U"
-          echo "3) curl 默认 :"; timeout 20 curl -s -o /dev/null -w '%{http_code} %{time_total}s\n' -H "User-Agent: $UA" -H 'Referer: https://www.szse.cn/' "$U"
-          node --input-type=module -e '
-            const U="https://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1105&TABKEY=tab1&PAGENO=1";
-            const UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36";
-            const H={"User-Agent":UA,Referer:"https://www.szse.cn/"};
-            const t=async(label,fn)=>{ const t0=Date.now(); try{ const n=await fn(); console.log(`${label}: ok ${n} ${Date.now()-t0}ms`);}catch(e){ console.log(`${label}: FAIL ${e.cause?.code||e.name||e.message} ${Date.now()-t0}ms`);} };
-            await t("4) fetch 默认", async()=> (await (await fetch(U,{headers:H})).text()).length);
-            await t("5) fetch ipv4first", async()=>{ const dns=await import("node:dns"); dns.setDefaultResultOrder("ipv4first"); return (await (await fetch(U,{headers:H})).text()).length; });
-            await t("6) node:https family4", async()=> await new Promise((res,rej)=>{ const https=await import("node:https"); const r=https.request(U,{headers:H,family:4,timeout:12000},x=>{let n=0;x.on("data",c=>n+=c.length);x.on("end",()=>res(n));}); r.on("error",rej); r.on("timeout",()=>rej(new Error("timeout"))); r.end(); }));
-            await t("7) node:https 默认", async()=> await new Promise((res,rej)=>{ const https=await import("node:https"); const r=https.request(U,{headers:H,timeout:12000},x=>{let n=0;x.on("data",c=>n+=c.length);x.on("end",()=>res(n));}); r.on("error",rej); r.on("timeout",()=>rej(new Error("timeout"))); r.end(); }));
-          ' 2>&1
+          echo "A) curl 默认: $(timeout 20 curl -s -o /dev/null -w '%{http_code} %{time_total}s' -H "User-Agent: $UA" -H 'Referer: https://www.szse.cn/' "$U")"
+          echo "B) curl --http1.1: $(timeout 20 curl --http1.1 -s -o /dev/null -w '%{http_code} %{time_total}s' -H "User-Agent: $UA" -H 'Referer: https://www.szse.cn/' "$U")"
+          echo "C) curl --http2: $(timeout 20 curl --http2 -s -o /dev/null -w '%{http_code} %{time_total}s' -H "User-Agent: $UA" -H 'Referer: https://www.szse.cn/' "$U")"
+          cat > /tmp/t.mjs <<'EOF'
+          const U="https://www.szse.cn/api/report/ShowReport/data?SHOWTYPE=JSON&CATALOGID=1105&TABKEY=tab1&PAGENO=1";
+          const UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126 Safari/537.36";
+          const H={"User-Agent":UA,Referer:"https://www.szse.cn/"};
+          const run=async(label,fn)=>{const t0=Date.now();try{const n=await fn();console.log(`${label}: ok ${n} ${Date.now()-t0}ms`);}catch(e){console.log(`${label}: FAIL ${e?.cause?.code||e?.name||e?.message} ${Date.now()-t0}ms`);}};
+          await run("D) fetch", async()=> (await (await fetch(U,{headers:H})).text()).length);
+          await run("E) https.request", async()=> await new Promise((res,rej)=>{import("node:https").then(h=>{const r=h.request(U,{headers:H,timeout:12000},x=>{let n=0;x.on("data",c=>n+=c.length);x.on("end",()=>res(n));});r.on("error",rej);r.on("timeout",()=>rej(new Error("timeout")));r.end();});}));
+          await run("F) https family4", async()=> await new Promise((res,rej)=>{import("node:https").then(h=>{const r=h.request(U,{headers:H,family:4,timeout:12000},x=>{let n=0;x.on("data",c=>n+=c.length);x.on("end",()=>res(n));});r.on("error",rej);r.on("timeout",()=>rej(new Error("timeout")));r.end();});}));
+          await run("G) execFile curl", async()=> {const {execFileSync}=await import("node:child_process"); return execFileSync("curl",["-s","-H",`User-Agent: ${UA}`,"-H","Referer: https://www.szse.cn/",U],{timeout:20000}).length;});
+          EOF
+          node /tmp/t.mjs
