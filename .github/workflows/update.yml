@@ -172,7 +172,13 @@ jobs:
               console.log("lastTradeDate:", m.lastTradeDate);
               console.log("区间:", m.range && (m.range.from + " ~ " + m.range.to + "（" + m.range.days + " 个交易日）"));
               console.log("规模:", JSON.stringify(m.counts));
-              if (m.warnings && m.warnings.length) console.log("告警:", m.warnings.join(" | "));
+              if (m.warnings && m.warnings.length) {
+                console.log("::warning::告警:", m.warnings.join(" | "));
+              } else {
+                console.log("告警: 无");
+              }
+              const infos = (m.alerts || []).filter((a) => a.severity === "info").map((a) => a.message);
+              if (infos.length) console.log("说明（无需处理）:", infos.join(" | "));
             '
           else
             echo "✗ 缺少 site/data/meta.json"

@@ -113,6 +113,8 @@ async function run({ quiet = false, lookback = 15 } = {}) {
   const db = openDb();
   bindBudget(db);
   const warn = [];
+  // info 级：不影响正确性、也无需人处理的说明（例如交易所接口不可达但已被兜底覆盖）
+  const note = [];
 
   try {
     await ensureHistory(db, warn, quiet);
@@ -144,7 +146,7 @@ async function run({ quiet = false, lookback = 15 } = {}) {
         const state = assessDay({ rows: m.size, expected: floor, minRatio: 1 });
         if (state !== "ok") {
           tsSnapshot.skipped.push({ date: d, rows: m.size, state });
-          warn.push(`Tushare ${d} 仅 ${m.size} 只（< ${floor}，视为未出齐），不作为当日基准`);
+          note.push(`Tushare ${d} 仅 ${m.size} 只（< ${floor}，尚未出齐），不作为当日基准`);
           continue;
         }
         anchor = d;
@@ -288,7 +290,7 @@ async function run({ quiet = false, lookback = 15 } = {}) {
       log(`深交所快照跳过（报告日 ${snap.date || "未知"}，${n} 只）`);
     }
   } catch (e) {
-    warn.push("深交所快照失败：" + String(e.message || e).slice(0, 60));
+    note.push("深交所快照不可达（已由 Tushare 覆盖深市，完整性由闸门校验）：" + String(e.message || e).slice(0, 40));
     // 兜底：按日期走历史接口，把当天（以及昨天）补上
     for (const d of [end, ...days.slice(-3).reverse()]) {
       try {
@@ -396,7 +398,7 @@ async function run({ quiet = false, lookback = 15 } = {}) {
       quotes: { ms: quotesMs },
     },
     gate,
-    alerts: warn.map((m) => ({ severity: "warn", message: m })),
+    alerts: [...warn.map((m) => ({ severity: "warn", message: m })), ...note.map((m) => ({ severity: "info", message: m }))],
     warnings: warn,
   };
   recordRun(db, { at: new Date().toISOString(), kind: "update", ok: true, stats });
@@ -409,6 +411,7 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     gate: { repaired: gate.repaired.length, excluded: gate.excluded.length },
     mixedDays: stats.mixedDays,
     warnings: warn,
+    alerts: stats.alerts,
   };
   fs.writeFileSync(path.join(ROOT, "data", "lastrun.json"), JSON.stringify(lastrun));
   if (!quiet) log(`完成：最新交易日 ${info.lastTradeDate}，${info.dates} 个交易日 / ${CATS.length} 个大类 / ${Object.keys(SUB).length} 个细分行业，用时 ${(stats.ms / 1000).toFixed(1)}s`);
