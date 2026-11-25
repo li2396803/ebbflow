@@ -275,7 +275,7 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     // 这里用 Promise.race 硬性限制在 9 秒，超时就当本次不可用（深市由 Tushare 兜底）。
     const snap = await Promise.race([
       fetchSzseSnapshot(),
-      new Promise((_, rej) => setTimeout(() => rej(new Error("整体超时 9s")), 9000)),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("深交所整体超时 9s")), 9000)),
     ]);
     const n = Object.keys(snap.shares).length;
     // 报告日要落在本次窗口内，且不能比已知最新交易日还旧，避免把陈旧快照写回去
@@ -300,12 +300,16 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     }
   } catch (e) {
     note.push("深交所快照不可达（已由 Tushare 覆盖深市，完整性由闸门校验）：" + String(e.message || e).slice(0, 40));
-    // 兜底：按日期走历史接口，把当天（以及昨天）补上
-    for (const d of [end, ...days.slice(-3).reverse()]) {
-      try {
-        const r = await fetchSzseHistory(d);
-        if (r && szseWrite(r.date, r.shares, "历史")) break;
-      } catch {}
+    // 兜底：按日期走历史接口。但如果是「整体超时」说明这个出口 IP 被拦，
+    // 历史接口同样会失败（还要再烧 4×30s 重试），直接跳过。
+    const hardTimeout = /整体超时/.test(String(e.message || ""));
+    if (!hardTimeout) {
+      for (const d of [end, ...days.slice(-3).reverse()]) {
+        try {
+          const r = await fetchSzseHistory(d);
+          if (r && szseWrite(r.date, r.shares, "历史")) break;
+        } catch {}
+      }
     }
   }
   } // SZSE !== "0"（本地可用 SZSE=0 强制跳过）
