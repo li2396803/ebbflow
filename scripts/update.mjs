@@ -15,6 +15,7 @@ import { putNav } from "../lib/db.mjs";
 import { buildSite } from "../lib/build/site.mjs";
 import { loadUniverse } from "../lib/universe.mjs";
 import { isMain, projectRoot } from "../lib/cli.mjs";
+import { loadSzseFeeds } from "./szse-publish.mjs";
 
 const UNIVERSE = loadUniverse();
 const SUB = UNIVERSE.SUB;
@@ -268,6 +269,22 @@ async function run({ quiet = false, lookback = 15 } = {}) {
   // 与请求频率无关，慢速/并发/换 UA/换协议栈都无解）。所以策略是「低成本试一次」：
   // 8 秒预算内成功就拿到官方深市数据，失败只损失 8 秒，深市由 Tushare 全市场覆盖。
   let szseInfo = null;
+  // ① 先用本地发布的深交所快照（data/szse/<date>.json）——云端 runner 在境外被 szse.cn 拦截，
+  //    由国内机器跑 `npm run szse` 发布，云端只负责消费。这一步不依赖网络，永远可用。
+  {
+    const feeds = loadSzseFeeds(10);
+    let applied = 0;
+    for (const [date, shares] of feeds) {
+      if (date < from || date > end) continue;
+      const n = Object.keys(shares || {}).length;
+      if (n < 100) continue;
+      putShares(db, date, Object.fromEntries(Object.entries(shares).map(([c, w]) => [c, { wan: w, src: "szse" }])));
+      markDaySource(db, date, "szse");
+      applied++;
+      if (date === end) szseInfo = { date, count: n };
+    }
+    if (applied && !quiet) log(`深交所快照（本地发布）：${applied} 个交易日`);
+  }
   if (process.env.SZSE !== "0") {
   // 先试快照；失败或报告日不对，再按日期查历史接口（同一份数据的另一个入口，runner 上偶发网络失败时很关键）
   try {
