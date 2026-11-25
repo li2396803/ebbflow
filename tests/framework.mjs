@@ -83,6 +83,10 @@ export function assertThrows(fn, re, msg = "应当抛错") {
   return thrown;
 }
 export function assertIncludes(arr, value, msg = "未包含期望元素") {
+  if (typeof arr === "string") {
+    if (!arr.includes(String(value))) throw new AssertionError(`${msg}：${fmt(value)} 不在 ${fmt(arr)}`);
+    return;
+  }
   if (!Array.isArray(arr) || !arr.some((x) => Object.is(x, value) || JSON.stringify(x) === JSON.stringify(value)))
     throw new AssertionError(`${msg}：${fmt(value)} 不在 ${fmt(arr)}`);
 }

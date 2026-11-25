@@ -47,6 +47,7 @@ jobs:
         run: |
           node tests/runner.mjs
           node scripts/lint.mjs
+          node scripts/repair-generated.mjs
 
       # 模拟「Windows 用户没装 node_modules / 不想跑 Vite」的离线重建路径：
       # 只重建数据，沿用仓库里已提交的前端产物。
@@ -110,6 +111,13 @@ jobs:
 
       - name: 跑测试
         run: npm test
+
+      - name: 生成物冲突检查（<<<<<<< 不允许入库）
+        run: node scripts/repair-generated.mjs
+
+      - name: 数据审计（不变量：交易轴 / 口径一致 / 数值自洽 / 跳变归因）
+        if: steps.pre.outputs.has_db == 'true'
+        run: node scripts/audit-data.mjs
 
       - name: 离线重建站点
         if: steps.pre.outputs.has_db == 'true'

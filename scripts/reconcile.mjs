@@ -17,6 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDb, allDates, shareRows, clearReconcile, putReconcile, recordRun } from "../lib/db.mjs";
 import { shareOnDate } from "../lib/tushare.mjs";
+import { loadShares, officialCountsFromShares, resolveMarketModes, suspiciousJumps } from "../lib/invariants.mjs";
 import * as dbApi from "../lib/db.mjs";
 import { loadUniverse } from "../lib/universe.mjs";
 import { isMain } from "../lib/cli.mjs";
@@ -359,6 +360,23 @@ export async function reconcile(args = parseArgs([])) {
     .filter((s) => s.status === "both")
     .sort((a, b) => Math.abs(b.relPct ?? 0) - Math.abs(a.relPct ?? 0))[0] ?? null;
 
+  // 可疑跳变归因（P0-3）：用库内序列 + 当期份额算，不需要联网；写进 quality.json 供前端/审计查询
+  let jumpsInfo = null;
+  try {
+    const sharesByDate = loadShares(db, dates);
+    const modes = resolveMarketModes({ dates, official: officialCountsFromShares(sharesByDate) });
+    const jumps = suspiciousJumps(db, { universe: { SUB: SUB_SCOPE }, table: "series", thresholdPct: 30, dates, modes, sharesByDate });
+    jumpsInfo = {
+      generatedAt: new Date().toISOString(),
+      thresholdPct: 30,
+      total: jumps.length,
+      unknown: jumps.filter((j) => j.reasons.includes("unknown")).length,
+      items: jumps.slice(0, 30),
+    };
+  } catch (e) {
+    jumpsInfo = { error: String(e?.message || e).slice(0, 120) };
+  }
+
   const summary = {
     generatedAt: new Date().toISOString(),
     days: days.length,
@@ -380,7 +398,7 @@ export async function reconcile(args = parseArgs([])) {
     diverged: tot.gt1 + subInconsistent,
     ok: tot.gt1 === 0 && subInconsistent === 0,
   };
-  const quality = { generatedAt: summary.generatedAt, days, summary };
+  const quality = { generatedAt: summary.generatedAt, days, summary, jumps: jumpsInfo };
 
   if (args.write) {
     fs.mkdirSync(path.dirname(args.out), { recursive: true });
@@ -418,6 +436,7 @@ export async function reconcile(args = parseArgs([])) {
     log(`小类层：可比 ${subBoth} 项，不一致 ${subInconsistent} 项，单源 ${subSingle} 项`);
     if (subInconsistent && worstSub) log(`最大小类分歧：${worstSub.sub} 偏离 ${worstSub.relPct}%（${worstSub.note}）`);
     else log(`小类层：同篮子（公共成分）两侧 86 项全部在容差内`);
+    if (jumpsInfo && !jumpsInfo.error) log(`可疑跳变（±30%）：${jumpsInfo.total} 处，其中未知原因 ${jumpsInfo.unknown} 处`);
     log(`ts 来源：现抓 ${tsFromCount.live} 天 / 库内 ${tsFromCount.db} 天 / 不可用 ${tsFromCount.unavailable} 天`);
     const verdict = code === 1 ? "（存在 >1% 分歧）" : code === 2 ? "（无法校验）" : "（容差内）";
     if (args.write) log(`写入：reconcile 表 ${written} 行，${path.relative(ROOT, args.out)}｜退出码 ${code}${verdict}`);

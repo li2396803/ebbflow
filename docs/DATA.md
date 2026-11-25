@@ -337,3 +337,85 @@ npm test                   # 只读本地：10 个数据校验用例
 - 事件数（254 = split 166 + merge 88）、行情覆盖（当前约 297 个交易日）：只读查库实测。
 - **未复跑**：`npm run reconcile`、`npm run verify:origin`、`npm run update`（会联网并改写 `data/`）；
   相关描述来自源码与仓库既有 `data/quality.json`、`run` 表记录。
+
+---
+
+## 10. 数据契约与不变量（v3.11 起）
+
+配套文档：[`AUDIT-PIPELINE.md`](AUDIT-PIPELINE.md)（每个不变量的「问题 → 证据 → 修法 → 验证」与未修清单）。
+
+### 10.1 契约（写入方 → 读取方）
+
+| 层 | 表 / 文件 | 单位 | 契约（任何写入都必须满足） |
+| --- | --- | --- | --- |
+| 事实层 | `share(code,date,wan,src)` | 万份 | 同一 `(code,date)` **只有一行**；`src='sse'/'szse'`（优先级 1）压掉 `'ts'`（优先级 2）；`wan > 0`；`sse` 只写沪市代码、`szse` 只写深市代码 |
+| 事实层 | `dayinfo(date,has_sse,has_szse,has_ts)` | 布尔 | 表示「当天该来源的**完整**快照已入库」；没出齐的源不许置 1（否则残缺日会进轴） |
+| 派生层 | `series / series_v2(sub,date,val,scale,flow)` | 亿份 / 亿元 | `val = Σ成分 wan / 1e4 × factor`，债券 `factor=100`；无成分数据写 `NULL`（**不写 0**）；日期只能是轴内日期 |
+| 派生层 | `market(date,scope,shares,scale,etfs)` | 亿份 / 亿元 / 只 | `scope ∈ SH/SZ/ALL`，且 `ALL = SH + SZ`（份额与只数都成立） |
+| 派生层 | `market_type(date,type,…)` | 同上 | 与 `market` 使用**同一份有效行**（见 10.2-②） |
+| 发布层 | `site/data/*.json` | — | 由数据库派生，可重建；`meta.updatedAt` 是唯一时间戳字段 |
+| 仓库数据 | `data/series.json` | — | 冷启动底座；`dates` 排序、按小类名排序、无时间戳；≥1000 个交易日；**不允许出现 git 冲突标记** |
+| 仓库数据 | `data/quality.json` | — | `npm run reconcile` 产出；含 `summary` 与 `jumps`（可疑跳变归因） |
+
+### 10.2 不变量与阈值依据
+
+① **交易轴覆盖区间**（`lib/db.mjs::axisDiagnostics`）
+
+- 判据：当日有份额的标的只数 ÷ 近 `window = 20` 个**已接受**交易日的中位数 ∈ `[0.6, 2]`（分市场）。
+- 依据：近 40 个交易日实测沪市 947→962、深市 772→788（日间波动 < 2%），60% 下限足以吸收「新发 ETF 缓慢增加」的漂移，又能拦住 11-24 那种「深市归零」；2 倍上限拦住重复计入 / 混入非 ETF 口径。历史不足 5 天时退化为绝对下限（冷启动 500 只），不做相对判断。
+- 残缺日 → **不进轴**、写告警（`run.stats.gate.alerts`），并先尝试自动修复（Tushare 全天 → 深交所历史接口）。
+
+② **来源优先级与口径模式**（`lib/invariants.mjs::resolveMarketModes`）
+
+- 某个市场当天官方行数 > 0 且相对近 20 日中位数 ≥ 0.6 → 该市场用 `official`（只认官方行）；否则 `all`（官方缺失/残缺，用 Tushare 兜底）。
+- 依据：11-24 事故（深市官方缺失 → 归零）与「官方只抓回一半 → 兜底行被丢掉」是同一类错误。实测旧规则在现库上少算了 748 个 (小类×日)（全部偏小，最大差 4811.97 亿份）。
+- subs / market / market_type / flow **必须共用这个判据**（`recomputeAll` 里只保留一份 `eff` 有效行集合）。
+
+③ **数值自洽**
+
+- `series.val == Σ成分/1e4 × factor`（容差 `1e-4`，4 位小数存储）；
+- `market.ALL.shares == SH + SZ`（容差 `2e-4`：三个数各自舍入的最大累计误差），只数恒等；
+- 债券 ×100 只作用于份额口径，`scale/flow/market` 不乘。
+- 校验：`numericChecks()`（审计 C 组）。实测 legacy 100,295 / v2 83,796 个点 `maxΔ = 0`。
+
+④ **序列卫生与连续性**
+
+- 序列日期必须 ⊆ 轴；相邻交易日某小类环比 ±30% → 标记「可疑跳变」并归因（`split / coverage / caliber / listing / constituent-new / small-base / unknown`），写入 `data/quality.json.jumps`。未知原因保留 `warn`（ETF 份额一天翻倍是真实存在的，不能自动当成错误）。
+
+⑤ **幂等**
+
+- 同一份数据重算两次，`series / market / market_type` 内容完全一致；`exportSeriesJson()` 两次输出字节级一致（已排序、无时间戳）。站点载荷连续构建两次，唯一差异是 `site/data/lastrun.json` 的运行时间标记（该文件不入库）。
+
+⑥ **生成物可解析**
+
+- `data/series.json`、`data/quality.json`、`data/validation-origin.json`、`site/index.html` 不含 `<<<<<<<` / `=======` / `>>>>>>>`；JSON 必须可解析。CI 两道闸门（`ci.yml` 检查 + `update.yml` 提交前 `--fix`）。
+
+### 10.3 常见故障与处置
+
+| 症状 | 先看什么 | 处置 |
+| --- | --- | --- |
+| 某小类某天暴跌/暴涨 20%+ | `node scripts/audit-data.mjs`（D 组）看归因；`data/quality.json.jumps` | 归因为 `coverage`/`caliber` → 重跑 `npm run update` 补数；`split` 正常；`unknown` 人工核对 |
+| 最新交易日不前进（轴冻结） | `run.stats.sources.ts.skipped`（是否有 `partial`）、`axisDiagnostics().excluded` | 重跑 `npm run update`；Tushare 一直未出齐会被记 `partial` 而不是伪装成完整日 |
+| 深市整天缺失 / 闸门告警 | `run.stats.gate.alerts`、`lastrun.json.gate` | 自动修复已尝试（Tushare→深交所）；仍失败则等下一次运行，残缺日不会进轴 |
+| 页面数值与库不一致 | `node scripts/audit-data.mjs`（C 组） | 跑 `npm run update`（内部 `rebuild`），派生数据会按事实层重算 |
+| `data/series.json` / `quality.json` 打不开、含 `<<<<<<<` | `node scripts/repair-generated.mjs` | `--fix` 从数据库重建（series）或从 git 恢复/写合法占位（quality），再 `npm run reconcile` |
+| 站点 `site/data` 缺文件 | `SKIP_VITE=1 node scripts/build.mjs` 的报错 | 重跑 `npm run build`；数据不全时先 `npm run update` |
+| 更新被锁跳过 | 日志里的 `pid=…，已持有 Ns` | 若进程已不存在会自动清理；否则等它结束或删 `data/.update.lock/` |
+
+### 10.4 运行台账（`run` 表 / `data/lastrun.json`）
+
+```jsonc
+{
+  "sources": {
+    "ts":    { "ms": 0, "date": "2026-11-24", "rows": 1755, "expected": 1740, "skipped": [] },
+    "sse":   { "ms": 0, "days": 12, "requested": 15 },
+    "szse":  { "ms": 0, "info": { "date": "2026-11-24", "count": 1042 } },
+    "quotes":{ "ms": 0 }
+  },
+  "gate":     { "checked": 15, "repaired": [], "excluded": [], "alerts": [] },
+  "mixedDays": 0,                 // 有官方标记却退回全部行的天数（>0 需要看告警）
+  "alerts":   [{ "severity": "warn", "message": "…" }]
+}
+```
+
+排查顺序：`alerts` → `gate.excluded` → `sources.ts.skipped` → `mixedDays` → 最后才怀疑口径实现。

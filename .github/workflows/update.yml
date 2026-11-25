@@ -153,6 +153,13 @@ jobs:
       - name: 跑数据校验测试
         run: npm test
 
+      - name: 生成物冲突检查（防止 <<<<<<< 被提交）
+        run: node scripts/repair-generated.mjs
+
+      # P0 不变量审计（离线）：交易轴覆盖、来源优先级、series=Σ成分、market 自洽、跳变归因
+      - name: 数据审计
+        run: node scripts/audit-data.mjs
+
       - name: 打印更新结果
         run: |
           echo "── data/lastrun.json ──"
@@ -216,6 +223,8 @@ jobs:
           BR="${GITHUB_REF_NAME}"
           git config user.name "etf-flow bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # 生成物万一被冲突标记污染，先按本地库重建（能重建的就重建，重建不了的明确失败）
+          node scripts/repair-generated.mjs --fix
           git add site data/series.json data/quality.json data/publish-log.json
           if git diff --cached --quiet; then
             echo "没有需要提交的数据变化"
@@ -236,6 +245,9 @@ jobs:
             else
               echo "rebase 冲突，保留本次生成的数据后继续"
               resolve_generated
+              # 解决冲突后立刻校验：宁可这一步失败，也不要把带冲突标记的数据推上去
+              node scripts/repair-generated.mjs --fix
+              git add -A data/series.json data/quality.json site
               GIT_EDITOR=true git rebase --continue || { git rebase --abort || true; }
               if git push origin "HEAD:$BR"; then echo "已推送（解决冲突后，第 $i 次尝试）"; exit 0; fi
             fi

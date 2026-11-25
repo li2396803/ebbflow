@@ -4,9 +4,11 @@
 // 优先级：交易所（官方披露）> Tushare（深市历史唯一来源 / 高精度参考）。
 import fs from "node:fs";
 import path from "node:path";
-import { openDb, putShares, recordRun, metaSet, metaGet, dbStats, tradingDates } from "../lib/db.mjs";
+import { openDb, putShares, recordRun, metaSet, metaGet, dbStats, tradingDates, axisDiagnostics, dayCoverage, coverageBand } from "../lib/db.mjs";
 import { fetchSseDay, fetchSzseSnapshot, fetchSzseHistory, candidateDates, mapLimit } from "../lib/sources.mjs";
 import { shareOnDate, navOnDate, hasToken, bindBudget, callStats } from "../lib/tushare.mjs";
+import { acquireLock, releaseLock, lockInfo } from "../lib/lock.mjs";
+import { assessDay, BAND } from "../lib/invariants.mjs";
 import { rebuild, refreshFunds, exportSeriesJson, ingestExchangeRange, ingestTushareRange, ingestTushareNav, ingestQuotes, detectShareEvents, etfCodes } from "../lib/pipeline.mjs";
 import { putEvents, markDaySource, fillFundNames } from "../lib/db.mjs";
 import { putNav } from "../lib/db.mjs";
@@ -20,66 +22,47 @@ const CATS = UNIVERSE.CATS;
 
 const ROOT = projectRoot(import.meta.url);
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
-const LOCK = path.join(ROOT, "data", ".update.lock");
 
-const LOCK_PID = path.join(LOCK, "pid");
+// 冷启动（库里还没有历史）时，判断「当天出齐了吗」没有中位数可用，退化为绝对下限。
+// 依据：2021 年沪深 ETF 合计约 1100 只，2026 年约 1750 只；500 是明显偏低但仍能排除
+// 「1 / 32 / 99 行」这类残缺响应的安全下限（docs/AUDIT-PIPELINE.md P1-7）。
+const COLD_START_MIN_CODES = 500;
 
-/** 进程是否还活着（EPERM 说明存在但无权限 → 当作活着） */
-function pidAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
+/** 近 20 个交易日的覆盖中位数（沪深合计只数）；库里没有历史时返回 null */
+function recentCoverageMedian(db) {
   try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === "EPERM";
+    const axis = tradingDates(db).slice(-20);
+    if (!axis.length) return null;
+    const cov = dayCoverage(db);
+    const totals = axis
+      .map((d) => {
+        const c = cov.get(d);
+        return c ? c.sh + c.sz : 0;
+      })
+      .filter((n) => n > 0)
+      .sort((a, b) => a - b);
+    if (!totals.length) return null;
+    return totals[Math.floor((totals.length - 1) / 2)];
+  } catch {
+    return null;
   }
 }
 
 /**
- * 抢更新锁。除了超时兜底，还看锁里记的 pid 是否还活着——
- * 被 Ctrl-C / SIGPIPE 杀掉的上一次运行会留下锁目录，以前要白等 15 分钟且没有任何提示。
- * @returns {{ok: boolean, reason?: string, holder?: number}}
+ * 抢更新锁（实现在 lib/lock.mjs，可单测）：
+ *   · 持有进程已死 / 旧格式残留 / 超过 15 分钟 → 清理后继续
+ *   · 持有进程还活着 → 拒绝，并说明 pid 与已持有时长（而不是静默跳过）
  */
 function acquire() {
-  const tryCreate = () => {
-    fs.mkdirSync(LOCK);
-    try { fs.writeFileSync(LOCK_PID, String(process.pid)); } catch {}
-  };
-  try {
-    tryCreate();
+  const r = acquireLock(ROOT);
+  if (r.ok) {
+    if (r.cleaned) log(`清理残留锁（${r.cleaned}）后继续`);
     return { ok: true };
-  } catch {
-    let holder = null;
-    let ageMs = 0;
-    // 两件事分开读：缺 pid 文件（旧格式/被中断）不该让「锁年龄」也算不出来
-    try { holder = Number(fs.readFileSync(LOCK_PID, "utf8").trim()) || null; } catch {}
-    try { ageMs = Date.now() - fs.statSync(LOCK).mtimeMs; } catch { ageMs = 0; }
-
-    const dead = holder ? !pidAlive(holder) : false;
-    // 没有 pid 文件的是旧格式锁：只要不是刚刚创建（可能正被写），就按残留处理
-    const legacyStale = !holder && ageMs > 2 * 60 * 1000;
-    const stale = ageMs > 15 * 60 * 1000 || legacyStale;
-    if (dead || stale) {
-      fs.rmSync(LOCK, { recursive: true, force: true });
-      try {
-        tryCreate();
-        log(`清理残留锁（${dead ? `持有进程 ${holder} 已不存在` : "超过 15 分钟"}）后继续`);
-        return { ok: true };
-      } catch {
-        return { ok: false, reason: "另一个更新刚好抢先启动", holder };
-      }
-    }
-    return { ok: false, reason: `另一个更新正在进行中（pid=${holder ?? "未知"}）`, holder };
   }
+  const info = lockInfo(ROOT);
+  return { ok: false, reason: r.reason, holder: r.holder ?? info.pid ?? null };
 }
-const release = () => {
-  // Windows 下杀软/索引可能短暂占用目录句柄，rmSync 会抛 EPERM；释放失败不应盖住更新结果
-  try {
-    fs.rmSync(LOCK, { recursive: true, force: true });
-  } catch (e) {
-    console.warn(`[lock] 释放失败（可手动删除 ${LOCK}）：${e?.message || e}`);
-  }
-};
+const release = () => releaseLock(ROOT, (msg) => console.warn(msg));
 
 /** 历史是否完整：交易日数、标的数（沪深全覆盖）、净值行数三个维度都要够 */
 function historyComplete(db) {
@@ -137,23 +120,43 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     warn.push(`历史自动回补失败：${String(e.message || e).slice(0, 80)}`);
   }
 
+  const tTs0 = Date.now();
   // 1) Tushare：全市场（沪深）最近交易日快照 —— 深市唯一来源，沪市用于补齐交易所缺口
+  //    「有数据」≠「出齐了」：实测遇到过当天只返回 1 / 32 / 99 / 1775 行。
+  //    判据：只数 ≥ max(冷启动下限, 近 20 个交易日中位数 × minRatio) 才算完整；
+  //    未出齐的日子**不写库、不标 has_ts、不当作 anchor**（否则残缺日会进时间轴 → 假暴跌）。
   let anchor = null;
+  const tsSnapshot = { date: null, rows: null, expected: null, skipped: [] };
   if (hasToken()) {
     try {
+      const expected = recentCoverageMedian(db);
+      tsSnapshot.expected = expected;
+      const floor = Math.max(COLD_START_MIN_CODES, Math.round((expected ?? 0) * BAND.minRatio));
       const probe = new Date();
       for (let back = 0; back < 10 && !anchor; back++) {
         const d = new Date(probe.getTime() - back * 86400000).toISOString().slice(0, 10);
         if ([0, 6].includes(new Date(d + "T00:00:00Z").getUTCDay())) continue;
         const m = await shareOnDate(d);
-        if (m.size) {
-          anchor = d;
-          putShares(db, d, Object.fromEntries([...m].map(([c, w]) => [c, { wan: w, src: "ts" }])));
-          const navs = await navOnDate(d);
-          if (navs.size) putNav(db, [...navs].map(([c, v]) => [c, d, v]));
-          if (!quiet) log(`Tushare ${d}：份额 ${m.size} 只 / 净值 ${navs.size} 只（沪深全市场）`);
+        if (!m.size) {
+          tsSnapshot.skipped.push({ date: d, rows: 0, state: "empty" });
+          continue;
         }
+        const state = assessDay({ rows: m.size, expected: floor, minRatio: 1 });
+        if (state !== "ok") {
+          tsSnapshot.skipped.push({ date: d, rows: m.size, state });
+          warn.push(`Tushare ${d} 仅 ${m.size} 只（< ${floor}，视为未出齐），不作为当日基准`);
+          continue;
+        }
+        anchor = d;
+        tsSnapshot.date = d;
+        tsSnapshot.rows = m.size;
+        putShares(db, d, Object.fromEntries([...m].map(([c, w]) => [c, { wan: w, src: "ts" }])));
+        markDaySource(db, d, "ts"); // 标记了才算「当日有 Tushare 全量」，时间轴才敢用它兜底
+        const navs = await navOnDate(d);
+        if (navs.size) putNav(db, [...navs].map(([c, v]) => [c, d, v]));
+        if (!quiet) log(`Tushare ${d}：份额 ${m.size} 只 / 净值 ${navs.size} 只（沪深全市场）`);
       }
+      if (!anchor) warn.push("Tushare 近 10 天没有一天出齐（或全部为空），深市数据本次无法更新");
     } catch (e) {
       warn.push(`Tushare 抓取失败：${String(e.message || e).slice(0, 90)}`);
     }
@@ -161,6 +164,8 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     warn.push("未配置 TUSHARE_TOKEN：深市数据不可用，仅能更新沪市");
   }
 
+  const tsMs = Date.now() - tTs0;
+  const tSse0 = Date.now();
   // 2) 上交所：最近 lookback 天逐日（沪市官方口径，优先于 Tushare）
   // 注意：窗口上界必须取「今天（北京）」，不能取 Tushare 的 anchor ——
   // Tushare 当天数据往往晚上才齐，anchor 会停在旧日期，导致交易所那边永远看不到新的一天。
@@ -168,6 +173,17 @@ async function run({ quiet = false, lookback = 15 } = {}) {
   const end = [anchor ?? bjNow, bjNow].sort().pop();
   const from = new Date(new Date(end + "T00:00:00Z").getTime() - lookback * 86400000).toISOString().slice(0, 10);
   const days = candidateDates(from, end);
+  // 深交所写入：供「完整性闸门自愈」与「2.1 深交所快照」两处共用（以前定义在闸门之后，
+  // 闸门里的调用会抛 ReferenceError 并被空 catch 吞掉，等于自愈路径一直是死的）。
+  const szseWrite = (date, shares, tag) => {
+    if (!date || !shares) return null;
+    const n = Object.keys(shares).length;
+    if (n < 100) return null;
+    putShares(db, date, Object.fromEntries(Object.entries(shares).map(([c, w]) => [c, { wan: w, src: "szse" }])));
+    markDaySource(db, date, "szse");
+    if (!quiet) log(`深交所${tag} ${date}：${n} 只`);
+    return { date, count: n };
+  };
   let sseDays = 0;
   const sseNames = new Map();
   await mapLimit(days, 4, async (d) => {
@@ -184,44 +200,53 @@ async function run({ quiet = false, lookback = 15 } = {}) {
   });
   if (!quiet) log(`上交所补到 ${sseDays} 个交易日`);
 
-  // 2.05) 完整性闸门：某天只有沪市、没有深市（或深市只剩零星几只）时，不能让它进时间轴。
-  //       否则会出现「大盘宽基一天掉 18%」这种假暴跌——数据缺失被当成资金流出。
+  const sseMs = Date.now() - tSse0;
+  // 2.05) 完整性闸门（P0-1）：进时间轴的每一天，两市覆盖都要在「近 20 个交易日中位数」的合理区间内。
+  //       判据不写死 300/800：宽度随历史自动缩放，2021 年只有几百只时不误杀、2026 年 1700 只时不放过残缺日。
+  //       不满足 → 先自动修复（Tushare 全天 → 深交所历史接口），仍不满足 → 不进轴 + 显式告警。
+  const gate = { checked: days.length, repaired: [], excluded: [], alerts: [] };
   {
-    const cov = db.prepare(
-      "SELECT f.market m, COUNT(*) n FROM share s JOIN fund f ON f.code=s.code WHERE s.date=? GROUP BY f.market"
-    );
-    for (const d of days) {
-      const rows = cov.all(d);
-      const sh = rows.find((r) => r.m === "SH")?.n ?? 0;
-      const sz = rows.find((r) => r.m === "SZ")?.n ?? 0;
-      if (sh < 300) continue; // 这天还没有沪市数据，交给下一次运行
-      if (sz >= 300) continue; // 两市都齐，正常
-      // 自愈：缺口日先把 Tushare 全天补进来（1 次请求、最稳；交易所数据一旦某天没抓到就补不回来），
-      // 再退而求其次试深交所历史接口。
+    let ax = axisDiagnostics(db);
+    const failing = days.filter((d) => !ax.dates.includes(d));
+    const repairFloor = Math.max(COLD_START_MIN_CODES, Math.round((recentCoverageMedian(db) ?? 0) * BAND.minRatio));
+    for (const d of failing) {
+      const ex = ax.excluded.find((x) => x.date === d);
+      if (!ex) continue; // 没有来源标记 / 当天还没数据：交给下一次运行
+      if (ex.reason === "ts_thin") continue; // 沪市还没到，深市先入库等着被激活
+      // 修复尝试 1：Tushare 全市场当日（1 次请求、最稳；交易所数据某天没抓到就补不回来）
       try {
         const m = await shareOnDate(d);
-        if (m.size >= 500) {
+        if (m.size >= repairFloor) {
           putShares(db, d, Object.fromEntries([...m].map(([c, w]) => [c, { wan: w, src: "ts" }])));
           markDaySource(db, d, "ts");
-          const after = db.prepare(
-            "SELECT COUNT(*) n FROM share s JOIN fund f ON f.code=s.code WHERE s.date=? AND f.market='SZ'"
-          ).get(d)?.n ?? 0;
-          if (after >= 300) {
-            if (!quiet) log(`深市缺口已用 Tushare 补齐 ${d}：SZ ${after} 只`);
-            continue;
-          }
+          gate.repaired.push({ date: d, via: "ts", rows: m.size });
+          if (!quiet) log(`${d} 缺口已用 Tushare 补齐：${m.size} 只`);
+          continue;
         }
       } catch {}
+      // 修复尝试 2：深交所历史接口（同一份数据的另一个入口）
       try {
         const r = await fetchSzseHistory(d);
-        if (r && Object.keys(r.shares).length >= 300) { szseWrite(r.date, r.shares, "历史补"); continue; }
+        const n = r ? Object.keys(r.shares ?? {}).length : 0;
+        if (n >= 100) {
+          szseWrite(r.date, r.shares, "历史补");
+          gate.repaired.push({ date: d, via: "szse", rows: n });
+          continue;
+        }
       } catch {}
-      const had = db.prepare("SELECT has_sse FROM dayinfo WHERE date=?").get(d)?.has_sse;
-      if (had) {
-        db.prepare("UPDATE dayinfo SET has_sse=0 WHERE date=?").run(d);
-        warn.push(`${d} 深市只有 ${sz} 只（应为 1000+），暂不纳入时间轴，等深交所数据补齐`);
-        if (!quiet) log(`⚠ ${d} 深市仅 ${sz} 只，暂不纳入时间轴`);
-      }
+    }
+
+    // 修复后再判一次：仍不合格的写进告警，并保证它不会进轴
+    ax = axisDiagnostics(db);
+    for (const d of days) {
+      const ex = ax.excluded.find((x) => x.date === d);
+      if (!ex || ax.dates.includes(d)) continue;
+      if (ex.reason === "ts_thin") continue;
+      gate.excluded.push({ date: d, reason: ex.reason, sh: ex.sh, sz: ex.sz, medSh: ex.medSh, medSz: ex.medSz });
+      const msg = `${d} 覆盖不足（${ex.reason}：沪 ${ex.sh} / 深 ${ex.sz}，近 20 日中位数 ${ex.medSh ?? "-"}/${ex.medSz ?? "-"}），暂不纳入时间轴`;
+      gate.alerts.push(msg);
+      warn.push(msg);
+      if (!quiet) log(`⚠ ${msg}`);
     }
   }
 
@@ -234,19 +259,11 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     }
   }
 
+  const tSzse0 = Date.now();
   // 2.1) 深交所：官方接口只给「最新报告日」一档，正好够日常增量（历史由 Tushare 回补）
   //      实测深交所比上交所更早放出当日数据（21:30 已有，上交所仍需更晚），所以这里单独抓。
   let szseInfo = null;
   // 先试快照；失败或报告日不对，再按日期查历史接口（同一份数据的另一个入口，runner 上偶发网络失败时很关键）
-  const szseWrite = (date, shares, tag) => {
-    if (!date || !shares) return null;
-    const n = Object.keys(shares).length;
-    if (n < 100) return null;
-    putShares(db, date, Object.fromEntries(Object.entries(shares).map(([c, w]) => [c, { wan: w, src: "szse" }])));
-    markDaySource(db, date, "szse");
-    if (!quiet) log(`深交所${tag} ${date}：${n} 只`);
-    return { date, count: n };
-  };
   try {
     const snap = await fetchSzseSnapshot();
     const n = Object.keys(snap.shares).length;
@@ -282,16 +299,18 @@ async function run({ quiet = false, lookback = 15 } = {}) {
   }
 
 
+  const szseMs = Date.now() - tSzse0;
   // 2.2) 哨兵：交易所接口「坏了」和「今天没数据」表现一样——都是 200 + 空结果。
   //      判据：交易所对某日返回 0 行，而 Tushare 同日有大量数据 → 是接口变了，不是市场没开。
   //      命中就用 Tushare 补上，别让站点空一天，同时留下警告。
   if (hasToken() && sseDays === 0 && days.length) {
+    const floor = Math.max(COLD_START_MIN_CODES, Math.round((recentCoverageMedian(db) ?? 0) * BAND.minRatio));
     let suspect = null;
     for (const d of [...days].reverse().slice(0, 3)) {
       try {
         const r = await shareOnDate(d);
         const n = r ? Object.keys(r).length : 0;
-        if (n >= 800) { suspect = { date: d, rows: r }; break; }
+        if (n >= floor) { suspect = { date: d, rows: r }; break; }
       } catch {}
     }
     if (suspect) {
@@ -328,6 +347,7 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     warn.push("序列兜底失败：" + String(e.message || e).slice(0, 60));
   }
 
+  const tQuotes0 = Date.now();
   // 2.6) 行情（收盘价/成交额）与份额折算事件：每天增量维护，供折溢价/成交额/净流入修正使用
   try {
     const q = await ingestQuotes(db, { from, to: end, quiet: true });
@@ -343,6 +363,7 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     warn.push("折算检测失败：" + String(e.message || e).slice(0, 60));
   }
 
+  const quotesMs = Date.now() - tQuotes0;
   // 3) 基金名录（每周一次；名称以这份为准，交易所只补空缺）
   const lastFunds = metaGet(db, "fundsAt", null);
   if (!lastFunds || Date.now() - new Date(lastFunds).getTime() > 7 * 86400000) {
@@ -359,12 +380,37 @@ async function run({ quiet = false, lookback = 15 } = {}) {
   const info = buildSite(db, { warnings: warn });
   exportSeriesJson(db, path.join(ROOT, "data", "series.json"));
   metaSet(db, "updatedAt", new Date().toISOString());
-  const stats = { ...dbStats(db), seriesRows: rc.seriesRows, marketRows: rc.marketRows, site: info, ms: Date.now() - t0, tushare: callStats(), warnings: warn };
+  // 结构化运行台账（P2-11）：每个源的耗时/行数/覆盖 + 闸门结果 + 告警，便于事后定位
+  const stats = {
+    ...dbStats(db),
+    seriesRows: rc.seriesRows,
+    marketRows: rc.marketRows,
+    mixedDays: rc.mixedDays ?? 0,
+    site: info,
+    ms: Date.now() - t0,
+    tushare: callStats(),
+    sources: {
+      ts: { ms: tsMs, date: tsSnapshot.date, rows: tsSnapshot.rows, expected: tsSnapshot.expected, skipped: tsSnapshot.skipped },
+      sse: { ms: sseMs, days: sseDays, requested: days.length },
+      szse: { ms: szseMs, info: szseInfo },
+      quotes: { ms: quotesMs },
+    },
+    gate,
+    alerts: warn.map((m) => ({ severity: "warn", message: m })),
+    warnings: warn,
+  };
   recordRun(db, { at: new Date().toISOString(), kind: "update", ok: true, stats });
-  fs.writeFileSync(
-    path.join(ROOT, "data", "lastrun.json"),
-    JSON.stringify({ at: new Date().toISOString(), lastTradeDate: info.lastTradeDate, dates: info.dates, ms: stats.ms, warnings: warn })
-  );
+  const lastrun = {
+    at: new Date().toISOString(),
+    lastTradeDate: info.lastTradeDate,
+    dates: info.dates,
+    ms: stats.ms,
+    sources: stats.sources,
+    gate: { repaired: gate.repaired.length, excluded: gate.excluded.length },
+    mixedDays: stats.mixedDays,
+    warnings: warn,
+  };
+  fs.writeFileSync(path.join(ROOT, "data", "lastrun.json"), JSON.stringify(lastrun));
   if (!quiet) log(`完成：最新交易日 ${info.lastTradeDate}，${info.dates} 个交易日 / ${CATS.length} 个大类 / ${Object.keys(SUB).length} 个细分行业，用时 ${(stats.ms / 1000).toFixed(1)}s`);
   return { last: info.lastTradeDate, ...stats };
 }

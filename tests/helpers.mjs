@@ -36,3 +36,57 @@ export function flatShares(wan = 1000) {
 export function subCodes(sub) {
   return SUB[sub].etfs.map((e) => e.code);
 }
+
+/** 造一批基金名录行（默认按代码前缀定市场，名称带 ETF 才会被「全市场」统计） */
+export function seedFunds(db, codes, { etf = true } = {}) {
+  const put = db.prepare("INSERT OR REPLACE INTO fund(code,name,type,market) VALUES(?,?,?,?)");
+  db.exec("BEGIN");
+  try {
+    for (const code of codes) put.run(code, etf ? `测试${code}ETF` : `测试${code}`, "股票型", /^[56]/.test(code) ? "SH" : "SZ");
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+}
+
+/** 直接把一天的数据写进 share 表（绕过优先级，用于构造测试场景） */
+export function seedShareRows(db, date, rows) {
+  const put = db.prepare(
+    "INSERT INTO share(code,date,wan,src) VALUES(?,?,?,?) ON CONFLICT(code,date) DO UPDATE SET wan=excluded.wan, src=excluded.src"
+  );
+  db.exec("BEGIN");
+  try {
+    for (const [code, wan, src] of rows) put.run(code, date, wan, src || "sse");
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+}
+
+/** 生成连续日期（跳过周末，和 candidateDates 同规则） */
+export function weekdays(from, n) {
+  const out = [];
+  const d = new Date(`${from}T00:00:00Z`);
+  while (out.length < n) {
+    const w = d.getUTCDay();
+    if (w !== 0 && w !== 6) out.push(d.toISOString().slice(0, 10));
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return out;
+}
+
+/** 造一个「覆盖 N 只沪市 + M 只深市」的交易日，并可指定当天的来源标记 */
+export function seedDay(db, date, { sh, sz, src = "sse", flags = { sse: true }, value = 100 } = {}) {
+  const rows = [];
+  for (let i = 0; i < sh; i++) rows.push([String(510000 + i), value, src]);
+  for (let i = 0; i < sz; i++) rows.push([String(159000 + i), value, src === "sse" ? "ts" : src]);
+  seedShareRows(db, date, rows);
+  seedFunds(db, rows.map((r) => r[0]));
+  const putInfo = db.prepare(
+    "INSERT INTO dayinfo(date,has_sse,has_szse,has_ts) VALUES(?,?,?,?) ON CONFLICT(date) DO UPDATE SET has_sse=excluded.has_sse, has_szse=excluded.has_szse, has_ts=excluded.has_ts"
+  );
+  putInfo.run(date, flags.sse ? 1 : 0, flags.szse ? 1 : 0, flags.ts ? 1 : 0);
+  return rows.length;
+}
