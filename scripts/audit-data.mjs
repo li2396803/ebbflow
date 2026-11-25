@@ -17,7 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { openDb, dbStats, axisDiagnostics, dayCoverage } from "../lib/db.mjs";
 import { loadUniverse } from "../lib/universe.mjs";
-import { loadShares, loadSeries, officialCountsFromShares, resolveMarketModes, numericChecks, suspiciousJumps, BAND } from "../lib/invariants.mjs";
+import { loadShares, loadSeries, officialCountsFromShares, resolveMarketModes, numericChecks, suspiciousJumps, BAND , detectUnitOutliers} from "../lib/invariants.mjs";
 import { projectRoot, readJsonFile } from "../lib/cli.mjs";
 
 const ROOT = projectRoot(import.meta.url);
@@ -182,6 +182,18 @@ function checkDb() {
       { severity: "warn" }
     );
 
+    // D2c: 份额单位量级跳变（货币 ETF 历史常见 ~100 倍），只报告不改数
+    const units = detectUnitOutliers(db);
+    record(
+      "D. 份额单位量级无整段跳变",
+      units.regimes.length === 0,
+      [
+        `存在 ${units.regimes.length} 个代码的量级切换`,
+        ...units.regimes.slice(0, 5).map((r) => `${r.code} ${r.segments.length} 段，首/末中位比 ${r.ratio}`),
+      ],
+      { severity: "info" }
+    );
+
     // F: 最新交易日覆盖
     const cov = dayCoverage(db);
     const last = ax.dates.at(-1);
@@ -224,7 +236,7 @@ console.log(`\nEbbflow 数据审计（离线） · ${ROOT}`);
 console.log(`node ${process.version} · ${results.length} 项检查 · ${Date.now() - t0}ms\n`);
 for (const r of results) {
   if (QUIET && r.ok) continue;
-  const icon = r.ok ? "✓" : r.severity === "warn" ? "!" : "✗";
+  const icon = r.ok ? "✓" : r.severity === "warn" ? "!" : r.severity === "info" ? "·" : "✗";
   console.log(`${icon} ${r.name}`);
   if (!r.ok || !QUIET) for (const d of r.detail.slice(0, 8)) console.log(`    ${d}`);
 }
