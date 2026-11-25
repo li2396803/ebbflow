@@ -354,7 +354,7 @@ function renderDetail(app, name, s, entry) {
           s?.first == null ? "—" : `${esc(cnum(s.first, 1))}<span class="unit">亿元</span>`
         }</dd></div>
         <div><dt>区间变化</dt><dd class="num ${s?.pct > 0 ? "up" : s?.pct < 0 ? "down" : "flat"}">${esc(fmtPct(s?.pct, 2))}</dd></div>
-        <div><dt>区间净申购${app.chartData?.has(s?.cat || entry?.cat) ? "" : "（估算）"}</dt><dd class="num ${
+        <div><dt>区间净申购</dt><dd class="num ${
           flow == null ? "" : flow > 0 ? "up" : flow < 0 ? "down" : "flat"
         }">${flow == null ? "—" : esc(fmtSigned(flow, 1))}${flow == null ? "" : `<span class="unit">亿元</span>`}</dd></div>
       </dl>

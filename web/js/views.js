@@ -342,7 +342,7 @@ function renderOverviewKpis(app) {
       sc.delta >= 0 ? "var(--up)" : "var(--down)"
     ),
     card(
-      !ready ? "区间净申购" : app.flowComplete ? "区间净申购" : "区间净申购（估算）",
+      "区间净申购",
       ready ? fmtSigned(flowEst, 1) : "—",
       "亿元",
       !ready
@@ -760,7 +760,7 @@ export function syncCatHeading(app) {
       summary?.pct,
       2
     )}</span>`,
-    `<span class="dim">区间净申购${app.chartData?.has(key) ? "" : "（估算）"} ${esc(fmtSigned(flow, 1))} 亿元</span>`,
+    `<span class="dim">区间净申购 ${esc(fmtSigned(flow, 1))} 亿元</span>`,
     state.compare.length
       ? `<span class="cmp-chips"><span class="dim">对比 ${state.compare.length} 个</span>${state.compare
           .map(
