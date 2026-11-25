@@ -271,7 +271,12 @@ async function run({ quiet = false, lookback = 15 } = {}) {
   if (process.env.SZSE !== "0") {
   // 先试快照；失败或报告日不对，再按日期查历史接口（同一份数据的另一个入口，runner 上偶发网络失败时很关键）
   try {
-    const snap = await fetchSzseSnapshot();
+    // 整体超时兜住：getJson 内部有 4 次重试 × 30s，被拦时首个请求就能拖 27 秒；
+    // 这里用 Promise.race 硬性限制在 9 秒，超时就当本次不可用（深市由 Tushare 兜底）。
+    const snap = await Promise.race([
+      fetchSzseSnapshot(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("整体超时 9s")), 9000)),
+    ]);
     const n = Object.keys(snap.shares).length;
     // 报告日要落在本次窗口内，且不能比已知最新交易日还旧，避免把陈旧快照写回去
     const knownLatest = tradingDates(db).at(-1) ?? "";
