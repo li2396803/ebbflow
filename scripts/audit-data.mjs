@@ -434,11 +434,13 @@ function checkDb() {
       let checked = 0;
       const subs = db.prepare("SELECT DISTINCT sub FROM series_v2 LIMIT 12").all().map((r) => r.sub);
       for (const sub of subs) {
-        const list = db.prepare("SELECT date, scale, flow FROM series_v2 WHERE sub=? ORDER BY date DESC LIMIT 31").all(sub).reverse();
+        const list = db.prepare("SELECT date, scale, flow, coverage FROM series_v2 WHERE sub=? ORDER BY date DESC LIMIT 31").all(sub).reverse();
         for (let i = 1; i < list.length; i++) {
           const a = list[i - 1];
           const b = list[i];
           if (a.scale == null || b.scale == null || b.flow == null) continue;
+          // 低覆盖日（成分缺净值/缺份额）本来就会让规模塌陷，恒等式不适用，跳过
+          if ((b.coverage ?? 1) < 0.6 || (a.coverage ?? 1) < 0.6) continue;
           checked++;
           const dScale = b.scale - a.scale;
           // 净值贡献不可能超过规模本身的一个量级；残差超过规模的 25% 视为可疑

@@ -1,5 +1,6 @@
 import { test, assert, assertEq, skipNow, note } from "../framework.mjs";
-import { openDb, shareMap, shareRows, daySources } from "../../lib/db.mjs";
+import { filterIsolated } from "../../lib/invariants.mjs";
+import { openDb, shareMap, shareRows, daySources, tradingDates } from "../../lib/db.mjs";
 import { findGaps } from "../../lib/validate.mjs";
 import { loadUniverse } from "../../lib/universe.mjs";
 
@@ -55,12 +56,29 @@ test("序列连续性：小类不得出现中间断裂后恢复（结构性无�
       for (const g of gaps) {
         for (const r of list) {
           if (r.date < g.from || r.date >= g.to || r.val != null) continue;
-          // 空值日：只有该小类当日确实一个成分都没有数据，才算「结构性空」，否则是真断裂
+          // 空值日：只有该小类当日确实一个成分都没被计入，才算「结构性空」，否则是真断裂。
+          // 注意要与 pipeline 同口径：孤立披露（前后都没有数据）的成分不算数，
+          // 所以这里统计「该日有数据且不是孤立披露」的成分。
           const m = presentOn(r.date);
           if (meta.etfs.some((e) => m.get(e.code) != null)) bad.push({ sub, date: r.date });
           else structural++;
         }
       }
+    }
+    // 孤立披露豁免：某成分只在这一天有数据（前后相邻交易日都没有），pipeline 会把它剔除，
+    // 于是该小类当天自然为空——这不是断裂。用共享的 filterIsolated 做同口径判断。
+    if (bad.length) {
+      const dates = tradingDates(db);
+      const sharesByDate = new Map();
+      for (const d of dates) sharesByDate.set(d, presentOn(d));
+      const filt = filterIsolated(sharesByDate, dates);
+      const still = bad.filter((b) => {
+        const meta = SUB[b.sub];
+        const day = filt.get(b.date);
+        return meta && day ? meta.etfs.some((e) => day.get(e.code) != null) : true;
+      });
+      bad.length = 0;
+      bad.push(...still);
     }
     assertEq(bad.length, 0, `序列中间断裂 ${bad.length} 处：${JSON.stringify(bad.slice(0, 4))}`);
     if (structural) note(`序列断裂检查：${structural} 个空值日经核对是「该小类当日无成分数据」，放行`);
