@@ -13,7 +13,10 @@ export async function backfillNav({ maxDays = LIMIT, log = console.log } = {}) {
   const db = openDb();
   try {
     const dates = db.prepare("SELECT DISTINCT date FROM dayinfo WHERE has_sse=1 ORDER BY date").all().map((r) => r.date);
-    if (!dates.length) return { todo: 0, filled: 0 };
+    if (!dates.length) {
+      log("⚠ 数据库是空的（没有 dayinfo）——多半是缓存没恢复成功，回补无法进行");
+      return { todo: 0, filled: 0, empty: true };
+    }
     // 判据：不是看「当天净值总行数」（总数够，也可能缺关键代码——513050 就是这么漏的），
     // 而是看「当天有多少 ETF 成分缺净值」。
     const etfCodes = db.prepare("SELECT code FROM fund WHERE name LIKE '%ETF%' OR type LIKE '%ETF%'").all().map((r) => r.code);

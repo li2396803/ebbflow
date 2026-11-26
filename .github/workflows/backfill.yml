@@ -18,11 +18,13 @@ jobs:
         with: { node-version: "22" }
       - name: 安装依赖
         run: npm ci || npm install
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         with:
+          # 必须与 update.yml 的键完全一致，否则恢复不到那份库（曾因此打开空库、回补 0 行）
           path: data/etf.db
-          key: etfdb-${{ github.run_id }}
-          restore-keys: etfdb-
+          key: etf-db-v3-${{ github.run_id }}
+          restore-keys: |
+            etf-db-v3-
       - name: 回补净值
         env:
           TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
@@ -50,3 +52,10 @@ jobs:
           git add data site
           git diff --cached --quiet || git commit -m "chore(data): 回补净值并重算"
           git push
+
+      - name: 保存数据库缓存
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/etf.db
+          key: etf-db-v3-${{ github.run_id }}
