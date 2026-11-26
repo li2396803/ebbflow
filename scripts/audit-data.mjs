@@ -396,6 +396,61 @@ function checkDb() {
       { severity: "warn" }
     );
 
+    // H1: 折算漏检扫描——份额与净值反向大幅变动、AUM 基本守恒，但没有登记 event
+    //     （588200 2026-07-20 折算 3.0947 倍就是这么被漏掉的，虚增了 +381 亿申购）
+    {
+      const evSet = new Set(db.prepare("SELECT code, date FROM event").all().map((r) => `${r.code}|${r.date}`));
+      const share = db.prepare("SELECT code, date, wan FROM share ORDER BY code, date").all();
+      const navMap = new Map();
+      for (const r of db.prepare("SELECT code, date, nav FROM nav").all()) navMap.set(`${r.code}|${r.date}`, r.nav);
+      const byCode = new Map();
+      for (const r of share) {
+        let a = byCode.get(r.code);
+        if (!a) byCode.set(r.code, (a = []));
+        a.push(r);
+      }
+      const missed = [];
+      for (const [code, list] of byCode) {
+        for (let i = 1; i < list.length; i++) {
+          const p0 = list[i - 1];
+          const c0 = list[i];
+          if (!(p0.wan > 0) || !(c0.wan > 0)) continue;
+          const ratio = c0.wan / p0.wan;
+          if (ratio < 1.3 && ratio > 1 / 1.3) continue;
+          if (evSet.has(`${code}|${c0.date}`)) continue;
+          const n0 = navMap.get(`${code}|${p0.date}`);
+          const n1 = navMap.get(`${code}|${c0.date}`);
+          if (!(n0 > 0) || !(n1 > 0)) continue;
+          const aum = (c0.wan * n1) / (p0.wan * n0);
+          if (aum >= 0.8 && aum <= 1.25) missed.push(`${code} ${c0.date} 份额×${ratio.toFixed(2)} AUM×${aum.toFixed(2)}`);
+        }
+      }
+      record("H. 无未登记的份额折算", missed.length === 0, missed.length ? missed.slice(0, 5) : ["扫描完成：无"], { severity: "warn" });
+    }
+
+    // H2: 会计恒等式——规模变化 = 净申购 + 净值贡献（抽样 12 小类 × 30 天）
+    {
+      const bad = [];
+      let checked = 0;
+      const subs = db.prepare("SELECT DISTINCT sub FROM series_v2 LIMIT 12").all().map((r) => r.sub);
+      for (const sub of subs) {
+        const list = db.prepare("SELECT date, scale, flow FROM series_v2 WHERE sub=? ORDER BY date DESC LIMIT 31").all(sub).reverse();
+        for (let i = 1; i < list.length; i++) {
+          const a = list[i - 1];
+          const b = list[i];
+          if (a.scale == null || b.scale == null || b.flow == null) continue;
+          checked++;
+          const dScale = b.scale - a.scale;
+          // 净值贡献不可能超过规模本身的一个量级；残差超过规模的 25% 视为可疑
+          const resid = dScale - b.flow;
+          if (Math.abs(resid) > Math.max(0.25 * Math.abs(a.scale), 5)) {
+            bad.push(`${sub} ${b.date} Δ规模=${dScale.toFixed(1)} 净申购=${b.flow.toFixed(1)} 残差=${resid.toFixed(1)}`);
+          }
+        }
+      }
+      record("H. 规模变化 = 净申购 + 净值贡献（抽样）", bad.length === 0, bad.length ? bad.slice(0, 5) : [`抽查 ${checked} 个 (小类×日)`], { severity: "warn" });
+    }
+
     // D2c: 份额单位量级跳变（货币 ETF 历史常见 ~100 倍），只报告不改数
     const units = detectUnitOutliers(db);
     record(
