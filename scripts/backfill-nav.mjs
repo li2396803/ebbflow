@@ -13,10 +13,26 @@ export async function backfillNav({ maxDays = LIMIT, log = console.log } = {}) {
   const db = openDb();
   try {
     const dates = db.prepare("SELECT DISTINCT date FROM dayinfo WHERE has_sse=1 ORDER BY date").all().map((r) => r.date);
-    const counts = dates.map((d) => ({ d, n: db.prepare("SELECT COUNT(*) n FROM nav WHERE date=?").get(d).n }));
-    if (!counts.length) return { todo: 0, filled: 0 };
-    const med = counts.map((x) => x.n).sort((a, b) => a - b)[Math.floor(counts.length / 2)];
-    let todo = counts.filter((x) => x.n < med * 0.9).map((x) => x.d);
+    if (!dates.length) return { todo: 0, filled: 0 };
+    // 判据：不是看「当天净值总行数」（总数够，也可能缺关键代码——513050 就是这么漏的），
+    // 而是看「当天有多少 ETF 成分缺净值」。
+    const etfCodes = db.prepare("SELECT code FROM fund WHERE name LIKE '%ETF%' OR type LIKE '%ETF%'").all().map((r) => r.code);
+    const etfSet = new Set(etfCodes);
+    const med = (() => {
+      const counts = dates.map((d) => db.prepare("SELECT COUNT(*) n FROM nav WHERE date=?").get(d).n).sort((a, b) => a - b);
+      return counts[Math.floor(counts.length / 2)];
+    })();
+    let todo = [];
+    for (const d of dates) {
+      const have = new Set(db.prepare("SELECT code FROM nav WHERE date=?").all(d).map((r) => r.code));
+      let missing = 0;
+      let totalEtf = 0;
+      for (const c of etfSet) {
+        totalEtf++;
+        if (!have.has(c)) missing++;
+      }
+      if (totalEtf && missing / totalEtf > 0.02) todo.push(d);
+    }
     if (maxDays > 0) todo = todo.slice(0, maxDays);
     let filled = 0;
     let done = 0;
