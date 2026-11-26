@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fetchSzseSnapshot, fetchSzseHistory } from "../lib/sources.mjs";
 import { projectRoot, isMain } from "../lib/cli.mjs";
+import { openDb, prevTradingDate } from "../lib/db.mjs";
 
 const ROOT = projectRoot(import.meta.url);
 const DIR = path.join(ROOT, "data", "szse");
@@ -11,14 +12,22 @@ const DIR = path.join(ROOT, "data", "szse");
 /** 抓某日（或不传则最新）的深市份额，写入 data/szse/<date>.json */
 export async function publishSzse(date) {
   // 先试快照（当天/最新报告日），日期不匹配再走历史接口（历史接口当天往往还没数据）
-  let r = null;
+  let dataDate = date || null;
+  let shares = null;
   try {
     const snap = await fetchSzseSnapshot();
-    if (!date || snap.date === date) r = snap;
+    // 快照报告日 = 查询日，数据 = 上一交易日（实测 11-26 报告日装的是 11-25 的值）
+    const db = openDb();
+    const prev = prevTradingDate(db, snap.reportDate || snap.date);
+    db.close();
+    if (!date || prev === date) { dataDate = prev; shares = snap.shares; }
   } catch {}
-  if (!r && date) r = await fetchSzseHistory(date);
-  if (!r || !Object.keys(r.shares || {}).length) throw new Error("深交所未返回数据");
-  const out = { date: r.date, count: Object.keys(r.shares).length, shares: r.shares };
+  if (!shares && date) {
+    const h = await fetchSzseHistory(date);
+    if (h) { dataDate = h.date; shares = h.shares; }
+  }
+  if (!shares || !Object.keys(shares).length) throw new Error("深交所未返回数据");
+  const out = { date: dataDate, count: Object.keys(shares).length, shares };
   fs.mkdirSync(DIR, { recursive: true });
   const file = path.join(DIR, `${out.date}.json`);
   fs.writeFileSync(file, JSON.stringify(out));

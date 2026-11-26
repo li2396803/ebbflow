@@ -10,7 +10,7 @@ import { shareOnDate, navOnDate, hasToken, bindBudget, callStats } from "../lib/
 import { acquireLock, releaseLock, lockInfo } from "../lib/lock.mjs";
 import { assessDay, BAND } from "../lib/invariants.mjs";
 import { rebuild, refreshFunds, exportSeriesJson, ingestExchangeRange, ingestTushareRange, ingestTushareNav, ingestQuotes, detectShareEvents, etfCodes } from "../lib/pipeline.mjs";
-import { putEvents, markDaySource, fillFundNames } from "../lib/db.mjs";
+import { putEvents, markDaySource, fillFundNames, prevTradingDate } from "../lib/db.mjs";
 import { putNav } from "../lib/db.mjs";
 import { buildSite } from "../lib/build/site.mjs";
 import { loadUniverse } from "../lib/universe.mjs";
@@ -297,8 +297,10 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     const n = Object.keys(snap.shares).length;
     // 报告日要落在本次窗口内，且不能比已知最新交易日还旧，避免把陈旧快照写回去
     const knownLatest = tradingDates(db).at(-1) ?? "";
-    if (snap.date && n > 100 && snap.date >= from && snap.date >= knownLatest) {
-      szseWrite(snap.date, snap.shares, "快照");
+    // 快照报告日 = 查询日，数据 = 上一交易日；落库必须用数据日，否则会把旧值当新值写进去
+    const dataDate = prevTradingDate(db, snap.reportDate || snap.date);
+    if (dataDate && n > 100 && dataDate >= from && dataDate >= knownLatest) {
+      szseWrite(dataDate, snap.shares, "快照");
       if (snap.names) {
         try {
           const r = fillFundNames(db, new Map(Object.entries(snap.names)), "szse");
