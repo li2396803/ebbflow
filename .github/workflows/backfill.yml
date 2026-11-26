@@ -1,0 +1,50 @@
+name: Backfill nav
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "最多回补多少天（0=全部可疑日）"
+        required: false
+        default: "0"
+permissions: { contents: write }
+concurrency: { group: backfill, cancel-in-progress: false }
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - uses: actions/cache@v4
+        with:
+          path: data/etf.db
+          key: etfdb-${{ github.run_id }}
+          restore-keys: etfdb-
+      - name: 回补净值
+        env:
+          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+          TUSHARE_MAX_CALLS_PER_RUN: "6000"
+          TUSHARE_DAILY_BUDGET: "60000"
+          TUSHARE_RPM: "180"
+        run: node scripts/backfill-nav.mjs --days "${{ inputs.days || 0 }}"
+      - name: 重算并提交
+        env:
+          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+          SZSE: "0"
+        run: |
+          set -o pipefail
+          node --input-type=module -e '
+            import { rebuild } from "./lib/pipeline.mjs";
+            import { openDb } from "./lib/db.mjs";
+            const db = openDb(); rebuild(db); db.close();
+            console.log("rebuild done");
+          '
+          npm run build
+      - name: 提交数据
+        run: |
+          git config user.name "ebbflow-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data site
+          git diff --cached --quiet || git commit -m "chore(data): 回补净值并重算"
+          git push
