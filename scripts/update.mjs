@@ -221,6 +221,30 @@ async function run({ quiet = false, lookback = 15 } = {}) {
     }
     if (applied && !quiet) log(`深交所快照（本地发布）：${applied} 个交易日`);
   }
+  // 2.02) 净值自愈：按日净值查询曾因未翻页被截断，老库里大量日子缺净值。
+  //       每次运行挑「行数明显偏少」的最近 N 天补一次（有预算上限，避免拖慢日常）。
+  {
+    const HEAL_DAYS = Number(process.env.NAV_HEAL_DAYS || 12);
+    if (HEAL_DAYS > 0 && hasToken()) {
+      const rows = db
+        .prepare("SELECT date, COUNT(*) n FROM nav WHERE date >= ? GROUP BY date ORDER BY date")
+        .all(new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10));
+      if (rows.length > 10) {
+        const counts = rows.map((r) => r.n).sort((a, b) => a - b);
+        const med = counts[Math.floor(counts.length / 2)];
+        const thin = rows.filter((r) => r.n < med * 0.9).map((r) => r.date).slice(0, HEAL_DAYS);
+        let fixed = 0;
+        for (const d of thin) {
+          try {
+            const m = await navOnDate(d);
+            if (m.size) { putNav(db, [...m].map(([c, v]) => [c, d, v])); fixed++; }
+          } catch {}
+        }
+        if (fixed && !quiet) log(`净值自愈：补齐 ${fixed} 天（中位数 ${med} 行）`);
+      }
+    }
+  }
+
   // 2.05) 完整性闸门（P0-1）：进时间轴的每一天，两市覆盖都要在「近 20 个交易日中位数」的合理区间内。
   //       判据不写死 300/800：宽度随历史自动缩放，2021 年只有几百只时不误杀、2026 年 1700 只时不放过残缺日。
   //       不满足 → 先自动修复（Tushare 全天 → 深交所历史接口），仍不满足 → 不进轴 + 显式告警。
