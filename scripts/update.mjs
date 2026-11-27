@@ -198,7 +198,25 @@ async function run({ quiet = false, lookback = 15 } = {}) {
       markDaySource(db, d, "sse"); // 交易日轴依赖这个标志，漏了会让新的一天永远进不了轴
       sseDays++;
     } catch (e) {
-      warn.push(`上交所 ${d} 失败`);
+      // 区分「这天真的缺数据」和「这天早已入库、只是本次重抓失败」：
+      // lookback 会重复抓最近 15 天，偶尔一次网络抖动不该每天刷一条告警。
+      // 判据：库里该日已有近 20 日中位数 60% 以上的沪市官方份额 → 视为已入库，降级为 info。
+      const haveEvening = (() => {
+        try {
+          const n = db.prepare("SELECT COUNT(*) n FROM share WHERE date=? AND src='sse'").get(d)?.n ?? 0;
+          const med = db
+            .prepare("SELECT COUNT(*) n FROM share WHERE src='sse' AND date < ? GROUP BY date ORDER BY date DESC LIMIT 20")
+            .all(d)
+            .map((r) => r.n)
+            .sort((a, b) => a - b);
+          const m = med.length ? med[Math.floor(med.length / 2)] : 0;
+          return m > 0 && n >= m * 0.6;
+        } catch {
+          return false;
+        }
+      })();
+      if (haveEvening) note.push(`上交所 ${d} 本次重抓失败（该日已入库，忽略）：${String(e.message || e).slice(0, 30)}`);
+      else warn.push(`上交所 ${d} 失败`);
     }
   });
   if (!quiet) log(`上交所补到 ${sseDays} 个交易日`);
