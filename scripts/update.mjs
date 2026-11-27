@@ -215,7 +215,11 @@ async function run({ quiet = false, lookback = 15 } = {}) {
           return false;
         }
       })();
+      // 当天（北京）的数据交易所还没发布，抓不到属正常——计入 info，不算告警。
+      // 上交所是 T+1 早 8 点发布，所以「今天」这一天在当晚运行里必然是空的。
+      const notYetPublished = d >= bjNow;
       if (haveEvening) note.push(`上交所 ${d} 本次重抓失败（该日已入库，忽略）：${String(e.message || e).slice(0, 30)}`);
+      else if (notYetPublished) note.push(`上交所 ${d} 尚未发布（T+1 早 8 点），本次跳过`);
       else warn.push(`上交所 ${d} 失败`);
     }
   });
