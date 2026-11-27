@@ -453,6 +453,28 @@ function checkDb() {
       record("H. 规模变化 = 净申购 + 净值贡献（抽样）", bad.length === 0, bad.length ? bad.slice(0, 5) : [`抽查 ${checked} 个 (小类×日)`], { severity: "warn" });
     }
 
+    // H3: 双源一致性——把「该日某市场交易所本就不可达」的单源行与真差异分开
+    {
+      try {
+        const q = JSON.parse(fs.readFileSync(path.join(ROOT, "data", "quality.json"), "utf8"));
+        const c = q?.summary?.compared ?? {};
+        const rate = q?.summary?.rates ?? {};
+        const realDiff = c.gt1 ?? 0;
+        const expected = c.onlyTsExpected ?? 0;
+        record(
+          "H. 双源一致性（已知单源日不计入差异）",
+          realDiff === 0,
+          [
+            `逐行比对 ${c.both ?? 0} 行：完全相同 ${c.identical ?? 0}，差≤0.1 ${c.le0_1 ?? 0}（${(((rate.le0_1 ?? 0) + (rate.identical ?? 0)) * 100).toFixed(1)}%）`,
+            `仅 Tushare 有：${c.onlyTs ?? 0} 行真差异 / ${expected} 行属已知单源日`,
+          ],
+          { severity: "warn" }
+        );
+      } catch (e) {
+        record("H. 双源一致性（已知单源日不计入差异）", true, ["无 quality.json，跳过"], { severity: "info" });
+      }
+    }
+
     // D2c: 份额单位量级跳变（货币 ETF 历史常见 ~100 倍），只报告不改数
     const units = detectUnitOutliers(db);
     record(

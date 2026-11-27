@@ -112,8 +112,11 @@ export function splitDay(rows) {
 }
 
 /** 逐 code 比对；返回分档统计 + 明细（明细由调用方再截断） */
-export function compareCodes(exchange, exchangeSrc, ts) {
-  const stats = { both: 0, identical: 0, le0_1: 0, le1: 0, gt1: 0, onlyExchange: 0, onlyTs: 0 };
+export function compareCodes(exchange, exchangeSrc, ts, opts = {}) {
+  // expectedMissing(code) → true 表示「该代码所在市场的交易所数据当天本来就不可达」，
+  // 这种 onlyTs 不是差异，是已知的单源日（例如深交所快照被境外 IP 拦截）。
+  const expectedMissing = opts.expectedMissing ?? (() => false);
+  const stats = { both: 0, identical: 0, le0_1: 0, le1: 0, gt1: 0, onlyExchange: 0, onlyTs: 0, onlyTsExpected: 0 };
   const detail = [];
   const onlyExchangeCodes = [];
   const onlyTsCodes = [];
@@ -122,8 +125,11 @@ export function compareCodes(exchange, exchangeSrc, ts) {
     const b = ts.get(code);
     if (a == null && b == null) continue;
     if (a == null) {
-      stats.onlyTs++;
-      if (onlyTsCodes.length < 50) onlyTsCodes.push(code);
+      if (expectedMissing(code)) stats.onlyTsExpected++;
+      else {
+        stats.onlyTs++;
+        if (onlyTsCodes.length < 50) onlyTsCodes.push(code);
+      }
       continue;
     }
     if (b == null) {
@@ -289,7 +295,7 @@ export async function reconcile(args = parseArgs([])) {
   const days = [];
   let prevEx = null;
   let prevTs = null;
-  const tot = { both: 0, identical: 0, le0_1: 0, le1: 0, gt1: 0, onlyExchange: 0, onlyTs: 0 };
+  const tot = { both: 0, identical: 0, le0_1: 0, le1: 0, gt1: 0, onlyExchange: 0, onlyTs: 0, onlyTsExpected: 0 };
   let subBoth = 0;
   let subInconsistent = 0;
   let subSingle = 0;
@@ -303,8 +309,11 @@ export async function reconcile(args = parseArgs([])) {
     const tsSide = await fetchTs(date, dbTs);
     tsFromCount[tsSide.from] = (tsFromCount[tsSide.from] || 0) + 1;
 
-    const { stats, detail, onlyExchangeCodes, onlyTsCodes } = compareCodes(exchange, exchangeSrc, tsSide.map);
-    for (const k of ["both", "identical", "le0_1", "le1", "gt1", "onlyExchange", "onlyTs"]) tot[k] += stats[k];
+    // 当天交易所侧可用性决定 onlyTs 是否算差异：没有 sse 行 ⇒ 沪市不可达；没有 szse 行 ⇒ 深市不可达
+    const has = { sse: sse.size > 0, szse: szse.size > 0 };
+    const expectedMissing = (code) => (/^[56]/.test(code) ? !has.sse : !has.szse);
+    const { stats, detail, onlyExchangeCodes, onlyTsCodes } = compareCodes(exchange, exchangeSrc, tsSide.map, { expectedMissing });
+    for (const k of ["both", "identical", "le0_1", "le1", "gt1", "onlyExchange", "onlyTs", "onlyTsExpected"]) tot[k] += stats[k];
 
     const seriesCheck = compareSubs(exchange, tsSide.map, prevEx, prevTs);
     for (const s of seriesCheck) {
@@ -431,7 +440,9 @@ export async function reconcile(args = parseArgs([])) {
       `分档：完全一致 ${tot.identical}（${(summary.rates.identical * 100 || 0).toFixed(2)}%）` +
         ` ≤0.1% ${tot.le0_1}  ≤1% ${tot.le1}  >1% ${tot.gt1}`
     );
-    log(`只有交易所：${tot.onlyExchange} 只｜只有 ts：${tot.onlyTs} 只（分类体系全部为沪市代码，深市快照不在其中）`);
+    log(
+        `只有交易所：${tot.onlyExchange} 只｜只有 ts：${tot.onlyTs} 只真差异 + ${tot.onlyTsExpected} 只属已知单源日（该市场交易所当天不可达）`
+      );
     if (tot.gt1 || worstCode) log(`最大单只分歧：${worstCode.code}（${worstCode.sub ?? "未归类"}）交易所 ${worstCode.exchange} vs ts ${worstCode.ts}，偏离 ${worstCode.relPct}%`);
     log(`小类层：可比 ${subBoth} 项，不一致 ${subInconsistent} 项，单源 ${subSingle} 项`);
     if (subInconsistent && worstSub) log(`最大小类分歧：${worstSub.sub} 偏离 ${worstSub.relPct}%（${worstSub.note}）`);
